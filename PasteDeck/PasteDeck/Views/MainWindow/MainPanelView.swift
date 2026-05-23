@@ -16,13 +16,22 @@ struct MainPanelView: View {
     @State private var selectedFilter: ClipboardFilter = .all
     @State private var selectedItem: ClipboardItem?
     @State private var showPreview = false
+    @FocusState private var isSearchFocused: Bool
+
+    var closeHandler: (() -> Void)?
 
     private let cardSize: CardSize = .medium
 
     var body: some View {
         VStack(spacing: 0) {
             VStack(spacing: 12) {
-                SearchBarView(text: $searchText)
+                SearchBarView(text: $searchText, isFocused: $isSearchFocused)
+                    .onSubmit {
+                        if let item = filteredItems.first {
+                            PasteService.shared.paste(item)
+                            closeHandler?()
+                        }
+                    }
                 FilterTabs(selectedFilter: $selectedFilter)
             }
             .padding(.horizontal, 20)
@@ -38,6 +47,7 @@ struct MainPanelView: View {
                     cardSize: cardSize,
                     onItemDoubleTap: { item in
                         PasteService.shared.paste(item)
+                        closeHandler?()
                     },
                     onSpacePressed: { item in
                         selectedItem = item
@@ -45,15 +55,21 @@ struct MainPanelView: View {
                     },
                     onEnterPressed: { item in
                         PasteService.shared.paste(item)
+                        closeHandler?()
+                    },
+                    onClose: {
+                        closeHandler?()
                     }
                 )
                 .padding(.top, 12)
             }
         }
         .frame(width: 800, height: 400)
-        .onKeyPress(.escape) {
-            NSApp.keyWindow?.orderOut(nil)
-            return .handled
+        .onAppear {
+            isSearchFocused = true
+            if filteredItems.first != nil {
+                selectedItem = filteredItems.first
+            }
         }
         .sheet(isPresented: $showPreview) {
             if let item = selectedItem {

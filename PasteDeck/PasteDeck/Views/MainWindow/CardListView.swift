@@ -15,6 +15,9 @@ struct CardListView: View {
     let onItemDoubleTap: (ClipboardItem) -> Void
     let onSpacePressed: (ClipboardItem) -> Void
     let onEnterPressed: (ClipboardItem) -> Void
+    let onClose: () -> Void
+
+    @FocusState private var isListFocused: Bool
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -39,6 +42,10 @@ struct CardListView: View {
             .padding(.horizontal, 20)
             .padding(.vertical, 8)
         }
+        .focused($isListFocused)
+        .onAppear {
+            isListFocused = true
+        }
         .onKeyPress(.leftArrow) {
             moveSelection(by: -1)
             return .handled
@@ -47,15 +54,25 @@ struct CardListView: View {
             moveSelection(by: 1)
             return .handled
         }
+        .onKeyPress(.escape) {
+            onClose()
+            return .handled
+        }
+        .onKeyPress(.return) {
+            if let item = selectedItem {
+                onEnterPressed(item)
+            }
+            return .handled
+        }
         .onKeyPress(.space) {
             if let item = selectedItem {
                 onSpacePressed(item)
             }
             return .handled
         }
-        .onKeyPress(.return) {
+        .onKeyPress(.delete, phases: .down) { _ in
             if let item = selectedItem {
-                onEnterPressed(item)
+                deleteItem(item)
             }
             return .handled
         }
@@ -71,6 +88,13 @@ struct CardListView: View {
         } else {
             selectedItem = items.first
         }
+    }
+
+    private func deleteItem(_ item: ClipboardItem) {
+        let context = ModelContext(AppModelContainer.container)
+        context.delete(item)
+        try? context.save()
+        selectedItem = items.first
     }
 }
 
