@@ -180,9 +180,16 @@ struct MainPanelView: View {
     }
 
     private func showPreviewWindow(item: ClipboardItem) {
-        // 创建独立的预览窗口，不使用 sheet
+        // 获取当前主窗口引用
+        let mainWindow = NSApp.keyWindow
+
+        // 创建独立的预览窗口
         let previewView = PreviewWindow(item: item, onClose: {
-            // 关闭预览窗口后会自动调用
+            // 关闭预览后，焦点回到剪切板窗口
+            DispatchQueue.main.async {
+                mainWindow?.makeKeyAndOrderFront(nil)
+                NSApp.activate(ignoringOtherApps: true)
+            }
         })
         let hostingController = NSHostingController(rootView: previewView)
 
@@ -190,7 +197,7 @@ struct MainPanelView: View {
         window.styleMask = [.titled, .closable, .fullSizeContentView]
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
-        window.level = .floating
+        window.level = NSWindow.Level.floating + 1 // 比剪切板窗口更高
         window.center()
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
