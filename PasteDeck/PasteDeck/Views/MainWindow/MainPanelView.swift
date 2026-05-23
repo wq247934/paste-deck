@@ -180,27 +180,42 @@ struct MainPanelView: View {
     }
 
     private func showPreviewWindow(item: ClipboardItem) {
-        // 获取当前主窗口引用
-        let mainWindow = NSApp.keyWindow
+        // 保存当前主窗口引用
+        MainWindowReference.window = NSApp.keyWindow
 
-        // 创建独立的预览窗口
+        // 创建预览视图
         let previewView = PreviewWindow(item: item, onClose: {
             // 关闭预览后，焦点回到剪切板窗口
             DispatchQueue.main.async {
-                mainWindow?.makeKeyAndOrderFront(nil)
+                MainWindowReference.window?.makeKeyAndOrderFront(nil)
                 NSApp.activate(ignoringOtherApps: true)
             }
         })
         let hostingController = NSHostingController(rootView: previewView)
 
-        let window = PreviewNSWindow(contentViewController: hostingController)
+        // 创建窗口
+        let window = NSWindow(contentViewController: hostingController)
         window.styleMask = [.titled, .closable, .fullSizeContentView]
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
-        window.level = NSWindow.Level.floating + 1 // 比剪切板窗口更高
+        window.level = .screenSaver  // 最顶层，确保在剪切板窗口上方
         window.center()
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+
+        // 添加 ESC 键监听
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            if event.keyCode == 53 { // ESC
+                window.close()
+                // 焦点回到主窗口
+                DispatchQueue.main.async {
+                    MainWindowReference.window?.makeKeyAndOrderFront(nil)
+                    NSApp.activate(ignoringOtherApps: true)
+                }
+                return nil
+            }
+            return event
+        }
     }
 
     private func deleteItem(_ item: ClipboardItem) {
