@@ -9,7 +9,7 @@ import SwiftUI
 
 struct PreviewWindow: View {
     let item: ClipboardItem
-    @Environment(\.dismiss) private var dismiss
+    var onClose: (() -> Void)?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -27,7 +27,9 @@ struct PreviewWindow: View {
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
 
-                Button(action: { dismiss() }) {
+                Button(action: {
+                    onClose?()
+                }) {
                     Image(systemName: "xmark")
                         .font(.system(size: 12, weight: .bold))
                         .foregroundColor(.secondary)
@@ -60,7 +62,7 @@ struct PreviewWindow: View {
 
                 Button("粘贴") {
                     PasteService.shared.paste(item)
-                    dismiss()
+                    onClose?()
                 }
                 .buttonStyle(.borderedProminent)
             }
@@ -69,10 +71,6 @@ struct PreviewWindow: View {
         .frame(width: 600, height: 450)
         .background(.regularMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 16))
-        .onKeyPress(.escape) {
-            dismiss()
-            return .handled
-        }
     }
 
     @ViewBuilder
