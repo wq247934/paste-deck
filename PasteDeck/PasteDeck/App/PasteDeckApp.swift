@@ -132,6 +132,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         clipboardMonitor?.startMonitoring()
         print("AppDelegate: 剪切板监听已启动")
 
+        // 设置 PasteService 的剪切板监听器
+        PasteService.shared.setClipboardMonitor(clipboardMonitor!)
+
         // 注册全局快捷键: ⌘+Shift+V
         // V 键的 keyCode 是 9
         hotKeyManager = HotKeyManager()

@@ -14,6 +14,7 @@ class ClipboardMonitor {
     private var changeCount: Int
     private var timer: Timer?
     private var cacheManager: CacheManager
+    private var isPaused = false
 
     init(modelContext: ModelContext) {
         self.modelContext = modelContext
@@ -32,21 +33,76 @@ class ClipboardMonitor {
         timer = nil
     }
 
+    /// 暂停监听（粘贴时使用）
+    func pause() {
+        isPaused = true
+    }
+
+    /// 恢复监听
+    func resume() {
+        // 延迟恢复，给粘贴操作留出时间
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            self?.isPaused = false
+            // 更新 changeCount，避免记录粘贴的内容
+            self?.changeCount = NSPasteboard.general.changeCount
+        }
+    }
+
     private func checkForChanges() {
+        // 暂停时不监听
+        guard !isPaused else { return }
+
         let pasteboard = NSPasteboard.general
         let currentChangeCount = pasteboard.changeCount
 
         guard currentChangeCount != changeCount else { return }
         changeCount = currentChangeCount
 
+        // 检查是否来自 PasteDeck 自己
         let sourceApp = getFrontmostAppName()
+        if sourceApp == "PasteDeck" {
+            print("ClipboardMonitor: 忽略来自 PasteDeck 的复制")
+            return
+        }
 
         if let app = sourceApp, isBlacklisted(app) {
             return
         }
 
         if let item = parsePasteboard(pasteboard, sourceApp: sourceApp) {
-            saveItem(item)
+            // 检查是否重复
+            if !isDuplicate(item) {
+                saveItem(item)
+            } else {
+                print("ClipboardMonitor: 忽略重复内容")
+            }
+        }
+    }
+
+    /// 检查是否与最近的内容重复
+    private func isDuplicate(_ item: ClipboardItem) -> Bool {
+        let descriptor = FetchDescriptor<ClipboardItem>(
+            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+        )
+
+        guard let recentItems = try? modelContext.fetch(descriptor),
+              let recent = recentItems.first else {
+            return false
+        }
+
+        // 比较内容
+        switch item.contentType {
+        case .text, .link:
+            return recent.textContent == item.textContent
+        case .image:
+            // 图片比较大小和尺寸
+            return recent.imageWidth == item.imageWidth &&
+                   recent.imageHeight == item.imageHeight &&
+                   recent.fileSize == item.fileSize
+        case .file:
+            return recent.filePath == item.filePath
+        case .color:
+            return recent.colorHex == item.colorHex
         }
     }
 

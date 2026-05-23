@@ -10,12 +10,25 @@ import AppKit
 
 class PasteService {
     static let shared = PasteService()
+    private var clipboardMonitor: ClipboardMonitor?
 
     private init() {}
 
+    func setClipboardMonitor(_ monitor: ClipboardMonitor) {
+        self.clipboardMonitor = monitor
+    }
+
     func paste(_ item: ClipboardItem) {
+        // 暂停监听，避免记录粘贴的内容
+        clipboardMonitor?.pause()
+
         copyToPasteboard(item)
         simulatePaste()
+
+        // 延迟恢复监听
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            self?.clipboardMonitor?.resume()
+        }
     }
 
     func copyToPasteboard(_ item: ClipboardItem) {
