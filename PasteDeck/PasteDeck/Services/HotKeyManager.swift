@@ -6,15 +6,16 @@
 //
 
 import Foundation
-import Carbon
 import AppKit
 
 class HotKeyManager {
-    private var hotKeyRef: EventHotKeyRef?
+    private var eventMonitor: Any?
     private var hotKeyCallback: (() -> Void)?
-    private var hotKeyID: UInt32 = 1
+    private var isRegistered = false
 
-    init() {}
+    init() {
+        print("HotKeyManager: 初始化")
+    }
 
     deinit {
         unregister()
@@ -24,51 +25,59 @@ class HotKeyManager {
         unregister()
         hotKeyCallback = callback
 
-        var eventType = EventTypeSpec(
-            eventClass: OSType(kEventClassKeyboard),
-            eventKind: OSType(kEventHotKeyPressed)
-        )
+        // 检查辅助功能权限
+        let trusted = AXIsProcessTrusted()
+        print("HotKeyManager: 辅助功能权限 = \(trusted)")
 
-        InstallEventHandler(
-            GetApplicationEventTarget(),
-            { _, event, userData -> OSStatus in
-                HotKeyManager.hotKeyHandler(nextHandler: nil, event: event, userData: userData)
-            },
-            1,
-            &eventType,
-            Unmanaged.passUnretained(self).toOpaque(),
-            nil
-        )
+        if !trusted {
+            print("HotKeyManager: 没有辅助功能权限，无法注册全局快捷键")
+            // 请求权限
+            let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
+            _ = AXIsProcessTrustedWithOptions(options as CFDictionary)
+            return
+        }
 
-        var carbonModifiers: UInt32 = 0
-        if modifiers.contains(.command) { carbonModifiers |= UInt32(cmdKey) }
-        if modifiers.contains(.option) { carbonModifiers |= UInt32(optionKey) }
-        if modifiers.contains(.control) { carbonModifiers |= UInt32(controlKey) }
-        if modifiers.contains(.shift) { carbonModifiers |= UInt32(shiftKey) }
+        // 使用 NSEvent 全局监听
+        let expectedModifiers = modifiers
+        let expectedKeyCode = keyCode
 
-        var hotKeyID = EventHotKeyID(signature: OSType(0x5044_4B49), id: self.hotKeyID)
+        print("HotKeyManager: 注册快捷键 keyCode=\(keyCode), modifiers=\(modifiers.rawValue)")
 
-        RegisterEventHotKey(
-            keyCode,
-            carbonModifiers,
-            hotKeyID,
-            GetApplicationEventTarget(),
-            0,
-            &hotKeyRef
-        )
+        eventMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            // 检查修饰键
+            let eventModifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            let eventKeyCode = event.keyCode
+
+            // 打印调试信息
+            if eventKeyCode == expectedKeyCode {
+                print("HotKeyManager: 检测到 V 键按下")
+                print("  - 期望修饰键: \(expectedModifiers.rawValue)")
+                print("  - 实际修饰键: \(eventModifiers.rawValue)")
+                print("  - 匹配: \(eventModifiers == expectedModifiers)")
+            }
+
+            if eventKeyCode == expectedKeyCode && eventModifiers == expectedModifiers {
+                print("HotKeyManager: 快捷键匹配，执行回调")
+                DispatchQueue.main.async {
+                    self?.hotKeyCallback?()
+                }
+            }
+        }
+
+        isRegistered = true
+        print("HotKeyManager: 快捷键注册成功")
     }
 
     func unregister() {
-        if let ref = hotKeyRef {
-            UnregisterEventHotKey(ref)
-            hotKeyRef = nil
+        if let monitor = eventMonitor {
+            NSEvent.removeMonitor(monitor)
+            eventMonitor = nil
+            isRegistered = false
+            print("HotKeyManager: 快捷键已注销")
         }
     }
 
-    private static func hotKeyHandler(nextHandler: EventHandlerCallRef?, event: EventRef?, userData: UnsafeMutableRawPointer?) -> OSStatus {
-        guard let userData = userData else { return OSStatus(eventNotHandledErr) }
-        let manager = Unmanaged<HotKeyManager>.fromOpaque(userData).takeUnretainedValue()
-        manager.hotKeyCallback?()
-        return noErr
+    func isHotKeyRegistered() -> Bool {
+        return isRegistered
     }
 }
