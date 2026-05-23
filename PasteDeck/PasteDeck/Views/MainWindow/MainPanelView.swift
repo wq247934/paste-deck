@@ -20,6 +20,7 @@ struct MainPanelView: View {
     var closeHandler: (() -> Void)?
 
     private let cardSize: CardSize = .medium
+    private let itemsPerPage = 5 // 每页显示的卡片数
 
     var body: some View {
         VStack(spacing: 0) {
@@ -81,8 +82,9 @@ struct MainPanelView: View {
                     }
                     .padding(.top, 12)
                     // 当选中项变化时滚动
-                    .onChange(of: selectedIndex) { _, newIndex in
-                        withAnimation {
+                    .onChange(of: selectedIndex) { oldIndex, newIndex in
+                        guard !filteredItems.isEmpty else { return }
+                        withAnimation(.easeInOut(duration: 0.2)) {
                             proxy.scrollTo(filteredItems[newIndex].id, anchor: .center)
                         }
                     }
@@ -110,6 +112,14 @@ struct MainPanelView: View {
                 },
                 onRightArrow: {
                     moveSelection(by: 1)
+                },
+                onUpArrow: {
+                    // 上翻页
+                    moveSelection(by: -itemsPerPage)
+                },
+                onDownArrow: {
+                    // 下翻页
+                    moveSelection(by: itemsPerPage)
                 },
                 onEnter: {
                     if let item = selectedItem {
@@ -201,6 +211,8 @@ struct MainPanelView: View {
 struct KeyboardView: NSViewRepresentable {
     var onLeftArrow: () -> Void
     var onRightArrow: () -> Void
+    var onUpArrow: () -> Void
+    var onDownArrow: () -> Void
     var onEnter: () -> Void
     var onEscape: () -> Void
     var onSpace: () -> Void
@@ -210,6 +222,8 @@ struct KeyboardView: NSViewRepresentable {
         let view = KeyboardNSView()
         view.onLeftArrow = onLeftArrow
         view.onRightArrow = onRightArrow
+        view.onUpArrow = onUpArrow
+        view.onDownArrow = onDownArrow
         view.onEnter = onEnter
         view.onEscape = onEscape
         view.onSpace = onSpace
@@ -221,6 +235,8 @@ struct KeyboardView: NSViewRepresentable {
         if let view = nsView as? KeyboardNSView {
             view.onLeftArrow = onLeftArrow
             view.onRightArrow = onRightArrow
+            view.onUpArrow = onUpArrow
+            view.onDownArrow = onDownArrow
             view.onEnter = onEnter
             view.onEscape = onEscape
             view.onSpace = onSpace
@@ -232,6 +248,8 @@ struct KeyboardView: NSViewRepresentable {
 class KeyboardNSView: NSView {
     var onLeftArrow: (() -> Void)?
     var onRightArrow: (() -> Void)?
+    var onUpArrow: (() -> Void)?
+    var onDownArrow: (() -> Void)?
     var onEnter: (() -> Void)?
     var onEscape: (() -> Void)?
     var onSpace: (() -> Void)?
@@ -247,6 +265,10 @@ class KeyboardNSView: NSView {
             onLeftArrow?()
         case 124: // Right arrow
             onRightArrow?()
+        case 126: // Up arrow
+            onUpArrow?()
+        case 125: // Down arrow
+            onDownArrow?()
         case 36: // Enter
             onEnter?()
         case 53: // Escape
@@ -262,8 +284,9 @@ class KeyboardNSView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        DispatchQueue.main.async {
-            self.window?.makeFirstResponder(self)
+        // 确保在主线程延迟执行，等待窗口完全加载
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            self?.window?.makeFirstResponder(self)
         }
     }
 }
@@ -285,6 +308,7 @@ struct FilterTabs: View {
                     Text(filter.rawValue)
                         .font(.system(size: 13, weight: .medium))
                         .foregroundColor(selectedFilter == filter ? .white : .primary)
+                        .frame(minWidth: 60)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 6)
                         .background(
@@ -293,6 +317,7 @@ struct FilterTabs: View {
                         )
                 }
                 .buttonStyle(.plain)
+                .contentShape(Capsule()) // 扩大点击区域
             }
         }
         .padding(3)
