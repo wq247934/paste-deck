@@ -44,16 +44,51 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         print("AppDelegate: 应用启动")
+        print("AppDelegate: 应用路径 = \(Bundle.main.bundlePath)")
 
-        // 先检查辅助功能权限
-        let trusted = AXIsProcessTrusted()
-        print("AppDelegate: 辅助功能权限 = \(trusted)")
+        // 先检查辅助功能权限，如果没有则请求
+        checkAndRequestAccessibilityPermission()
 
         // Setup status bar icon
         setupStatusBar()
 
         // Initialize services
         setupServices()
+    }
+
+    private func checkAndRequestAccessibilityPermission() {
+        let trusted = AXIsProcessTrusted()
+        print("AppDelegate: 辅助功能权限 = \(trusted)")
+
+        if !trusted {
+            // 弹出系统权限请求对话框
+            let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
+            let _ = AXIsProcessTrustedWithOptions(options as CFDictionary)
+
+            // 显示提示
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                let alert = NSAlert()
+                alert.messageText = "需要辅助功能权限"
+                alert.informativeText = """
+                PasteDeck 需要辅助功能权限才能：
+                • 监听全局快捷键 (⌘+Shift+V)
+                • 监控剪切板变化
+
+                请在系统设置中授权：
+                系统设置 → 隐私与安全性 → 辅助功能
+
+                点击"打开系统设置"按钮，然后添加 PasteDeck
+                """
+                alert.alertStyle = .warning
+                alert.addButton(withTitle: "打开系统设置")
+                alert.addButton(withTitle: "稍后设置")
+
+                let response = alert.runModal()
+                if response == .alertFirstButtonReturn {
+                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+                }
+            }
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
