@@ -14,6 +14,7 @@ class MainPanelController: NSObject, NSWindowDelegate {
     private var panel: NSPanel?
     private var isVisible = false
     private var canCloseOnResignKey = false
+    private var lastToggleTime: Date = Date.distantPast
 
     override init() {
         super.init()
@@ -23,13 +24,13 @@ class MainPanelController: NSObject, NSWindowDelegate {
     private func setupPanel() {
         let panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 800, height: 400),
-            styleMask: [.titled, .closable, .fullSizeContentView],
+            styleMask: [.titled, .closable, .fullSizeContentView, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
 
-        panel.level = NSWindow.Level.floating
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.level = NSWindow.Level.popUpMenu
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
         panel.isOpaque = false
         panel.backgroundColor = NSColor.clear
         panel.hasShadow = true
@@ -37,6 +38,8 @@ class MainPanelController: NSObject, NSWindowDelegate {
         panel.titlebarAppearsTransparent = true
         panel.titleVisibility = .hidden
         panel.delegate = self
+        panel.acceptsMouseMovedEvents = true
+        panel.hidesOnDeactivate = false
 
         let visualEffectView = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: 800, height: 400))
         visualEffectView.material = .hudWindow
@@ -66,17 +69,17 @@ class MainPanelController: NSObject, NSWindowDelegate {
         }
 
         print("MainPanelController: showPanel")
-        centerPanel(panel)
 
-        // 先设置 canCloseOnResignKey = false，防止刚打开就关闭
         canCloseOnResignKey = false
+        centerPanel(panel)
         panel.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         isVisible = true
 
-        // 延迟 0.3 秒后才允许失去焦点关闭
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+        // 延迟后才允许失去焦点关闭
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             self?.canCloseOnResignKey = true
+            print("MainPanelController: canCloseOnResignKey = true")
         }
     }
 
@@ -88,6 +91,15 @@ class MainPanelController: NSObject, NSWindowDelegate {
     }
 
     func togglePanel() {
+        // 防抖动：300ms 内只响应一次
+        let now = Date()
+        let elapsed = now.timeIntervalSince(lastToggleTime)
+        if elapsed < 0.3 {
+            print("MainPanelController: togglePanel 忽略（防抖动）elapsed=\(elapsed)")
+            return
+        }
+        lastToggleTime = now
+
         print("MainPanelController: togglePanel, isVisible=\(isVisible)")
         if isVisible {
             hidePanel()
@@ -110,16 +122,18 @@ class MainPanelController: NSObject, NSWindowDelegate {
 
     // NSWindowDelegate
     func windowWillClose(_ notification: Notification) {
+        print("MainPanelController: windowWillClose")
         isVisible = false
     }
 
     func windowDidResignKey(_ notification: Notification) {
-        // 只有在允许的情况下才关闭
+        print("MainPanelController: windowDidResignKey, canCloseOnResignKey=\(canCloseOnResignKey)")
         if canCloseOnResignKey {
-            print("MainPanelController: windowDidResignKey - 关闭窗口")
             hidePanel()
-        } else {
-            print("MainPanelController: windowDidResignKey - 忽略（刚打开）")
         }
+    }
+
+    func windowDidBecomeKey(_ notification: Notification) {
+        print("MainPanelController: windowDidBecomeKey")
     }
 }
