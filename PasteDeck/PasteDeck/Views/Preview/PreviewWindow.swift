@@ -6,13 +6,17 @@
 //
 
 import SwiftUI
+import Quartz
 
 struct PreviewWindow: View {
     let item: ClipboardItem
     var onClose: (() -> Void)?
 
+    @State private var showQuickLook = false
+
     var body: some View {
         VStack(spacing: 0) {
+            // 顶部栏
             HStack {
                 Image(systemName: item.contentType.icon)
                     .font(.system(size: 14))
@@ -41,6 +45,7 @@ struct PreviewWindow: View {
 
             Divider()
 
+            // 预览内容
             ScrollView {
                 previewContent
                     .padding(20)
@@ -48,12 +53,21 @@ struct PreviewWindow: View {
 
             Divider()
 
+            // 底部操作栏
             HStack {
                 Text(item.displaySize)
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
 
                 Spacer()
+
+                // 文件类型显示 Quick Look 按钮
+                if item.contentType == .file || item.contentType == .image {
+                    Button("Quick Look") {
+                        openQuickLook()
+                    }
+                    .buttonStyle(.bordered)
+                }
 
                 Button("复制") {
                     PasteService.shared.copyToPasteboard(item)
@@ -71,6 +85,14 @@ struct PreviewWindow: View {
         .frame(width: 600, height: 450)
         .background(.regularMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 16))
+        .onAppear {
+            // 如果是文件或图片，自动打开 Quick Look
+            if item.contentType == .file || item.contentType == .image {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    openQuickLook()
+                }
+            }
+        }
     }
 
     @ViewBuilder
@@ -115,6 +137,10 @@ struct PreviewWindow: View {
                 Text("\(item.imageWidth) x \(item.imageHeight)")
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
+
+                Text("按 Quick Look 按钮查看大图")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
             }
 
         case .file:
@@ -136,165 +162,109 @@ struct PreviewWindow: View {
 
     // MARK: - File Preview
 
-    @ViewBuilder
     private var filePreview: some View {
-        if isCodeFile(item.fileName ?? "") {
-            // 代码文件：显示内容
-            codeFilePreview
-        } else {
-            // 非代码文件：显示文件信息
-            regularFilePreview
-        }
-    }
-
-    private var codeFilePreview: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // 文件信息头
-            HStack {
-                Image(systemName: fileIcon)
-                    .font(.system(size: 20))
-                    .foregroundColor(.accentColor)
-
-                Text(item.fileName ?? "")
-                    .font(.system(size: 14, weight: .medium))
-
-                Spacer()
-
-                Text(codeLanguage)
-                    .font(.system(size: 12))
-                    .foregroundColor(.secondary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 2)
-                    .background(Color.accentColor.opacity(0.1))
-                    .cornerRadius(4)
-            }
-
-            Divider()
-
-            // 代码内容
-            if let content = readFileContent() {
-                ScrollView {
-                    Text(content)
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundColor(.primary)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .topLeading)
-                }
-            } else {
-                VStack(spacing: 12) {
-                    Image(systemName: "exclamationmark.triangle")
-                        .font(.system(size: 32))
-                        .foregroundColor(.orange)
-
-                    Text("无法读取文件内容")
-                        .font(.system(size: 14))
-                        .foregroundColor(.secondary)
-
-                    infoRow(label: "路径", value: item.filePath ?? "-")
-                }
-                .frame(maxWidth: .infinity)
-            }
-        }
-    }
-
-    private var regularFilePreview: some View {
         VStack(spacing: 16) {
             Image(systemName: fileIcon)
                 .font(.system(size: 48))
                 .foregroundColor(.secondary)
 
+            Text(item.fileName ?? "文件")
+                .font(.system(size: 16, weight: .medium))
+
             VStack(spacing: 8) {
-                infoRow(label: "文件名", value: item.fileName ?? "-")
+                infoRow(label: "类型", value: fileTypeDescription)
                 infoRow(label: "大小", value: ByteCountFormatter.string(fromByteCount: Int64(item.fileSize), countStyle: .file))
-                infoRow(label: "路径", value: item.filePath ?? "-")
+                if let filePath = item.filePath {
+                    infoRow(label: "路径", value: filePath)
+                }
             }
+
+            Text("点击 Quick Look 按钮预览文件内容")
+                .font(.system(size: 12))
+                .foregroundColor(.secondary)
+                .padding(.top, 8)
         }
         .frame(maxWidth: .infinity)
     }
 
-    // MARK: - Helpers
-
-    /// 判断是否为代码文件
-    private func isCodeFile(_ fileName: String) -> Bool {
+    private var fileTypeDescription: String {
+        guard let fileName = item.fileName else { return "未知" }
         let ext = (fileName as NSString).pathExtension.lowercased()
-        let codeExtensions = [
-            "swift", "go", "java", "py", "lua", "html", "vue", "js", "json",
-            "css", "ts", "jsx", "tsx", "rb", "php", "c", "cpp", "h", "hpp",
-            "cs", "kt", "rs", "scala", "sh", "bash", "zsh", "sql", "xml",
-            "yaml", "yml", "toml", "ini", "cfg", "conf", "md", "txt",
-            "dart", "r", "m", "mm", "pl", "ex", "exs", "erl", "clj",
-            "hs", "ml", "fs", "vim", "el", "lisp", "proto", "graphql",
-            "tf", "dockerfile", "makefile", "cmake"
+
+        let typeMap: [String: String] = [
+            "swift": "Swift 源代码",
+            "go": "Go 源代码",
+            "java": "Java 源代码",
+            "py": "Python 脚本",
+            "lua": "Lua 脚本",
+            "html": "HTML 文档",
+            "vue": "Vue 组件",
+            "js": "JavaScript 脚本",
+            "ts": "TypeScript 脚本",
+            "json": "JSON 文件",
+            "css": "CSS 样式表",
+            "pdf": "PDF 文档",
+            "doc": "Word 文档",
+            "docx": "Word 文档",
+            "xls": "Excel 表格",
+            "xlsx": "Excel 表格",
+            "ppt": "PowerPoint 演示",
+            "pptx": "PowerPoint 演示",
+            "png": "PNG 图片",
+            "jpg": "JPEG 图片",
+            "jpeg": "JPEG 图片",
+            "gif": "GIF 图片",
+            "mp4": "MP4 视频",
+            "mov": "QuickTime 视频",
+            "mp3": "MP3 音频",
+            "zip": "ZIP 压缩包",
+            "md": "Markdown 文档",
+            "txt": "文本文件"
         ]
-        return codeExtensions.contains(ext)
+
+        return typeMap[ext] ?? ext.uppercased() + " 文件"
     }
 
-    /// 代码文件图标
     private var fileIcon: String {
         guard let fileName = item.fileName else { return "doc" }
         let ext = (fileName as NSString).pathExtension.lowercased()
 
         switch ext {
         case "pdf": return "doc.richtext"
+        case "doc", "docx": return "doc.text"
+        case "xls", "xlsx": return "tablecells"
+        case "ppt", "pptx": return "play.rectangle"
         case "zip", "rar", "7z", "tar", "gz": return "doc.zipper"
         case "jpg", "jpeg", "png", "gif", "heic", "webp": return "photo"
         case "mp3", "wav", "flac", "m4a": return "music.note"
         case "mp4", "mov", "avi", "mkv": return "video"
-        default:
-            if isCodeFile(fileName) {
-                return "chevron.left.forwardslash.chevron.right"
+        case "swift", "go", "java", "py", "js", "ts", "rb", "php", "c", "cpp", "rs", "kt":
+            return "chevron.left.forwardslash.chevron.right"
+        case "html", "vue", "css", "json", "xml", "yaml", "yml":
+            return "curlybraces"
+        case "md", "txt", "rtf":
+            return "doc.text"
+        default: return "doc"
+        }
+    }
+
+    // MARK: - Quick Look
+
+    private func openQuickLook() {
+        // 使用 Quick Look 预览
+        if item.contentType == .image {
+            // 图片预览
+            if let imagePath = item.imagePath {
+                let url = URL(fileURLWithPath: imagePath)
+                QuickLookPreview.open(url: url)
             }
-            return "doc"
+        } else if item.contentType == .file {
+            // 文件预览
+            if let filePath = item.filePath {
+                let url = URL(fileURLWithPath: filePath)
+                QuickLookPreview.open(url: url)
+            }
         }
-    }
-
-    /// 代码语言名称
-    private var codeLanguage: String {
-        guard let fileName = item.fileName else { return "" }
-        let ext = (fileName as NSString).pathExtension.lowercased()
-
-        let languageMap: [String: String] = [
-            "swift": "Swift", "go": "Go", "java": "Java", "py": "Python",
-            "lua": "Lua", "html": "HTML", "vue": "Vue", "js": "JavaScript",
-            "json": "JSON", "css": "CSS", "ts": "TypeScript", "jsx": "JSX",
-            "tsx": "TSX", "rb": "Ruby", "php": "PHP", "c": "C",
-            "cpp": "C++", "h": "C Header", "hpp": "C++ Header",
-            "cs": "C#", "kt": "Kotlin", "rs": "Rust", "scala": "Scala",
-            "sh": "Shell", "bash": "Bash", "zsh": "Zsh", "sql": "SQL",
-            "xml": "XML", "yaml": "YAML", "yml": "YAML", "toml": "TOML",
-            "md": "Markdown", "txt": "Text", "dart": "Dart",
-            "r": "R", "m": "Objective-C", "mm": "Obj-C++",
-            "proto": "Protocol Buffers", "graphql": "GraphQL",
-            "tf": "Terraform", "ex": "Elixir", "erl": "Erlang",
-            "hs": "Haskell", "ml": "OCaml", "fs": "F#"
-        ]
-
-        return languageMap[ext] ?? ext.uppercased()
-    }
-
-    /// 读取文件内容（限制大小）
-    private func readFileContent() -> String? {
-        guard let filePath = item.filePath else { return nil }
-
-        // 限制文件大小：大于 1MB 不读取
-        let maxSize = 1024 * 1024
-        if item.fileSize > maxSize {
-            return "文件过大，无法预览（\(ByteCountFormatter.string(fromByteCount: Int64(item.fileSize), countStyle: .file))）"
-        }
-
-        let url = URL(fileURLWithPath: filePath)
-        guard let content = try? String(contentsOf: url, encoding: .utf8) else {
-            return nil
-        }
-
-        // 限制显示行数
-        let lines = content.components(separatedBy: .newlines)
-        if lines.count > 500 {
-            let limited = lines.prefix(500).joined(separator: "\n")
-            return limited + "\n\n... (共 \(lines.count) 行，仅显示前 500 行)"
-        }
-
-        return content
     }
 
     private func infoRow(label: String, value: String) -> some View {
@@ -310,6 +280,52 @@ struct PreviewWindow: View {
                 .textSelection(.enabled)
 
             Spacer()
+        }
+    }
+}
+
+// MARK: - Quick Look Preview Helper
+
+class QuickLookPreview {
+    private static var previewPanel: QLPreviewPanel?
+
+    static func open(url: URL) {
+        // 检查文件是否存在
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            print("QuickLook: 文件不存在: \(url.path)")
+            return
+        }
+
+        // 使用 qlmanage 命令行工具打开 Quick Look
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/qlmanage")
+        process.arguments = ["-p", url.path]
+
+        do {
+            try process.run()
+        } catch {
+            print("QuickLook: 启动失败: \(error)")
+        }
+    }
+
+    static func close() {
+        // 关闭 Quick Look 面板
+        if let panel = previewPanel {
+            panel.orderOut(nil)
+            previewPanel = nil
+        }
+    }
+}
+
+// MARK: - Preview Window that handles ESC key
+
+class PreviewNSWindow: NSWindow {
+    override func keyDown(with event: NSEvent) {
+        // ESC 键关闭窗口
+        if event.keyCode == 53 {
+            close()
+        } else {
+            super.keyDown(with: event)
         }
     }
 }
