@@ -7,6 +7,11 @@
 
 import SwiftUI
 
+// 保存主窗口的引用
+class MainWindowReference {
+    static var window: NSWindow?
+}
+
 struct PreviewWindow: View {
     let item: ClipboardItem
     var onClose: (() -> Void)?
@@ -29,7 +34,7 @@ struct PreviewWindow: View {
                     .foregroundColor(.secondary)
 
                 Button(action: {
-                    onClose?()
+                    closeWindow()
                 }) {
                     Image(systemName: "xmark")
                         .font(.system(size: 12, weight: .bold))
@@ -65,7 +70,7 @@ struct PreviewWindow: View {
 
                 Button("粘贴") {
                     PasteService.shared.paste(item)
-                    onClose?()
+                    closeWindow()
                 }
                 .buttonStyle(.borderedProminent)
             }
@@ -74,6 +79,13 @@ struct PreviewWindow: View {
         .frame(width: 600, height: 450)
         .background(.regularMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+
+    private func closeWindow() {
+        // 关闭当前预览窗口
+        NSApp.keyWindow?.close()
+        // 回调
+        onClose?()
     }
 
     @ViewBuilder
@@ -233,15 +245,42 @@ struct PreviewWindow: View {
     }
 }
 
-// MARK: - Preview Window that handles ESC key
+// MARK: - Preview Window Controller
 
-class PreviewNSWindow: NSWindow {
-    override func keyDown(with event: NSEvent) {
-        // ESC 键关闭窗口
-        if event.keyCode == 53 {
-            close()
-        } else {
-            super.keyDown(with: event)
+class PreviewWindowController {
+    private var window: NSWindow?
+
+    func show(item: ClipboardItem, onClose: @escaping () -> Void) {
+        // 保存当前主窗口
+        MainWindowReference.window = NSApp.keyWindow
+
+        // 创建预览视图
+        let previewView = PreviewWindow(item: item, onClose: onClose)
+        let hostingController = NSHostingController(rootView: previewView)
+
+        // 创建窗口
+        let window = NSWindow(contentViewController: hostingController)
+        window.styleMask = [.titled, .closable, .fullSizeContentView]
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.level = .screenSaver  // 最顶层
+        window.center()
+        window.isReleasedWhenClosed = false
+        window.makeKeyAndOrderFront(nil)
+        window.hidesOnDeactivate = false
+
+        self.window = window
+
+        // 添加全局键盘监听
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            if event.keyCode == 53 { // ESC
+                window.close()
+                onClose()
+                return nil
+            }
+            return event
         }
+
+        NSApp.activate(ignoringOtherApps: true)
     }
 }
