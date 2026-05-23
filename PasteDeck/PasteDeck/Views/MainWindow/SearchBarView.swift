@@ -9,7 +9,7 @@ import SwiftUI
 
 struct SearchBarView: View {
     @Binding var text: String
-    @FocusState private var isFocused: Bool
+    @FocusState.Binding var isFocused: Bool
 
     var body: some View {
         HStack(spacing: 8) {
@@ -37,8 +37,5 @@ struct SearchBarView: View {
         .padding(.vertical, 8)
         .background(Color.primary.opacity(0.05))
         .clipShape(RoundedRectangle(cornerRadius: 8))
-        .onAppear {
-            isFocused = true
-        }
     }
 }

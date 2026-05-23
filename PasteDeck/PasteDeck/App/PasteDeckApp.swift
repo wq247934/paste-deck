@@ -91,8 +91,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         clipboardMonitor?.startMonitoring()
 
         hotKeyManager = HotKeyManager()
-        hotKeyManager?.registerHotKey(keyCode: 9, modifiers: .command) { [weak self] in
-            self?.toggleMainPanel()
+        hotKeyManager?.registerHotKey(keyCode: 9, modifiers: [.command, .shift]) { [weak self] in
+            DispatchQueue.main.async {
+                self?.toggleMainPanel()
+            }
         }
 
         mainPanelController = MainPanelController()

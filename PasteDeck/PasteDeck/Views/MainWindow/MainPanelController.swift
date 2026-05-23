@@ -10,7 +10,7 @@ import AppKit
 import SwiftUI
 import SwiftData
 
-class MainPanelController: NSObject {
+class MainPanelController: NSObject, NSWindowDelegate {
     private var panel: NSPanel?
     private var isVisible = false
 
@@ -22,7 +22,7 @@ class MainPanelController: NSObject {
     private func setupPanel() {
         let panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 800, height: 400),
-            styleMask: [.nonactivatingPanel, .borderless, .fullSizeContentView],
+            styleMask: [.titled, .closable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
@@ -33,6 +33,9 @@ class MainPanelController: NSObject {
         panel.backgroundColor = NSColor.clear
         panel.hasShadow = true
         panel.isMovableByWindowBackground = true
+        panel.titlebarAppearsTransparent = true
+        panel.titleVisibility = .hidden
+        panel.delegate = self
 
         let visualEffectView = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: 800, height: 400))
         visualEffectView.material = .hudWindow
@@ -41,8 +44,10 @@ class MainPanelController: NSObject {
         visualEffectView.wantsLayer = true
         visualEffectView.layer?.cornerRadius = 16
 
-        let hostingView = NSHostingView(rootView: MainPanelView()
-            .modelContainer(AppModelContainer.container))
+        let hostingView = NSHostingView(rootView: MainPanelView(closeHandler: { [weak self] in
+            self?.hidePanel()
+        })
+        .modelContainer(AppModelContainer.container))
 
         hostingView.frame = visualEffectView.bounds
         hostingView.autoresizingMask = NSView.AutoresizingMask([.width, .height])
@@ -85,5 +90,15 @@ class MainPanelController: NSObject {
         let y = screenFrame.origin.y + (screenFrame.height - panelSize.height) / 2 + 100
 
         panel.setFrameOrigin(NSPoint(x: x, y: y))
+    }
+
+    // NSWindowDelegate
+    func windowWillClose(_ notification: Notification) {
+        isVisible = false
+    }
+
+    func windowDidResignKey(_ notification: Notification) {
+        // 当窗口失去焦点时关闭
+        hidePanel()
     }
 }
