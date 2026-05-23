@@ -4,11 +4,8 @@
   <p><strong>A modern clipboard manager for macOS</strong></p>
   
   <p>
-    <a href="#features">Features</a> •
-    <a href="#installation">Installation</a> •
-    <a href="#usage">Usage</a> •
-    <a href="#requirements">Requirements</a> •
-    <a href="#license">License</a>
+    <a href="#features">English</a> •
+    <a href="#功能特性">中文</a>
   </p>
   
   <img src="https://img.shields.io/badge/platform-macOS%2014.0%2B-lightgrey" alt="Platform">
@@ -174,4 +171,152 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 <div align="center">
   <p>Made with ❤️ for macOS</p>
+</div>
+
+---
+
+# 功能特性
+
+### 📋 全面的剪切板历史
+- 记录你复制的所有内容：**文本**、**链接**、**图片**、**文件** 和 **颜色**
+- 自动去重，保持历史记录整洁
+- 忽略来自 PasteDeck 自身的复制，避免循环记录
+
+### ⌨ 快速访问
+- 按 **⌘ + Shift + V** 即可打开浮动面板
+- 水平滚动的卡片布局，方便浏览
+- 完整的键盘导航支持
+
+### 🎨 精美界面
+- 现代简洁的设计，灵感来自 [Paste](https://pasteapp.io)
+- 原生 macOS 风格，带有毛玻璃效果
+- 支持深色模式
+
+### 🔍 搜索与筛选
+- 实时模糊搜索所有历史记录
+- 按收藏筛选
+- 每张卡片显示内容类型标识
+
+### ⚡ 键盘快捷键
+| 按键 | 操作 |
+|-----|------|
+| `←` / `→` | 在项目间导航 |
+| `↑` / `↓` | 向上/向下翻页 |
+| `Enter` | 粘贴选中项 |
+| `Space` | 预览选中项 |
+| `Delete` | 删除选中项 |
+| `Esc` | 关闭面板 |
+
+### 📌 整理管理
+- **置顶** 重要项目，保持在顶部
+- **收藏** 项目以便快速访问
+- 右键菜单快速操作
+
+### ⚙️ 可自定义设置
+- 开机启动
+- 可配置的历史记录限制（数量和时间）
+- 缓存空间管理
+- 应用黑名单，忽略指定应用
+- 卡片大小偏好
+
+---
+
+## 安装
+
+### 从 DMG 安装（推荐）
+1. 从 [Releases](https://github.com/wq247934/paste-deck/releases) 下载最新的 `PasteDeck.dmg`
+2. 打开 DMG 文件
+3. 将 PasteDeck 拖到应用程序文件夹
+4. 从应用程序启动 PasteDeck
+
+### 从源码构建
+```bash
+# 克隆仓库
+git clone https://github.com/wq247934/paste-deck.git
+cd paste-deck/PasteDeck
+
+# 用 Xcode 打开
+open PasteDeck.xcodeproj
+
+# 构建并运行（⌘ + R）
+```
+
+---
+
+## 使用方法
+
+### 首次启动
+首次启动时，PasteDeck 会请求**辅助功能权限**。这是以下功能所需的：
+- 全局快捷键监听（⌘ + Shift + V）
+- 剪切板变化检测
+
+**授予权限：**
+1. 打开 **系统设置** → **隐私与安全性** → **辅助功能**
+2. 点击 **+** 按钮
+3. 从应用程序中添加 **PasteDeck**
+
+### 基本工作流程
+1. 复制任何内容（文本、图片、文件等）- PasteDeck 会自动记录
+2. 按 **⌘ + Shift + V** 打开面板
+3. 使用方向键导航或点击选择
+4. 按 **Enter** 粘贴，或按 **Space** 预览
+
+### 菜单栏
+PasteDeck 会在菜单栏显示一个剪切板图标。点击可以：
+- 打开主面板
+- 访问设置
+- 退出应用
+
+---
+
+## 系统要求
+
+- macOS 14.0 (Sonoma) 或更高版本
+- 辅助功能权限（首次启动时会提示）
+
+---
+
+## 技术细节
+
+### 架构
+- **界面**：SwiftUI 与 AppKit 集成用于窗口管理
+- **存储**：SwiftData 用于持久化历史记录
+- **缓存**：本地文件缓存位于 `~/Library/Caches/PasteDeck/`
+
+### 支持的内容类型
+| 类型 | 检测方式 | 预览 |
+|------|---------|------|
+| 文本 | 普通字符串 | 完整文本显示 |
+| 链接 | URL 模式检测 | 可点击链接 |
+| 图片 | TIFF/PNG 数据 | 图片预览 |
+| 文件 | 文件 URL | 文件图标和元数据 |
+| 颜色 | NSColor 数据 | 色块和十六进制值 |
+
+---
+
+## 开发计划
+
+- [ ] 自定义快捷键配置
+- [ ] iCloud 同步
+- [ ] 跨设备剪切板共享
+- [ ] 更多预览类型（Markdown、代码高亮）
+- [ ] 插件系统
+
+---
+
+## 许可证
+
+本项目采用 MIT 许可证 - 详情见 [LICENSE](LICENSE) 文件。
+
+---
+
+## 致谢
+
+- 设计灵感来自 [Paste](https://pasteapp.io)
+- 使用 [SwiftUI](https://developer.apple.com/xcode/swiftui/) 和 [SwiftData](https://developer.apple.com/documentation/swiftdata) 构建
+
+---
+
+<div align="center">
+  <p>用 ❤️ 为 macOS 打造</p>
 </div>
