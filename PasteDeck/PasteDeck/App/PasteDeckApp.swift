@@ -43,14 +43,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var mainPanelController: MainPanelController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        print("AppDelegate: 应用启动")
+
+        // 先检查辅助功能权限
+        let trusted = AXIsProcessTrusted()
+        print("AppDelegate: 辅助功能权限 = \(trusted)")
+
         // Setup status bar icon
         setupStatusBar()
 
         // Initialize services
         setupServices()
-
-        // Request Accessibility permissions
-        requestAccessibilityPermission()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -64,6 +67,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if let button = statusItem?.button {
             button.image = NSImage(systemSymbolName: "clipboard.on.clipboard", accessibilityDescription: "PasteDeck")
             button.image?.isTemplate = true
+            print("AppDelegate: 菜单栏图标已创建")
+        } else {
+            print("AppDelegate: 无法创建菜单栏图标")
         }
 
         let menu = NSMenu()
@@ -89,13 +95,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let modelContext = ModelContext(AppModelContainer.container)
         clipboardMonitor = ClipboardMonitor(modelContext: modelContext)
         clipboardMonitor?.startMonitoring()
+        print("AppDelegate: 剪切板监听已启动")
 
+        // 注册全局快捷键: ⌘+Shift+V
+        // V 键的 keyCode 是 9
         hotKeyManager = HotKeyManager()
         hotKeyManager?.registerHotKey(keyCode: 9, modifiers: [.command, .shift]) { [weak self] in
             DispatchQueue.main.async {
+                print("AppDelegate: 快捷键回调执行")
                 self?.toggleMainPanel()
             }
         }
+        print("AppDelegate: 快捷键注册状态 = \(hotKeyManager?.isHotKeyRegistered() ?? false)")
 
         mainPanelController = MainPanelController()
     }
@@ -131,6 +142,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func toggleMainPanel() {
+        print("AppDelegate: toggleMainPanel, isVisible=\(mainPanelController != nil)")
         mainPanelController?.togglePanel()
     }
 }

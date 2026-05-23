@@ -59,8 +59,12 @@ class MainPanelController: NSObject, NSWindowDelegate {
     }
 
     func showPanel() {
-        guard let panel = panel else { return }
+        guard let panel = panel else {
+            print("MainPanelController: showPanel - panel is nil")
+            return
+        }
 
+        print("MainPanelController: showPanel")
         centerPanel(panel)
         panel.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -68,11 +72,13 @@ class MainPanelController: NSObject, NSWindowDelegate {
     }
 
     func hidePanel() {
+        print("MainPanelController: hidePanel")
         panel?.orderOut(nil)
         isVisible = false
     }
 
     func togglePanel() {
+        print("MainPanelController: togglePanel, isVisible=\(isVisible)")
         if isVisible {
             hidePanel()
         } else {
