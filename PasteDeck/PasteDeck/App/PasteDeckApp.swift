@@ -69,12 +69,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let trusted = AXIsProcessTrusted()
 
         if !trusted {
-            // Trigger system permission dialog
+            // 触发系统权限弹窗
             let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
             _ = AXIsProcessTrustedWithOptions(options as CFDictionary)
 
-            // Show custom alert with instructions
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            // 延迟显示自定义提示（因为系统弹窗需要用户操作）
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                 let alert = NSAlert()
                 alert.messageText = "需要辅助功能权限"
                 alert.informativeText = """
@@ -85,7 +85,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 请在系统设置中授权：
                 系统设置 → 隐私与安全性 → 辅助功能
 
-                点击"打开系统设置"按钮，然后添加 PasteDeck
+                授权后 PasteDeck 会自动生效，无需重启。
+
+                ⚠️ 如果之前授权过但重装后失效，请在辅助功能列表中
+                先删除旧条目，再重新添加 PasteDeck。
                 """
                 alert.alertStyle = .warning
                 alert.addButton(withTitle: "打开系统设置")

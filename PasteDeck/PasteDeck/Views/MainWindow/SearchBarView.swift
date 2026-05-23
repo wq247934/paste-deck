@@ -11,6 +11,9 @@ struct SearchBarView: View {
     @Binding var text: String
     @FocusState.Binding var isFocused: Bool
 
+    /// 当搜索框按 Enter 时的回调
+    var onSubmit: (() -> Void)? = nil
+
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
@@ -21,6 +24,9 @@ struct SearchBarView: View {
                 .textFieldStyle(.plain)
                 .font(.system(size: 14))
                 .focused($isFocused)
+                .onSubmit {
+                    onSubmit?()
+                }
 
             if !text.isEmpty {
                 Button(action: {

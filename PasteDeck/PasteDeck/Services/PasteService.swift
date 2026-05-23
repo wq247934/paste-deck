@@ -23,15 +23,28 @@ class PasteService {
         self.clipboardMonitor = monitor
     }
 
-    /// Copies item to clipboard and simulates Cmd+V keystroke
-    func paste(_ item: ClipboardItem) {
-        // Pause monitoring to avoid recording pasted content
+    /// Copies item to clipboard (call before hiding panel)
+    func preparePaste(_ item: ClipboardItem) {
         clipboardMonitor?.pause()
-
         copyToPasteboard(item)
+    }
+
+    /// Simulates Cmd+V after panel is hidden and previous app has focus
+    func performPaste() {
         simulatePaste()
 
         // Resume monitoring after paste completes
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            self?.clipboardMonitor?.resume()
+        }
+    }
+
+    /// Legacy: Copies item to clipboard and simulates Cmd+V keystroke
+    /// ⚠️ Should not be used when panel is visible — use preparePaste + performPaste instead
+    func paste(_ item: ClipboardItem) {
+        clipboardMonitor?.pause()
+        copyToPasteboard(item)
+        simulatePaste()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             self?.clipboardMonitor?.resume()
         }

@@ -96,6 +96,9 @@ class MainPanelController: NSObject, NSWindowDelegate {
         canCloseOnResignKey = false
         panel?.orderOut(nil)
         isVisible = false
+        // 隐藏 app 自身，让之前的 app 重新获得焦点
+        // 这对后续 simulatePaste(Cmd+V) 至关重要
+        NSApp.hide(nil)
     }
 
     func togglePanel() {
