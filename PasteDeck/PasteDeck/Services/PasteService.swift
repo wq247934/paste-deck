@@ -2,35 +2,42 @@
 //  PasteService.swift
 //  PasteDeck
 //
+//  Handles clipboard operations and simulated paste keystrokes.
+//  Coordinates with ClipboardMonitor to avoid recording self-pasted content.
+//
 //  Created on 2026-05-23.
 //
 
 import Foundation
 import AppKit
 
+/// Handles clipboard copy and paste operations
 class PasteService {
     static let shared = PasteService()
     private var clipboardMonitor: ClipboardMonitor?
 
     private init() {}
 
+    /// Sets the clipboard monitor reference for pause/resume during paste
     func setClipboardMonitor(_ monitor: ClipboardMonitor) {
         self.clipboardMonitor = monitor
     }
 
+    /// Copies item to clipboard and simulates Cmd+V keystroke
     func paste(_ item: ClipboardItem) {
-        // 暂停监听，避免记录粘贴的内容
+        // Pause monitoring to avoid recording pasted content
         clipboardMonitor?.pause()
 
         copyToPasteboard(item)
         simulatePaste()
 
-        // 延迟恢复监听
+        // Resume monitoring after paste completes
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             self?.clipboardMonitor?.resume()
         }
     }
 
+    /// Copies clipboard item content to the system pasteboard
     func copyToPasteboard(_ item: ClipboardItem) {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
@@ -70,6 +77,9 @@ class PasteService {
         }
     }
 
+    // MARK: - Private Methods
+
+    /// Simulates Cmd+V keystroke using CGEvent
     private func simulatePaste() {
         let source = CGEventSource(stateID: .combinedSessionState)
 
@@ -84,7 +94,10 @@ class PasteService {
     }
 }
 
+// MARK: - NSColor Hex Extension
+
 extension NSColor {
+    /// Creates NSColor from hex string (e.g., "#FF5733" or "#FF573388")
     convenience init?(hex: String) {
         var hexSanitized = hex.trimmingCharacters(in: .whitespacesAndNewlines)
         hexSanitized = hexSanitized.replacingOccurrences(of: "#", with: "")
