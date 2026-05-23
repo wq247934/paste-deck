@@ -128,7 +128,14 @@ class MainPanelController: NSObject, NSWindowDelegate {
 
     func windowDidResignKey(_ notification: Notification) {
         print("MainPanelController: windowDidResignKey, canCloseOnResignKey=\(canCloseOnResignKey)")
-        if canCloseOnResignKey {
+
+        // 检查是否打开了预览窗口
+        let hasPreviewWindow = NSApp.windows.contains { window in
+            window.contentViewController?.view is NSHostingView<PreviewWindow>
+        }
+
+        if canCloseOnResignKey && !hasPreviewWindow {
+            // 只有在没有预览窗口时才关闭
             hidePanel()
         }
     }
