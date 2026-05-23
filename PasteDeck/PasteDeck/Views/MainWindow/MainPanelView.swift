@@ -181,10 +181,12 @@ struct MainPanelView: View {
 
     private func showPreviewWindow(item: ClipboardItem) {
         // 创建独立的预览窗口，不使用 sheet
-        let previewView = PreviewWindow(item: item)
+        let previewView = PreviewWindow(item: item, onClose: {
+            // 关闭预览窗口后会自动调用
+        })
         let hostingController = NSHostingController(rootView: previewView)
 
-        let window = NSWindow(contentViewController: hostingController)
+        let window = PreviewNSWindow(contentViewController: hostingController)
         window.styleMask = [.titled, .closable, .fullSizeContentView]
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
