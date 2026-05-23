@@ -2,6 +2,10 @@
 //  ClipboardMonitor.swift
 //  PasteDeck
 //
+//  Monitors clipboard changes and saves content to SwiftData.
+//  Supports text, links, images, files, and colors.
+//  Includes deduplication and app blacklist filtering.
+//
 //  Created on 2026-05-23.
 //
 
@@ -9,6 +13,7 @@ import Foundation
 import AppKit
 import SwiftData
 
+/// Monitors system clipboard for changes and records clipboard history
 class ClipboardMonitor {
     private var modelContext: ModelContext
     private var changeCount: Int
@@ -22,34 +27,38 @@ class ClipboardMonitor {
         self.cacheManager = CacheManager()
     }
 
+    // MARK: - Public Methods
+
+    /// Starts monitoring clipboard changes at regular intervals
     func startMonitoring() {
         timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             self?.checkForChanges()
         }
     }
 
+    /// Stops clipboard monitoring
     func stopMonitoring() {
         timer?.invalidate()
         timer = nil
     }
 
-    /// 暂停监听（粘贴时使用）
+    /// Temporarily pauses monitoring (used during paste operations)
     func pause() {
         isPaused = true
     }
 
-    /// 恢复监听
+    /// Resumes monitoring after a brief delay to allow paste operation to complete
     func resume() {
-        // 延迟恢复，给粘贴操作留出时间
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
             self?.isPaused = false
-            // 更新 changeCount，避免记录粘贴的内容
+            // Update changeCount to avoid recording pasted content
             self?.changeCount = NSPasteboard.general.changeCount
         }
     }
 
+    // MARK: - Private Methods
+
     private func checkForChanges() {
-        // 暂停时不监听
         guard !isPaused else { return }
 
         let pasteboard = NSPasteboard.general
@@ -58,28 +67,25 @@ class ClipboardMonitor {
         guard currentChangeCount != changeCount else { return }
         changeCount = currentChangeCount
 
-        // 检查是否来自 PasteDeck 自己
+        // Ignore copies from PasteDeck itself
         let sourceApp = getFrontmostAppName()
         if sourceApp == "PasteDeck" {
-            print("ClipboardMonitor: 忽略来自 PasteDeck 的复制")
             return
         }
 
+        // Skip blacklisted apps
         if let app = sourceApp, isBlacklisted(app) {
             return
         }
 
         if let item = parsePasteboard(pasteboard, sourceApp: sourceApp) {
-            // 检查是否重复
             if !isDuplicate(item) {
                 saveItem(item)
-            } else {
-                print("ClipboardMonitor: 忽略重复内容")
             }
         }
     }
 
-    /// 检查是否与最近的内容重复
+    /// Checks if the item is a duplicate of the most recent entry
     private func isDuplicate(_ item: ClipboardItem) -> Bool {
         let descriptor = FetchDescriptor<ClipboardItem>(
             sortBy: [SortDescriptor(\.createdAt, order: .reverse)]

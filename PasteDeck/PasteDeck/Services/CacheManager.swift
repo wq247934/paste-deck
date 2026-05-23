@@ -2,12 +2,16 @@
 //  CacheManager.swift
 //  PasteDeck
 //
+//  Manages local file cache for clipboard images and files.
+//  Cache directory: ~/Library/Caches/PasteDeck/
+//
 //  Created on 2026-05-23.
 //
 
 import Foundation
 import AppKit
 
+/// Manages local cache storage for clipboard images and files
 class CacheManager {
     private let fileManager = FileManager.default
     private let imageCacheDirectory: URL
@@ -23,6 +27,11 @@ class CacheManager {
         createDirectoriesIfNeeded()
     }
 
+    // MARK: - Public Methods
+
+    /// Saves an NSImage to the cache as PNG
+    /// - Parameter image: The image to save
+    /// - Returns: The file path of the saved image, or nil on failure
     func saveImage(_ image: NSImage) -> String? {
         let fileName = UUID().uuidString + ".png"
         let fileURL = imageCacheDirectory.appendingPathComponent(fileName)
@@ -37,11 +46,11 @@ class CacheManager {
             try pngData.write(to: fileURL)
             return fileURL.path
         } catch {
-            print("Failed to save image: \(error)")
             return nil
         }
     }
 
+    /// Returns the file size in bytes at the given path
     func getFileSize(at path: String) -> Int {
         guard let attributes = try? fileManager.attributesOfItem(atPath: path),
               let fileSize = attributes[.size] as? Int else {
@@ -50,6 +59,7 @@ class CacheManager {
         return fileSize
     }
 
+    /// Calculates total cache size in bytes
     func getTotalCacheSize() -> Int {
         var totalSize = 0
 
@@ -66,6 +76,7 @@ class CacheManager {
         return totalSize
     }
 
+    /// Removes all cached files
     func clearAllCache() {
         for directory in [imageCacheDirectory, fileCacheDirectory] {
             if let enumerator = fileManager.enumerator(at: directory, includingPropertiesForKeys: nil) {
@@ -75,6 +86,8 @@ class CacheManager {
             }
         }
     }
+
+    // MARK: - Private Methods
 
     private func createDirectoriesIfNeeded() {
         for directory in [imageCacheDirectory, fileCacheDirectory] {

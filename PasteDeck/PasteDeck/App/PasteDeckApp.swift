@@ -2,6 +2,9 @@
 //  PasteDeckApp.swift
 //  PasteDeck
 //
+//  A macOS clipboard manager that records all copied content
+//  and provides quick access via keyboard shortcut.
+//
 //  Created on 2026-05-23.
 //
 
@@ -12,6 +15,7 @@ import SwiftData
 struct PasteDeckApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
+    /// SwiftData container for clipboard items and app settings
     let modelContainer: ModelContainer
 
     init() {
@@ -36,6 +40,8 @@ struct PasteDeckApp: App {
 }
 
 // MARK: - App Delegate
+
+/// Main application delegate handling lifecycle, status bar, and services
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var clipboardMonitor: ClipboardMonitor?
@@ -43,29 +49,31 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var mainPanelController: MainPanelController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        print("AppDelegate: 应用启动")
-        print("AppDelegate: 应用路径 = \(Bundle.main.bundlePath)")
-
-        // 先检查辅助功能权限，如果没有则请求
+        // Check and request accessibility permission for global hotkey and clipboard monitoring
         checkAndRequestAccessibilityPermission()
 
-        // Setup status bar icon
+        // Setup UI components
         setupStatusBar()
 
-        // Initialize services
+        // Initialize background services
         setupServices()
     }
 
+    func applicationWillTerminate(_ notification: Notification) {
+        hotKeyManager?.unregister()
+    }
+
+    // MARK: - Accessibility Permission
+
     private func checkAndRequestAccessibilityPermission() {
         let trusted = AXIsProcessTrusted()
-        print("AppDelegate: 辅助功能权限 = \(trusted)")
 
         if !trusted {
-            // 弹出系统权限请求对话框
+            // Trigger system permission dialog
             let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
-            let _ = AXIsProcessTrustedWithOptions(options as CFDictionary)
+            _ = AXIsProcessTrustedWithOptions(options as CFDictionary)
 
-            // 显示提示
+            // Show custom alert with instructions
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 let alert = NSAlert()
                 alert.messageText = "需要辅助功能权限"
@@ -91,10 +99,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    func applicationWillTerminate(_ notification: Notification) {
-        // Cleanup
-        hotKeyManager?.unregister()
-    }
+    // MARK: - Status Bar Setup
 
     private func setupStatusBar() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -102,11 +107,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if let button = statusItem?.button {
             button.image = NSImage(systemSymbolName: "clipboard.on.clipboard", accessibilityDescription: "PasteDeck")
             button.image?.isTemplate = true
-            print("AppDelegate: 菜单栏图标已创建")
-        } else {
-            print("AppDelegate: 无法创建菜单栏图标")
         }
 
+        // Create menu
         let menu = NSMenu()
 
         let openItem = NSMenuItem(title: "打开 PasteDeck", action: #selector(openMainPanel), keyEquivalent: "v")
@@ -126,39 +129,30 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem?.menu = menu
     }
 
+    // MARK: - Services Setup
+
     private func setupServices() {
+        // Start clipboard monitoring
         let modelContext = ModelContext(AppModelContainer.container)
         clipboardMonitor = ClipboardMonitor(modelContext: modelContext)
         clipboardMonitor?.startMonitoring()
-        print("AppDelegate: 剪切板监听已启动")
 
-        // 设置 PasteService 的剪切板监听器
+        // Connect clipboard monitor to paste service
         PasteService.shared.setClipboardMonitor(clipboardMonitor!)
 
-        // 注册全局快捷键: ⌘+Shift+V
-        // V 键的 keyCode 是 9
+        // Register global hotkey: ⌘+Shift+V (keyCode 9 = V)
         hotKeyManager = HotKeyManager()
         hotKeyManager?.registerHotKey(keyCode: 9, modifiers: [.command, .shift]) { [weak self] in
             DispatchQueue.main.async {
-                print("AppDelegate: 快捷键回调执行")
                 self?.toggleMainPanel()
             }
         }
-        print("AppDelegate: 快捷键注册状态 = \(hotKeyManager?.isHotKeyRegistered() ?? false)")
 
+        // Initialize main panel controller
         mainPanelController = MainPanelController()
     }
 
-    private func requestAccessibilityPermission() {
-        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
-        let trusted = AXIsProcessTrustedWithOptions(options as CFDictionary)
-
-        if trusted {
-            print("Accessibility permission granted")
-        } else {
-            print("Accessibility permission required for clipboard monitoring and hotkeys")
-        }
-    }
+    // MARK: - Menu Actions
 
     @objc private func openMainPanel() {
         mainPanelController?.showPanel()
@@ -180,12 +174,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func toggleMainPanel() {
-        print("AppDelegate: toggleMainPanel, isVisible=\(mainPanelController != nil)")
         mainPanelController?.togglePanel()
     }
 }
 
 // MARK: - Model Container Singleton
+
+/// Shared SwiftData container for the entire app
 enum AppModelContainer {
     static let container: ModelContainer = {
         do {

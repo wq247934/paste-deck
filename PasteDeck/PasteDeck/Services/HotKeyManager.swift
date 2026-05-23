@@ -2,62 +2,55 @@
 //  HotKeyManager.swift
 //  PasteDeck
 //
+//  Manages global hotkey registration using NSEvent monitoring.
+//  Requires accessibility permission for global key event capture.
+//
 //  Created on 2026-05-23.
 //
 
 import Foundation
 import AppKit
 
+/// Manages global hotkey registration and handling
 class HotKeyManager {
     private var eventMonitor: Any?
     private var hotKeyCallback: (() -> Void)?
     private var isRegistered = false
 
-    init() {
-        print("HotKeyManager: 初始化")
-    }
-
     deinit {
         unregister()
     }
 
+    // MARK: - Public Methods
+
+    /// Registers a global hotkey with the specified key code and modifiers
+    /// - Parameters:
+    ///   - keyCode: The virtual key code (e.g., 9 for 'V')
+    ///   - modifiers: Modifier flags (e.g., .command, .shift)
+    ///   - callback: Action to execute when hotkey is triggered
     func registerHotKey(keyCode: UInt32, modifiers: NSEvent.ModifierFlags, callback: @escaping () -> Void) {
         unregister()
         hotKeyCallback = callback
 
-        // 检查辅助功能权限
+        // Check accessibility permission - required for global event monitoring
         let trusted = AXIsProcessTrusted()
-        print("HotKeyManager: 辅助功能权限 = \(trusted)")
 
         if !trusted {
-            print("HotKeyManager: 没有辅助功能权限，无法注册全局快捷键")
-            // 请求权限
+            // Request permission via system dialog
             let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
             _ = AXIsProcessTrustedWithOptions(options as CFDictionary)
             return
         }
 
-        // 使用 NSEvent 全局监听
+        // Register global keyDown event monitor
         let expectedModifiers = modifiers
         let expectedKeyCode = keyCode
 
-        print("HotKeyManager: 注册快捷键 keyCode=\(keyCode), modifiers=\(modifiers.rawValue)")
-
         eventMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            // 检查修饰键
             let eventModifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
             let eventKeyCode = event.keyCode
 
-            // 打印调试信息
-            if eventKeyCode == expectedKeyCode {
-                print("HotKeyManager: 检测到 V 键按下")
-                print("  - 期望修饰键: \(expectedModifiers.rawValue)")
-                print("  - 实际修饰键: \(eventModifiers.rawValue)")
-                print("  - 匹配: \(eventModifiers == expectedModifiers)")
-            }
-
             if eventKeyCode == expectedKeyCode && eventModifiers == expectedModifiers {
-                print("HotKeyManager: 快捷键匹配，执行回调")
                 DispatchQueue.main.async {
                     self?.hotKeyCallback?()
                 }
@@ -65,18 +58,18 @@ class HotKeyManager {
         }
 
         isRegistered = true
-        print("HotKeyManager: 快捷键注册成功")
     }
 
+    /// Unregisters the current hotkey monitor
     func unregister() {
         if let monitor = eventMonitor {
             NSEvent.removeMonitor(monitor)
             eventMonitor = nil
             isRegistered = false
-            print("HotKeyManager: 快捷键已注销")
         }
     }
 
+    /// Returns whether a hotkey is currently registered
     func isHotKeyRegistered() -> Bool {
         return isRegistered
     }

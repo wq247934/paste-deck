@@ -2,6 +2,9 @@
 //  MainPanelController.swift
 //  PasteDeck
 //
+//  Controls the main floating panel that displays clipboard history.
+//  Handles panel visibility, positioning, and window lifecycle.
+//
 //  Created on 2026-05-23.
 //
 
@@ -10,10 +13,15 @@ import AppKit
 import SwiftUI
 import SwiftData
 
+/// Manages the main floating panel for clipboard history display
 class MainPanelController: NSObject, NSWindowDelegate {
     private var panel: NSPanel?
     private var isVisible = false
+
+    /// Prevents auto-close when opening preview window
     private var canCloseOnResignKey = false
+
+    /// Debounce timer to prevent rapid toggle from key repeat
     private var lastToggleTime: Date = Date.distantPast
 
     override init() {
@@ -21,7 +29,10 @@ class MainPanelController: NSObject, NSWindowDelegate {
         setupPanel()
     }
 
+    // MARK: - Panel Setup
+
     private func setupPanel() {
+        // Create floating panel with transparent title bar
         let panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 800, height: 400),
             styleMask: [.titled, .closable, .fullSizeContentView, .nonactivatingPanel],
@@ -29,6 +40,7 @@ class MainPanelController: NSObject, NSWindowDelegate {
             defer: false
         )
 
+        // Configure window appearance and behavior
         panel.level = NSWindow.Level.popUpMenu
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
         panel.isOpaque = false
@@ -41,6 +53,7 @@ class MainPanelController: NSObject, NSWindowDelegate {
         panel.acceptsMouseMovedEvents = true
         panel.hidesOnDeactivate = false
 
+        // Add blur background effect
         let visualEffectView = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: 800, height: 400))
         visualEffectView.material = .hudWindow
         visualEffectView.blendingMode = .behindWindow
@@ -48,6 +61,7 @@ class MainPanelController: NSObject, NSWindowDelegate {
         visualEffectView.wantsLayer = true
         visualEffectView.layer?.cornerRadius = 16
 
+        // Embed SwiftUI view
         let hostingView = NSHostingView(rootView: MainPanelView(closeHandler: { [weak self] in
             self?.hidePanel()
         })
@@ -58,17 +72,13 @@ class MainPanelController: NSObject, NSWindowDelegate {
         visualEffectView.addSubview(hostingView)
 
         panel.contentView = visualEffectView
-
         self.panel = panel
     }
 
-    func showPanel() {
-        guard let panel = panel else {
-            print("MainPanelController: showPanel - panel is nil")
-            return
-        }
+    // MARK: - Public Methods
 
-        print("MainPanelController: showPanel")
+    func showPanel() {
+        guard let panel = panel else { return }
 
         canCloseOnResignKey = false
         centerPanel(panel)
@@ -76,31 +86,25 @@ class MainPanelController: NSObject, NSWindowDelegate {
         NSApp.activate(ignoringOtherApps: true)
         isVisible = true
 
-        // 延迟后才允许失去焦点关闭
+        // Delay enabling auto-close to prevent immediate dismissal
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             self?.canCloseOnResignKey = true
-            print("MainPanelController: canCloseOnResignKey = true")
         }
     }
 
     func hidePanel() {
-        print("MainPanelController: hidePanel")
         canCloseOnResignKey = false
         panel?.orderOut(nil)
         isVisible = false
     }
 
     func togglePanel() {
-        // 防抖动：300ms 内只响应一次
+        // Debounce: ignore toggles within 300ms (prevents key repeat issues)
         let now = Date()
         let elapsed = now.timeIntervalSince(lastToggleTime)
-        if elapsed < 0.3 {
-            print("MainPanelController: togglePanel 忽略（防抖动）elapsed=\(elapsed)")
-            return
-        }
+        if elapsed < 0.3 { return }
         lastToggleTime = now
 
-        print("MainPanelController: togglePanel, isVisible=\(isVisible)")
         if isVisible {
             hidePanel()
         } else {
@@ -108,39 +112,36 @@ class MainPanelController: NSObject, NSWindowDelegate {
         }
     }
 
+    // MARK: - Private Methods
+
     private func centerPanel(_ panel: NSPanel) {
         guard let screen = NSScreen.main else { return }
 
         let screenFrame = screen.visibleFrame
         let panelSize = panel.frame.size
 
+        // Center horizontally, slightly above center vertically
         let x = screenFrame.origin.x + (screenFrame.width - panelSize.width) / 2
         let y = screenFrame.origin.y + (screenFrame.height - panelSize.height) / 2 + 100
 
         panel.setFrameOrigin(NSPoint(x: x, y: y))
     }
 
-    // NSWindowDelegate
+    // MARK: - NSWindowDelegate
+
     func windowWillClose(_ notification: Notification) {
-        print("MainPanelController: windowWillClose")
         isVisible = false
     }
 
     func windowDidResignKey(_ notification: Notification) {
-        print("MainPanelController: windowDidResignKey, canCloseOnResignKey=\(canCloseOnResignKey)")
-
-        // 检查是否打开了预览窗口
+        // Check if preview window is open - don't close main panel if so
         let hasPreviewWindow = NSApp.windows.contains { window in
             window.contentViewController?.view is NSHostingView<PreviewWindow>
         }
 
+        // Only auto-close if no preview window is open
         if canCloseOnResignKey && !hasPreviewWindow {
-            // 只有在没有预览窗口时才关闭
             hidePanel()
         }
-    }
-
-    func windowDidBecomeKey(_ notification: Notification) {
-        print("MainPanelController: windowDidBecomeKey")
     }
 }
