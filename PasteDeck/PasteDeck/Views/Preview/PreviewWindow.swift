@@ -6,13 +6,10 @@
 //
 
 import SwiftUI
-import Quartz
 
 struct PreviewWindow: View {
     let item: ClipboardItem
     var onClose: (() -> Void)?
-
-    @State private var showQuickLook = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -61,14 +58,6 @@ struct PreviewWindow: View {
 
                 Spacer()
 
-                // 文件类型显示 Quick Look 按钮
-                if item.contentType == .file || item.contentType == .image {
-                    Button("Quick Look") {
-                        openQuickLook()
-                    }
-                    .buttonStyle(.bordered)
-                }
-
                 Button("复制") {
                     PasteService.shared.copyToPasteboard(item)
                 }
@@ -85,14 +74,6 @@ struct PreviewWindow: View {
         .frame(width: 600, height: 450)
         .background(.regularMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 16))
-        .onAppear {
-            // 如果是文件或图片，自动打开 Quick Look
-            if item.contentType == .file || item.contentType == .image {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                    openQuickLook()
-                }
-            }
-        }
     }
 
     @ViewBuilder
@@ -137,14 +118,26 @@ struct PreviewWindow: View {
                 Text("\(item.imageWidth) x \(item.imageHeight)")
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
-
-                Text("按 Quick Look 按钮查看大图")
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
             }
 
         case .file:
-            filePreview
+            VStack(spacing: 16) {
+                Image(systemName: fileIcon)
+                    .font(.system(size: 48))
+                    .foregroundColor(.secondary)
+
+                Text(item.fileName ?? "文件")
+                    .font(.system(size: 16, weight: .medium))
+
+                VStack(spacing: 8) {
+                    infoRow(label: "类型", value: fileTypeDescription)
+                    infoRow(label: "大小", value: ByteCountFormatter.string(fromByteCount: Int64(item.fileSize), countStyle: .file))
+                    if let filePath = item.filePath {
+                        infoRow(label: "路径", value: filePath)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity)
 
         case .color:
             VStack(spacing: 16) {
@@ -160,32 +153,7 @@ struct PreviewWindow: View {
         }
     }
 
-    // MARK: - File Preview
-
-    private var filePreview: some View {
-        VStack(spacing: 16) {
-            Image(systemName: fileIcon)
-                .font(.system(size: 48))
-                .foregroundColor(.secondary)
-
-            Text(item.fileName ?? "文件")
-                .font(.system(size: 16, weight: .medium))
-
-            VStack(spacing: 8) {
-                infoRow(label: "类型", value: fileTypeDescription)
-                infoRow(label: "大小", value: ByteCountFormatter.string(fromByteCount: Int64(item.fileSize), countStyle: .file))
-                if let filePath = item.filePath {
-                    infoRow(label: "路径", value: filePath)
-                }
-            }
-
-            Text("点击 Quick Look 按钮预览文件内容")
-                .font(.system(size: 12))
-                .foregroundColor(.secondary)
-                .padding(.top, 8)
-        }
-        .frame(maxWidth: .infinity)
-    }
+    // MARK: - File Helpers
 
     private var fileTypeDescription: String {
         guard let fileName = item.fileName else { return "未知" }
@@ -248,25 +216,6 @@ struct PreviewWindow: View {
         }
     }
 
-    // MARK: - Quick Look
-
-    private func openQuickLook() {
-        // 使用 Quick Look 预览
-        if item.contentType == .image {
-            // 图片预览
-            if let imagePath = item.imagePath {
-                let url = URL(fileURLWithPath: imagePath)
-                QuickLookPreview.open(url: url)
-            }
-        } else if item.contentType == .file {
-            // 文件预览
-            if let filePath = item.filePath {
-                let url = URL(fileURLWithPath: filePath)
-                QuickLookPreview.open(url: url)
-            }
-        }
-    }
-
     private func infoRow(label: String, value: String) -> some View {
         HStack {
             Text(label)
@@ -280,39 +229,6 @@ struct PreviewWindow: View {
                 .textSelection(.enabled)
 
             Spacer()
-        }
-    }
-}
-
-// MARK: - Quick Look Preview Helper
-
-class QuickLookPreview {
-    private static var previewPanel: QLPreviewPanel?
-
-    static func open(url: URL) {
-        // 检查文件是否存在
-        guard FileManager.default.fileExists(atPath: url.path) else {
-            print("QuickLook: 文件不存在: \(url.path)")
-            return
-        }
-
-        // 使用 qlmanage 命令行工具打开 Quick Look
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/qlmanage")
-        process.arguments = ["-p", url.path]
-
-        do {
-            try process.run()
-        } catch {
-            print("QuickLook: 启动失败: \(error)")
-        }
-    }
-
-    static func close() {
-        // 关闭 Quick Look 面板
-        if let panel = previewPanel {
-            panel.orderOut(nil)
-            previewPanel = nil
         }
     }
 }
