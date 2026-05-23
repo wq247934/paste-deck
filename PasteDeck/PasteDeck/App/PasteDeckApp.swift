@@ -102,11 +102,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Status Bar Setup
 
     private func setupStatusBar() {
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
 
         if let button = statusItem?.button {
-            button.image = NSImage(systemSymbolName: "clipboard.on.clipboard", accessibilityDescription: "PasteDeck")
-            button.image?.isTemplate = true
+            // 使用更明确的剪贴板图标
+            let image = NSImage(systemSymbolName: "clipboard.fill", accessibilityDescription: "PasteDeck")
+            image?.isTemplate = true
+            button.image = image
+            button.imageScaling = .scaleProportionallyDown
         }
 
         // Create menu
