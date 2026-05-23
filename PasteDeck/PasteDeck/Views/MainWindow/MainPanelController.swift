@@ -13,6 +13,7 @@ import SwiftData
 class MainPanelController: NSObject, NSWindowDelegate {
     private var panel: NSPanel?
     private var isVisible = false
+    private var canCloseOnResignKey = false
 
     override init() {
         super.init()
@@ -66,13 +67,22 @@ class MainPanelController: NSObject, NSWindowDelegate {
 
         print("MainPanelController: showPanel")
         centerPanel(panel)
+
+        // 先设置 canCloseOnResignKey = false，防止刚打开就关闭
+        canCloseOnResignKey = false
         panel.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         isVisible = true
+
+        // 延迟 0.3 秒后才允许失去焦点关闭
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            self?.canCloseOnResignKey = true
+        }
     }
 
     func hidePanel() {
         print("MainPanelController: hidePanel")
+        canCloseOnResignKey = false
         panel?.orderOut(nil)
         isVisible = false
     }
@@ -104,7 +114,12 @@ class MainPanelController: NSObject, NSWindowDelegate {
     }
 
     func windowDidResignKey(_ notification: Notification) {
-        // 当窗口失去焦点时关闭
-        hidePanel()
+        // 只有在允许的情况下才关闭
+        if canCloseOnResignKey {
+            print("MainPanelController: windowDidResignKey - 关闭窗口")
+            hidePanel()
+        } else {
+            print("MainPanelController: windowDidResignKey - 忽略（刚打开）")
+        }
     }
 }
