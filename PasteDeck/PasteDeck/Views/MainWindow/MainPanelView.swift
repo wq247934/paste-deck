@@ -16,7 +16,6 @@ struct MainPanelView: View {
     @State private var selectedFilter: ClipboardFilter = .all
     @State private var selectedItem: ClipboardItem?
     @State private var selectedIndex = 0
-    @State private var showPreview = false
 
     var closeHandler: (() -> Void)?
 
@@ -55,30 +54,39 @@ struct MainPanelView: View {
                 EmptyStateView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 12) {
-                        ForEach(Array(filteredItems.enumerated()), id: \.element.id) { index, item in
-                            ClipCardView(
-                                item: item,
-                                isSelected: selectedItem?.id == item.id,
-                                cardSize: cardSize
-                            )
-                            .onTapGesture {
-                                selectedIndex = index
-                                selectedItem = item
-                            }
-                            .onTapGesture(count: 2) {
-                                pasteItem(item)
-                            }
-                            .contextMenu {
-                                CardContextMenu(item: item)
+                ScrollViewReader { proxy in
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 12) {
+                            ForEach(Array(filteredItems.enumerated()), id: \.element.id) { index, item in
+                                ClipCardView(
+                                    item: item,
+                                    isSelected: selectedItem?.id == item.id,
+                                    cardSize: cardSize
+                                )
+                                .id(item.id)
+                                .onTapGesture {
+                                    selectedIndex = index
+                                    selectedItem = item
+                                }
+                                .onTapGesture(count: 2) {
+                                    pasteItem(item)
+                                }
+                                .contextMenu {
+                                    CardContextMenu(item: item)
+                                }
                             }
                         }
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 8)
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 8)
+                    .padding(.top, 12)
+                    // 当选中项变化时滚动
+                    .onChange(of: selectedIndex) { _, newIndex in
+                        withAnimation {
+                            proxy.scrollTo(filteredItems[newIndex].id, anchor: .center)
+                        }
+                    }
                 }
-                .padding(.top, 12)
             }
         }
         .frame(width: 800, height: 400)
@@ -93,11 +101,6 @@ struct MainPanelView: View {
                 selectedIndex = max(0, filteredItems.count - 1)
             }
             selectedItem = filteredItems.isEmpty ? nil : filteredItems[selectedIndex]
-        }
-        .sheet(isPresented: $showPreview) {
-            if let item = selectedItem {
-                PreviewWindow(item: item)
-            }
         }
         // 使用 NSEvent 监听键盘
         .background(
@@ -117,8 +120,8 @@ struct MainPanelView: View {
                     closeHandler?()
                 },
                 onSpace: {
-                    if selectedItem != nil {
-                        showPreview = true
+                    if let item = selectedItem {
+                        showPreviewWindow(item: item)
                     }
                 },
                 onDelete: {
@@ -164,6 +167,21 @@ struct MainPanelView: View {
     private func pasteItem(_ item: ClipboardItem) {
         PasteService.shared.paste(item)
         closeHandler?()
+    }
+
+    private func showPreviewWindow(item: ClipboardItem) {
+        // 创建独立的预览窗口，不使用 sheet
+        let previewView = PreviewWindow(item: item)
+        let hostingController = NSHostingController(rootView: previewView)
+
+        let window = NSWindow(contentViewController: hostingController)
+        window.styleMask = [.titled, .closable, .fullSizeContentView]
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.level = .floating
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     private func deleteItem(_ item: ClipboardItem) {
@@ -223,7 +241,6 @@ class KeyboardNSView: NSView {
 
     override func keyDown(with event: NSEvent) {
         let keyCode = event.keyCode
-        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
 
         switch keyCode {
         case 123: // Left arrow
@@ -245,7 +262,9 @@ class KeyboardNSView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        window?.makeFirstResponder(self)
+        DispatchQueue.main.async {
+            self.window?.makeFirstResponder(self)
+        }
     }
 }
 
