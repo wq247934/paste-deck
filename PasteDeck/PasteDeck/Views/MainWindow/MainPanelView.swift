@@ -8,6 +8,14 @@
 import SwiftUI
 import SwiftData
 
+// MARK: - Focus Zone Enum
+
+/// 焦点区域：卡片区 / 搜索栏
+enum FocusZone {
+    case cards
+    case search
+}
+
 struct MainPanelView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \ClipboardItem.createdAt, order: .reverse) private var items: [ClipboardItem]
@@ -16,6 +24,12 @@ struct MainPanelView: View {
     @State private var selectedFilter: ClipboardFilter = .all
     @State private var selectedItem: ClipboardItem?
     @State private var selectedIndex = 0
+
+    /// 当前焦点所在区域
+    @State private var focusZone: FocusZone = .cards
+
+    /// 搜索栏焦点绑定
+    @FocusState private var isSearchFocused: Bool
 
     var closeHandler: (() -> Void)?
 
@@ -26,24 +40,25 @@ struct MainPanelView: View {
         VStack(spacing: 0) {
             // 顶部搜索和筛选
             VStack(spacing: 12) {
-                HStack {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundColor(.secondary)
-
-                    TextField("搜索剪切板历史...", text: $searchText)
-                        .textFieldStyle(.plain)
-
-                    if !searchText.isEmpty {
-                        Button(action: { searchText = "" }) {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(.secondary)
-                        }
-                        .buttonStyle(.plain)
+                SearchBarView(text: $searchText, isFocused: $isSearchFocused)
+                .onChange(of: isSearchFocused) { _, newValue in
+                    if newValue {
+                        focusZone = .search
                     }
                 }
-                .padding(8)
-                .background(Color.primary.opacity(0.05))
-                .cornerRadius(8)
+                .onChange(of: focusZone) { _, newZone in
+                    if newZone == .search {
+                        isSearchFocused = true
+                    }
+                }
+                .onSubmit {
+                    // 搜索框按 Enter → 焦点切到卡片区，选中第一个
+                    focusZone = .cards
+                    if !filteredItems.isEmpty {
+                        selectedIndex = 0
+                        selectedItem = filteredItems.first
+                    }
+                }
 
                 FilterTabs(selectedFilter: $selectedFilter)
             }
@@ -68,6 +83,8 @@ struct MainPanelView: View {
                                 .onTapGesture {
                                     selectedIndex = index
                                     selectedItem = item
+                                    // 点击卡片后焦点切到卡片区
+                                    focusZone = .cards
                                 }
                                 .onTapGesture(count: 2) {
                                     pasteItem(item)
@@ -97,6 +114,8 @@ struct MainPanelView: View {
                 selectedIndex = 0
                 selectedItem = filteredItems.first
             }
+            // 打开面板时焦点默认在卡片区
+            focusZone = .cards
         }
         .onChange(of: filteredItems.count) { _, _ in
             if selectedIndex >= filteredItems.count {
@@ -107,6 +126,7 @@ struct MainPanelView: View {
         // 使用 NSEvent 监听键盘
         .background(
             KeyboardView(
+                focusZone: $focusZone,
                 onLeftArrow: {
                     moveSelection(by: -1)
                 },
@@ -122,12 +142,24 @@ struct MainPanelView: View {
                     moveSelection(by: itemsPerPage)
                 },
                 onEnter: {
-                    if let item = selectedItem {
+                    if focusZone == .search {
+                        // 搜索栏回车 → 焦点切到卡片区
+                        focusZone = .cards
+                        if !filteredItems.isEmpty {
+                            selectedIndex = 0
+                            selectedItem = filteredItems.first
+                        }
+                    } else if let item = selectedItem {
                         pasteItem(item)
                     }
                 },
                 onEscape: {
-                    closeHandler?()
+                    if focusZone == .search {
+                        // 搜索栏 Esc → 焦点回到卡片区
+                        focusZone = .cards
+                    } else {
+                        closeHandler?()
+                    }
                 },
                 onSpace: {
                     if let item = selectedItem {
@@ -175,8 +207,14 @@ struct MainPanelView: View {
     }
 
     private func pasteItem(_ item: ClipboardItem) {
-        PasteService.shared.paste(item)
+        // 1. 先把内容复制到剪贴板
+        PasteService.shared.preparePaste(item)
+        // 2. 关闭面板，让之前的 app 重新获得焦点
         closeHandler?()
+        // 3. 延迟一小段时间，等前一 app 激活后再模拟 Cmd+V
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            PasteService.shared.performPaste()
+        }
     }
 
     private func showPreviewWindow(item: ClipboardItem) {
@@ -233,6 +271,7 @@ struct MainPanelView: View {
 
 // MARK: - Keyboard View using NSEvent
 struct KeyboardView: NSViewRepresentable {
+    @Binding var focusZone: FocusZone
     var onLeftArrow: () -> Void
     var onRightArrow: () -> Void
     var onUpArrow: () -> Void
@@ -244,6 +283,7 @@ struct KeyboardView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSView {
         let view = KeyboardNSView()
+        view.focusZone = $focusZone
         view.onLeftArrow = onLeftArrow
         view.onRightArrow = onRightArrow
         view.onUpArrow = onUpArrow
@@ -257,6 +297,7 @@ struct KeyboardView: NSViewRepresentable {
 
     func updateNSView(_ nsView: NSView, context: Context) {
         if let view = nsView as? KeyboardNSView {
+            view.focusZone = $focusZone
             view.onLeftArrow = onLeftArrow
             view.onRightArrow = onRightArrow
             view.onUpArrow = onUpArrow
@@ -265,11 +306,17 @@ struct KeyboardView: NSViewRepresentable {
             view.onEscape = onEscape
             view.onSpace = onSpace
             view.onDelete = onDelete
+
+            // 焦点区域变化时，控制 firstResponder
+            if focusZone == .cards {
+                view.window?.makeFirstResponder(view)
+            }
         }
     }
 }
 
 class KeyboardNSView: NSView {
+    var focusZone: Binding<FocusZone>?
     var onLeftArrow: (() -> Void)?
     var onRightArrow: (() -> Void)?
     var onUpArrow: (() -> Void)?
@@ -283,6 +330,7 @@ class KeyboardNSView: NSView {
 
     override func keyDown(with event: NSEvent) {
         let keyCode = event.keyCode
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
 
         switch keyCode {
         case 123: // Left arrow
@@ -299,10 +347,37 @@ class KeyboardNSView: NSView {
             onEscape?()
         case 49: // Space
             onSpace?()
-        case 51: // Delete
+        case 51: // Delete (Backspace)
             onDelete?()
+        case 48: // Tab → 切换焦点区域
+            focusZone?.wrappedValue = (focusZone?.wrappedValue == .cards) ? .search : .cards
         default:
-            super.keyDown(with: event)
+            // 普通字符输入 → 自动切到搜索栏
+            // 方向键/功能键之外的按键（有字符输入且无修饰键）转发到搜索栏
+            if let chars = event.characters, !chars.isEmpty,
+               modifiers.isEmpty || modifiers == .shift {
+                focusZone?.wrappedValue = .search
+                // 将按键转发给搜索栏的 TextField
+                // SwiftUI 的 TextField 会自动处理 firstResponder 的输入
+                // 我们需要找到搜索栏的 NSTextField 并让它处理这个事件
+                forwardKeyEventToSearchField(event)
+            } else {
+                super.keyDown(with: event)
+            }
+        }
+    }
+
+    /// 将按键事件转发到搜索栏
+    private func forwardKeyEventToSearchField(_ event: NSEvent) {
+        // 延迟一帧，等 SwiftUI 切换 focusZone 后搜索栏获得焦点
+        DispatchQueue.main.async { [weak self] in
+            guard let window = self?.window else { return }
+            // 找到当前 firstResponder（搜索栏的 field editor）
+            if let fieldEditor = window.firstResponder as? NSTextView,
+               fieldEditor.inputContext != nil {
+                // 直接让 field editor 处理这个按键
+                fieldEditor.keyDown(with: event)
+            }
         }
     }
 
@@ -310,7 +385,11 @@ class KeyboardNSView: NSView {
         super.viewDidMoveToWindow()
         // 确保在主线程延迟执行，等待窗口完全加载
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-            self?.window?.makeFirstResponder(self)
+            guard let self = self else { return }
+            // 只在焦点区域为 cards 时抢占 firstResponder
+            if self.focusZone?.wrappedValue == .cards {
+                self.window?.makeFirstResponder(self)
+            }
         }
     }
 }
