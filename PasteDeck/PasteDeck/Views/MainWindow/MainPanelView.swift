@@ -365,9 +365,7 @@ class KeyboardNSView: NSView {
             if let chars = event.characters, !chars.isEmpty,
                modifiers.isEmpty || modifiers == .shift {
                 focusZone?.wrappedValue = .search
-                // 将按键转发给搜索栏的 TextField
-                // SwiftUI 的 TextField 会自动处理 firstResponder 的输入
-                // 我们需要找到搜索栏的 NSTextField 并让它处理这个事件
+                // 将按键转发给搜索栏（带重试机制）
                 forwardKeyEventToSearchField(event)
             } else {
                 super.keyDown(with: event)
@@ -375,16 +373,21 @@ class KeyboardNSView: NSView {
         }
     }
 
-    /// 将按键事件转发到搜索栏
-    private func forwardKeyEventToSearchField(_ event: NSEvent) {
-        // 延迟一帧，等 SwiftUI 切换 focusZone 后搜索栏获得焦点
+    /// 将按键事件转发到搜索栏，增加重试机制以等待 SwiftUI 焦点就绪
+    private func forwardKeyEventToSearchField(_ event: NSEvent, retries: Int = 5) {
         DispatchQueue.main.async { [weak self] in
             guard let window = self?.window else { return }
-            // 找到当前 firstResponder（搜索栏的 field editor）
+
+            // 尝试寻找当前 firstResponder（搜索栏的 field editor）
             if let fieldEditor = window.firstResponder as? NSTextView,
                fieldEditor.inputContext != nil {
-                // 直接让 field editor 处理这个按键
+                // 焦点已经成功转移，让 field editor 消费这个按键
                 fieldEditor.keyDown(with: event)
+            } else if retries > 0 {
+                // 焦点还没过去（SwiftUI 的状态更新需要时间），延迟 10 毫秒后重试
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) {
+                    self?.forwardKeyEventToSearchField(event, retries: retries - 1)
+                }
             }
         }
     }
