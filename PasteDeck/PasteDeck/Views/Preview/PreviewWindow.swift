@@ -61,11 +61,9 @@ struct PreviewWindow: View {
 
             Divider()
 
-            // 预览内容
-            ScrollView {
-                previewContent
-                    .padding(20)
-            }
+            // 预览内容（不使用外层 ScrollView，因为 CodeHighlightView 自带 NSScrollView）
+            previewContent
+                .padding(20)
 
             // 截断提示
             if isTruncated {
