@@ -24,6 +24,9 @@ class MainPanelController: NSObject, NSWindowDelegate {
     /// Debounce timer to prevent rapid toggle from key repeat
     private var lastToggleTime: Date = Date.distantPast
 
+    /// Esc 键全局监听器
+    private var keyMonitor: Any?
+
     override init() {
         super.init()
         setupPanel()
@@ -35,7 +38,7 @@ class MainPanelController: NSObject, NSWindowDelegate {
         // Create floating panel with transparent title bar
         let panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 800, height: 400),
-            styleMask: [.titled, .closable, .fullSizeContentView, .nonactivatingPanel],
+            styleMask: [.titled, .closable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
@@ -86,6 +89,19 @@ class MainPanelController: NSObject, NSWindowDelegate {
         NSApp.activate(ignoringOtherApps: true)
         isVisible = true
 
+        // 注册 Esc 键监听
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self = self, self.isVisible else { return event }
+            // 只处理当前 panel 是 keyWindow 的情况
+            guard NSApp.keyWindow === self.panel else { return event }
+
+            if event.keyCode == 53 { // Esc
+                self.hidePanel()
+                return nil
+            }
+            return event
+        }
+
         // Delay enabling auto-close to prevent immediate dismissal
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             self?.canCloseOnResignKey = true
@@ -94,6 +110,11 @@ class MainPanelController: NSObject, NSWindowDelegate {
 
     func hidePanel() {
         canCloseOnResignKey = false
+        // 移除 Esc 键监听
+        if let monitor = keyMonitor {
+            NSEvent.removeMonitor(monitor)
+            keyMonitor = nil
+        }
         panel?.orderOut(nil)
         isVisible = false
         // 隐藏 app 自身，让之前的 app 重新获得焦点
