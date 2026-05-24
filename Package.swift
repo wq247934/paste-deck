@@ -9,9 +9,13 @@ let package = Package(
     products: [
         .executable(name: "PasteDeck", targets: ["PasteDeck"])
     ],
+    dependencies: [
+        .package(url: "https://github.com/raspu/Highlightr", from: "2.1.0")
+    ],
     targets: [
         .executableTarget(
             name: "PasteDeck",
+            dependencies: ["Highlightr"],
             path: "PasteDeck/PasteDeck"
         )
     ]

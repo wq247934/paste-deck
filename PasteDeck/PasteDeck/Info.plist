@@ -24,6 +24,12 @@
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
 	<key>LSUIElement</key>
 	<true/>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>PasteDeck 需要访问文件以预览和粘贴您复制的代码、文本等文件内容。</string>
+	<key>NSDesktopFolderUsageDescription</key>
+	<string>PasteDeck 需要访问桌面文件以预览和粘贴您复制的文件内容。</string>
+	<key>NSDownloadsFolderUsageDescription</key>
+	<string>PasteDeck 需要访问下载文件夹以预览和粘贴您复制的文件内容。</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © 2026 PasteDeck. All rights reserved.</string>
 	<key>NSMainStoryboardFile</key>

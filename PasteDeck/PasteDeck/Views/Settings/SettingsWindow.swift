@@ -49,6 +49,9 @@ struct SettingsWindow: View {
 struct GeneralSettingsView: View {
     @State private var launchAtLogin = true
     @State private var showMenuBarIcon = true
+    @State private var accessibilityGranted = AXIsProcessTrusted()
+
+    private let timer = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
 
     var body: some View {
         Form {
@@ -59,8 +62,39 @@ struct GeneralSettingsView: View {
             Section("菜单栏") {
                 Toggle("显示菜单栏图标", isOn: $showMenuBarIcon)
             }
+
+            Section("权限") {
+                HStack {
+                    Text("辅助功能")
+                    Spacer()
+                    Text(accessibilityGranted ? "已开启" : "未开启")
+                        .foregroundColor(accessibilityGranted ? .green : .orange)
+                        .font(.system(size: 13, weight: .medium))
+                    Toggle("", isOn: .constant(accessibilityGranted))
+                        .toggleStyle(.switch)
+                        .disabled(true)
+                        .labelsHidden()
+                }
+
+                if !accessibilityGranted {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("部分功能受限：全局快捷键和模拟粘贴将无法使用")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                        Button(action: {
+                            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+                        }) {
+                            Text("打开系统设置授权")
+                                .font(.system(size: 12))
+                        }
+                    }
+                }
+            }
         }
         .formStyle(.grouped)
+        .onReceive(timer) { _ in
+            accessibilityGranted = AXIsProcessTrusted()
+        }
     }
 }
 
@@ -196,8 +230,112 @@ struct AdvancedSettingsView: View {
     @State private var showingClearHistoryAlert = false
     @State private var showingClearCacheAlert = false
 
+    // 预览配置
+    @State private var highlightExtensions: [String: String] = PreviewConfigManager.shared.config.highlightExtensions
+    @State private var plainTextExtensions: [String] = PreviewConfigManager.shared.config.plainTextExtensions
+    @State private var newHighlightExt = ""
+    @State private var newHighlightLang = ""
+    @State private var newPlainExt = ""
+
     var body: some View {
         Form {
+            Section("预览 - 代码高亮后缀") {
+                Text("匹配这些后缀的文件将使用语法高亮显示文件内容")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+
+                FlowLayout(spacing: 6) {
+                    ForEach(highlightExtensions.keys.sorted(), id: \.self) { ext in
+                        HStack(spacing: 4) {
+                            Text("." + ext)
+                                .font(.system(size: 12, design: .monospaced))
+                            Text("→")
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                            Text(highlightExtensions[ext] ?? "?")
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundColor(.secondary)
+                            Button(action: {
+                                highlightExtensions.removeValue(forKey: ext)
+                                saveConfig()
+                            }) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.accentColor.opacity(0.1))
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                    }
+                }
+
+                HStack {
+                    TextField("后缀", text: $newHighlightExt)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 80)
+                    Text("→")
+                        .foregroundColor(.secondary)
+                    TextField("语言", text: $newHighlightLang)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 100)
+                    Button("添加") {
+                        let ext = newHighlightExt.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
+                        let lang = newHighlightLang.trimmingCharacters(in: .whitespaces)
+                        if !ext.isEmpty && !lang.isEmpty {
+                            highlightExtensions[ext] = lang
+                            newHighlightExt = ""
+                            newHighlightLang = ""
+                            saveConfig()
+                        }
+                    }
+                }
+            }
+
+            Section("预览 - 纯文本后缀") {
+                Text("匹配这些后缀的文件将用等宽字体显示内容（无高亮）")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+
+                FlowLayout(spacing: 6) {
+                    ForEach(plainTextExtensions, id: \.self) { ext in
+                        HStack(spacing: 4) {
+                            Text("." + ext)
+                                .font(.system(size: 12, design: .monospaced))
+                            Button(action: {
+                                plainTextExtensions.removeAll { $0 == ext }
+                                saveConfig()
+                            }) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.secondary.opacity(0.1))
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                    }
+                }
+
+                HStack {
+                    TextField("后缀", text: $newPlainExt)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 100)
+                    Button("添加") {
+                        let ext = newPlainExt.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
+                        if !ext.isEmpty && !plainTextExtensions.contains(ext) {
+                            plainTextExtensions.append(ext)
+                            newPlainExt = ""
+                            saveConfig()
+                        }
+                    }
+                }
+            }
+
             Section("清除数据") {
                 Button("清除所有历史记录") {
                     showingClearHistoryAlert = true
@@ -214,7 +352,7 @@ struct AdvancedSettingsView: View {
                 HStack {
                     Text("版本")
                     Spacer()
-                    Text("1.0.0")
+                    Text("1.0.1")
                         .foregroundColor(.secondary)
                 }
             }
@@ -234,6 +372,12 @@ struct AdvancedSettingsView: View {
         }
     }
 
+    private func saveConfig() {
+        PreviewConfigManager.shared.config.highlightExtensions = highlightExtensions
+        PreviewConfigManager.shared.config.plainTextExtensions = plainTextExtensions
+        PreviewConfigManager.shared.save()
+    }
+
     private func clearAllHistory() {
         let context = ModelContext(AppModelContainer.container)
         let descriptor = FetchDescriptor<ClipboardItem>()
@@ -243,5 +387,46 @@ struct AdvancedSettingsView: View {
             }
             try? context.save()
         }
+    }
+}
+
+/// 简单的 Flow/Wrap 布局容器
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 6
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let result = arrange(proposal: proposal, subviews: subviews)
+        return result.size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let result = arrange(proposal: proposal, subviews: subviews)
+        for (index, position) in result.positions.enumerated() {
+            subviews[index].place(at: CGPoint(x: bounds.minX + position.x, y: bounds.minY + position.y), proposal: .unspecified)
+        }
+    }
+
+    private func arrange(proposal: ProposedViewSize, subviews: Subviews) -> (size: CGSize, positions: [CGPoint]) {
+        let maxWidth = proposal.width ?? .infinity
+        var positions: [CGPoint] = []
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        var rowHeight: CGFloat = 0
+        var totalHeight: CGFloat = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x + size.width > maxWidth, x > 0 {
+                x = 0
+                y += rowHeight + spacing
+                rowHeight = 0
+            }
+            positions.append(CGPoint(x: x, y: y))
+            rowHeight = max(rowHeight, size.height)
+            x += size.width + spacing
+            totalHeight = y + rowHeight
+        }
+
+        return (CGSize(width: maxWidth, height: totalHeight), positions)
     }
 }

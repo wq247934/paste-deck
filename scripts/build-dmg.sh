@@ -21,7 +21,8 @@ mkdir -p "$APP_BUNDLE/Contents/Resources"
 # Copy executable
 cp "${BUILD_DIR}/${APP_NAME}" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
 
-# Create Info.plist
+# Generate Info.plist with hardcoded values
+# (Source Info.plist uses Xcode build variables that won't resolve with swift build)
 cat > "$APP_BUNDLE/Contents/Info.plist" << 'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -49,6 +50,12 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << 'EOF'
     <string>14.0</string>
     <key>LSUIElement</key>
     <true/>
+    <key>NSDocumentsFolderUsageDescription</key>
+    <string>PasteDeck 需要访问文件以预览和粘贴您复制的代码、文本等文件内容。</string>
+    <key>NSDesktopFolderUsageDescription</key>
+    <string>PasteDeck 需要访问桌面文件以预览和粘贴您复制的文件内容。</string>
+    <key>NSDownloadsFolderUsageDescription</key>
+    <string>PasteDeck 需要访问下载文件夹以预览和粘贴您复制的文件内容。</string>
     <key>NSHumanReadableCopyright</key>
     <string>Copyright © 2026 PasteDeck. All rights reserved.</string>
     <key>NSPrincipalClass</key>
