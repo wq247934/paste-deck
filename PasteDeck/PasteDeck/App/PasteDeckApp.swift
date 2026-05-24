@@ -24,7 +24,31 @@ struct PasteDeckApp: App {
                 ClipboardItem.self,
                 AppSettings.self
             ])
-            let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
+
+            // 创建专属的存储路径
+            let appSupportURL = try FileManager.default.url(
+                for: .applicationSupportDirectory,
+                in: .userDomainMask,
+                appropriateFor: nil,
+                create: true
+            )
+
+            // 使用 Bundle ID 作为子目录，确保数据隔离
+            let pasteDeckURL = appSupportURL.appendingPathComponent("com.pastedeck.app")
+
+            // 创建目录（如果不存在）
+            try FileManager.default.createDirectory(at: pasteDeckURL, withIntermediateDirectories: true)
+
+            // 指定数据库文件路径
+            let storeURL = pasteDeckURL.appendingPathComponent("PasteDeck.sqlite")
+
+            // 创建 ModelConfiguration
+            let modelConfiguration = ModelConfiguration(
+                schema: schema,
+                url: storeURL,
+                allowsSave: true
+            )
+
             modelContainer = try ModelContainer(for: schema, configurations: [modelConfiguration])
         } catch {
             fatalError("Could not initialize ModelContainer: \(error)")
@@ -194,7 +218,31 @@ enum AppModelContainer {
                 ClipboardItem.self,
                 AppSettings.self
             ])
-            let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
+
+            // 创建专属的存储路径
+            let appSupportURL = try FileManager.default.url(
+                for: .applicationSupportDirectory,
+                in: .userDomainMask,
+                appropriateFor: nil,
+                create: true
+            )
+
+            // 使用 Bundle ID 作为子目录，确保数据隔离
+            let pasteDeckURL = appSupportURL.appendingPathComponent("com.pastedeck.app")
+
+            // 创建目录（如果不存在）
+            try FileManager.default.createDirectory(at: pasteDeckURL, withIntermediateDirectories: true)
+
+            // 指定数据库文件路径
+            let storeURL = pasteDeckURL.appendingPathComponent("PasteDeck.sqlite")
+
+            // 创建 ModelConfiguration
+            let modelConfiguration = ModelConfiguration(
+                schema: schema,
+                url: storeURL,
+                allowsSave: true
+            )
+
             return try ModelContainer(for: schema, configurations: [modelConfiguration])
         } catch {
             fatalError("Could not initialize ModelContainer: \(error)")

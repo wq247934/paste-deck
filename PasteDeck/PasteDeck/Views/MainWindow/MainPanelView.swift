@@ -157,9 +157,8 @@ struct MainPanelView: View {
                     if focusZone == .search {
                         // 搜索栏 Esc → 焦点回到卡片区
                         focusZone = .cards
-                    } else {
-                        closeHandler?()
                     }
+                    // 卡片区 Esc 由 MainPanelController 的 NSEvent monitor 处理
                 },
                 onSpace: {
                     if let item = selectedItem {
