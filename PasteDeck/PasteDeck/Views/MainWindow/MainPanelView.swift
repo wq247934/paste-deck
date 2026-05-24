@@ -240,18 +240,27 @@ struct MainPanelView: View {
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
 
-        // 添加 ESC 键监听
-        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            if event.keyCode == 53 { // ESC
-                window.close()
-                // 焦点回到主窗口
-                DispatchQueue.main.async {
-                    MainWindowReference.window?.makeKeyAndOrderFront(nil)
-                    NSApp.activate(ignoringOtherApps: true)
-                }
-                return nil
+        // 添加 ESC 键监听（窗口关闭时自动移除）
+        var escMonitor: Any?
+        escMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            // 只在预览窗口是 keyWindow 时拦截 ESC
+            guard event.keyCode == 53, NSApp.keyWindow === window else { return event }
+            NSEvent.removeMonitor(escMonitor!)
+            escMonitor = nil
+            window.close()
+            // 焦点回到主窗口
+            DispatchQueue.main.async {
+                MainWindowReference.window?.makeKeyAndOrderFront(nil)
+                NSApp.activate(ignoringOtherApps: true)
             }
-            return event
+            return nil
+        }
+        // 窗口关闭时也移除监听器（防止通过关闭按钮关闭时泄漏）
+        NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { _ in
+            if let monitor = escMonitor {
+                NSEvent.removeMonitor(monitor)
+                escMonitor = nil
+            }
         }
     }
 

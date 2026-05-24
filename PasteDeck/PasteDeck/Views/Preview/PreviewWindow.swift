@@ -16,6 +16,12 @@ struct PreviewWindow: View {
     let item: ClipboardItem
     var onClose: (() -> Void)?
 
+    // 文件内容预览状态
+    @State private var fileContent: String?
+    @State private var previewMode: PreviewMode = .none
+    @State private var isTruncated = false
+    @State private var loadError: String?
+
     var body: some View {
         VStack(spacing: 0) {
             // 顶部栏
@@ -26,6 +32,14 @@ struct PreviewWindow: View {
 
                 Text(item.contentType.displayName)
                     .font(.system(size: 13, weight: .medium))
+
+                if item.contentType == .file, let fileName = item.fileName {
+                    Text("·")
+                        .foregroundColor(.secondary)
+                    Text(fileName)
+                        .font(.system(size: 13))
+                        .foregroundColor(.secondary)
+                }
 
                 Spacer()
 
@@ -53,6 +67,21 @@ struct PreviewWindow: View {
                     .padding(20)
             }
 
+            // 截断提示
+            if isTruncated {
+                HStack {
+                    Image(systemName: "exclamationmark.triangle")
+                        .foregroundColor(.orange)
+                    Text("文件过大，仅显示前 512KB 内容")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                    Spacer()
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 8)
+                .background(Color.orange.opacity(0.05))
+            }
+
             Divider()
 
             // 底部操作栏
@@ -76,15 +105,16 @@ struct PreviewWindow: View {
             }
             .padding(16)
         }
-        .frame(width: 600, height: 450)
+        .frame(width: 600, height: 500)
         .background(.regularMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 16))
+        .onAppear {
+            loadFileContentIfNeeded()
+        }
     }
 
     private func closeWindow() {
-        // 关闭当前预览窗口
         NSApp.keyWindow?.close()
-        // 回调
         onClose?()
     }
 
@@ -133,6 +163,28 @@ struct PreviewWindow: View {
             }
 
         case .file:
+            filePreviewContent
+
+        case .color:
+            VStack(spacing: 16) {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color(hex: item.colorHex ?? "") ?? .clear)
+                    .frame(width: 200, height: 200)
+
+                VStack(spacing: 8) {
+                    infoRow(label: "HEX", value: item.colorHex ?? "-")
+                }
+            }
+            .frame(maxWidth: .infinity)
+        }
+    }
+
+    // MARK: - File Preview
+
+    @ViewBuilder
+    private var filePreviewContent: some View {
+        if previewMode == .none {
+            // 不预览内容，显示文件元信息
             VStack(spacing: 16) {
                 Image(systemName: fileIcon)
                     .font(.system(size: 48))
@@ -150,18 +202,146 @@ struct PreviewWindow: View {
                 }
             }
             .frame(maxWidth: .infinity)
+        } else if let content = fileContent {
+            // 有内容可预览
+            switch previewMode {
+            case .highlight:
+                VStack(spacing: 0) {
+                    // 语言标签
+                    HStack {
+                        if let lang = PreviewConfigManager.shared.highlightLanguage(for: item.fileName) {
+                            Text(lang.uppercased())
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(Color.accentColor)
+                                .clipShape(RoundedRectangle(cornerRadius: 4))
+                        }
+                        Spacer()
+                        if let filePath = item.filePath {
+                            Text(filePath)
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.top, 12)
 
-        case .color:
+                    CodeHighlightView(code: content, language: PreviewConfigManager.shared.highlightLanguage(for: item.fileName))
+                        .padding(.top, 4)
+                }
+
+            case .plain:
+                VStack(spacing: 0) {
+                    HStack {
+                        Text("TEXT")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(Color.secondary)
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                        Spacer()
+                        if let filePath = item.filePath {
+                            Text(filePath)
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.top, 12)
+
+                    PlainTextView(text: content)
+                        .padding(.top, 4)
+                }
+
+            case .none:
+                EmptyView()
+            }
+        } else if let error = loadError {
+            // 加载失败
             VStack(spacing: 16) {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color(hex: item.colorHex ?? "") ?? .clear)
-                    .frame(width: 200, height: 200)
+                Image(systemName: "exclamationmark.triangle")
+                    .font(.system(size: 36))
+                    .foregroundColor(.orange)
 
-                VStack(spacing: 8) {
-                    infoRow(label: "HEX", value: item.colorHex ?? "-")
+                Text("无法读取文件")
+                    .font(.system(size: 16, weight: .medium))
+
+                Text(error)
+                    .font(.system(size: 13))
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+
+                Button("在 Finder 中查看") {
+                    if let filePath = item.filePath {
+                        NSWorkspace.shared.selectFile(filePath, inFileViewerRootedAtPath: "")
+                    }
+                }
+                .buttonStyle(.bordered)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            // 加载中
+            ProgressView("加载文件内容...")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    // MARK: - File Content Loading
+
+    private func loadFileContentIfNeeded() {
+        guard item.contentType == .file else { return }
+
+        let mode = PreviewConfigManager.shared.shouldPreviewContent(fileName: item.fileName)
+        previewMode = mode
+
+        guard mode != .none, let filePath = item.filePath else { return }
+
+        // 检查文件是否存在
+        let fileManager = FileManager.default
+        if !fileManager.fileExists(atPath: filePath) {
+            loadError = "文件不存在。"
+            return
+        }
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            let maxSize = PreviewConfigManager.shared.config.maxPreviewSize
+
+            do {
+                let data = try Data(contentsOf: URL(fileURLWithPath: filePath))
+
+                let truncated = data.count > maxSize
+                let readData = truncated ? data.prefix(maxSize) : data
+
+                let content = String(data: readData, encoding: .utf8)
+                    ?? String(data: readData, encoding: .ascii)
+                    ?? ""
+
+                DispatchQueue.main.async {
+                    if content.isEmpty && !data.isEmpty {
+                        self.loadError = "文件内容无法解码为文本。"
+                    } else {
+                        self.fileContent = content
+                        self.isTruncated = truncated
+                    }
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    let nsError = error as NSError
+                    if nsError.domain == NSCocoaErrorDomain &&
+                       (nsError.code == NSFileReadNoPermissionError || nsError.code == 257) {
+                        self.loadError = "没有文件访问权限。\n请在系统设置 → 隐私与安全性 → 文件和文件夹 中授权 PasteDeck。"
+                    } else {
+                        self.loadError = "读取文件失败：\(error.localizedDescription)"
+                    }
                 }
             }
-            .frame(maxWidth: .infinity)
         }
     }
 
@@ -251,19 +431,16 @@ class PreviewWindowController {
     private var window: NSWindow?
 
     func show(item: ClipboardItem, onClose: @escaping () -> Void) {
-        // 保存当前主窗口
         MainWindowReference.window = NSApp.keyWindow
 
-        // 创建预览视图
         let previewView = PreviewWindow(item: item, onClose: onClose)
         let hostingController = NSHostingController(rootView: previewView)
 
-        // 创建窗口
         let window = NSWindow(contentViewController: hostingController)
         window.styleMask = [.titled, .closable, .fullSizeContentView]
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
-        window.level = .screenSaver  // 最顶层
+        window.level = .floating
         window.center()
         window.isReleasedWhenClosed = false
         window.makeKeyAndOrderFront(nil)
@@ -271,14 +448,14 @@ class PreviewWindowController {
 
         self.window = window
 
-        // 添加全局键盘监听
-        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            if event.keyCode == 53 { // ESC
-                window.close()
-                onClose()
-                return nil
-            }
-            return event
+        var escMonitor: Any?
+        escMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard event.keyCode == 53, NSApp.keyWindow === window else { return event }
+            NSEvent.removeMonitor(escMonitor!)
+            escMonitor = nil
+            window.close()
+            onClose()
+            return nil
         }
 
         NSApp.activate(ignoringOtherApps: true)

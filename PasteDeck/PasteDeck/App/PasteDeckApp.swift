@@ -73,57 +73,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var mainPanelController: MainPanelController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Check and request accessibility permission for global hotkey and clipboard monitoring
-        checkAndRequestAccessibilityPermission()
-
-        // Setup UI components
+        // Setup UI first (status bar is always available)
         setupStatusBar()
 
-        // Initialize background services
+        // Start services (HotKeyManager handles accessibility permission gracefully)
         setupServices()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         hotKeyManager?.unregister()
-    }
-
-    // MARK: - Accessibility Permission
-
-    private func checkAndRequestAccessibilityPermission() {
-        let trusted = AXIsProcessTrusted()
-
-        if !trusted {
-            // 触发系统权限弹窗
-            let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
-            _ = AXIsProcessTrustedWithOptions(options as CFDictionary)
-
-            // 延迟显示自定义提示（因为系统弹窗需要用户操作）
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                let alert = NSAlert()
-                alert.messageText = "需要辅助功能权限"
-                alert.informativeText = """
-                PasteDeck 需要辅助功能权限才能：
-                • 监听全局快捷键 (⌘+Shift+V)
-                • 监控剪切板变化
-
-                请在系统设置中授权：
-                系统设置 → 隐私与安全性 → 辅助功能
-
-                授权后 PasteDeck 会自动生效，无需重启。
-
-                ⚠️ 如果之前授权过但重装后失效，请在辅助功能列表中
-                先删除旧条目，再重新添加 PasteDeck。
-                """
-                alert.alertStyle = .warning
-                alert.addButton(withTitle: "打开系统设置")
-                alert.addButton(withTitle: "稍后设置")
-
-                let response = alert.runModal()
-                if response == .alertFirstButtonReturn {
-                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
-                }
-            }
-        }
     }
 
     // MARK: - Status Bar Setup
@@ -161,7 +119,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Services Setup
 
+    /// Start all background services. Requires accessibility permission.
     private func setupServices() {
+        // Guard: don't start twice
+        guard clipboardMonitor == nil else { return }
+
         // Start clipboard monitoring
         let modelContext = ModelContext(AppModelContainer.container)
         clipboardMonitor = ClipboardMonitor(modelContext: modelContext)
@@ -171,6 +133,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         PasteService.shared.setClipboardMonitor(clipboardMonitor!)
 
         // Register global hotkey: ⌘+Shift+V (keyCode 9 = V)
+        // HotKeyManager internally handles missing permission (graceful degradation)
         hotKeyManager = HotKeyManager()
         hotKeyManager?.registerHotKey(keyCode: 9, modifiers: [.command, .shift]) { [weak self] in
             DispatchQueue.main.async {

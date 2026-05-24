@@ -115,12 +115,13 @@ class ClipboardMonitor {
     private func parsePasteboard(_ pasteboard: NSPasteboard, sourceApp: String?) -> ClipboardItem? {
         guard let types = pasteboard.types else { return nil }
 
-        if types.contains(.tiff) || types.contains(.png) {
-            return parseImage(pasteboard, sourceApp: sourceApp)
-        }
-
+        // 文件优先于图片（Finder 复制文件时会同时带文件URL和图标预览图）
         if types.contains(.fileURL) {
             return parseFile(pasteboard, sourceApp: sourceApp)
+        }
+
+        if types.contains(.tiff) || types.contains(.png) {
+            return parseImage(pasteboard, sourceApp: sourceApp)
         }
 
         if types.contains(.string) {
