@@ -133,8 +133,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         PasteService.shared.setClipboardMonitor(clipboardMonitor!)
 
         // Register global hotkey: ⌘+Shift+V (keyCode 9 = V)
-        // HotKeyManager internally handles missing permission (graceful degradation)
-        hotKeyManager = HotKeyManager()
+        // HotKeyManager 使用 Carbon API 在系统底层拦截快捷键，防止按键透传
+        hotKeyManager = HotKeyManager.shared
         hotKeyManager?.registerHotKey(keyCode: 9, modifiers: [.command, .shift]) { [weak self] in
             DispatchQueue.main.async {
                 self?.toggleMainPanel()
