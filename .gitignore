@@ -67,3 +67,7 @@ build/
 
 # Claude Code
 .claude/
+
+# macOS
+.DS_Store
+*.xcworkspacedata
