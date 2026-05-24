@@ -2,7 +2,8 @@
 //  HotKeyManager.swift
 //  PasteDeck
 //
-//  Manages global hotkey registration using NSEvent monitoring.
+//  Manages global hotkey registration using Carbon API.
+//  Carbon intercepts hotkey at system level, preventing key event from passing through to other apps.
 //  Requires accessibility permission for global key event capture.
 //
 //  Created on 2026-05-23.
@@ -10,10 +11,15 @@
 
 import Foundation
 import AppKit
+import Carbon
 
-/// Manages global hotkey registration and handling
+/// Manages global hotkey registration using Carbon.
+/// Carbon 可以在系统底层拦截快捷键，防止按键透传到其他应用触发意外操作。
 class HotKeyManager {
-    private var eventMonitor: Any?
+    // 使用单例，因为 Carbon 的事件回调是一个全局 C 函数指针
+    static let shared = HotKeyManager()
+
+    private var hotKeyRef: EventHotKeyRef?
     private var hotKeyCallback: (() -> Void)?
     private var isRegistered = false
 
@@ -23,6 +29,10 @@ class HotKeyManager {
 
     /// 定时检查权限恢复
     private var permissionCheckTimer: Timer?
+
+    private init() {
+        setupEventHandler()
+    }
 
     deinit {
         unregister()
@@ -61,40 +71,92 @@ class HotKeyManager {
         }
     }
 
-    /// 实际注册全局事件监听
+    /// 实际注册全局事件监听 (使用 Carbon API)
     private func doRegister() {
         guard let keyCode = registeredKeyCode,
               let modifiers = registeredModifiers else { return }
 
-        let expectedModifiers = modifiers
-        let expectedKeyCode = keyCode
+        var hotKeyID = EventHotKeyID()
+        hotKeyID.signature = OSType(0x5044534B) // 'PDSK' - PasteDeck HotKey
+        hotKeyID.id = UInt32(1)
 
-        eventMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            let eventModifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-            let eventKeyCode = event.keyCode
+        // 转换修饰键 (将 NSEvent 修饰键转换为 Carbon 修饰键)
+        var carbonModifiers: UInt32 = 0
+        if modifiers.contains(.command) { carbonModifiers |= UInt32(cmdKey) }
+        if modifiers.contains(.option)  { carbonModifiers |= UInt32(optionKey) }
+        if modifiers.contains(.shift)   { carbonModifiers |= UInt32(shiftKey) }
+        if modifiers.contains(.control) { carbonModifiers |= UInt32(controlKey) }
 
-            if eventKeyCode == expectedKeyCode && eventModifiers == expectedModifiers {
-                DispatchQueue.main.async {
-                    self?.hotKeyCallback?()
-                }
-            }
+        // 使用 Carbon 注册全局快捷键
+        let status = RegisterEventHotKey(
+            keyCode,
+            carbonModifiers,
+            hotKeyID,
+            GetApplicationEventTarget(),
+            0,
+            &hotKeyRef
+        )
+
+        isRegistered = (status == noErr)
+
+        if !isRegistered {
+            NSLog("[PasteDeck] HotKeyManager: RegisterEventHotKey failed with status \(status)")
         }
-
-        isRegistered = true
     }
 
-    /// Unregisters the current hotkey monitor
     func unregister() {
-        if let monitor = eventMonitor {
-            NSEvent.removeMonitor(monitor)
-            eventMonitor = nil
+        if let ref = hotKeyRef {
+            UnregisterEventHotKey(ref)
+            hotKeyRef = nil
             isRegistered = false
         }
     }
 
-    /// Returns whether a hotkey is currently registered
     func isHotKeyRegistered() -> Bool {
         return isRegistered
+    }
+
+    // MARK: - Private Methods
+
+    /// 设置 Carbon 事件监听器
+    private func setupEventHandler() {
+        var eventType = EventTypeSpec(
+            eventClass: OSType(kEventClassKeyboard),
+            eventKind: UInt32(kEventHotKeyPressed)
+        )
+
+        // C 语言风格的回调
+        let handler: EventHandlerUPP = { (_, theEvent, _) -> OSStatus in
+            var hotKeyID = EventHotKeyID()
+            let status = GetEventParameter(
+                theEvent,
+                EventParamName(kEventParamDirectObject),
+                EventParamType(typeEventHotKeyID),
+                nil,
+                MemoryLayout<EventHotKeyID>.size,
+                nil,
+                &hotKeyID
+            )
+
+            if status == noErr && hotKeyID.id == 1 {
+                // 触发回调
+                DispatchQueue.main.async {
+                    HotKeyManager.shared.hotKeyCallback?()
+                }
+            }
+            // 返回 noErr 告诉系统：这个按键事件已被处理，请不要再传给其他 App
+            return noErr
+        }
+
+        // InstallApplicationEventHandler 是宏，Swift 中使用 InstallEventHandler
+        InstallEventHandler(
+            GetApplicationEventTarget(),
+            handler,
+            1,
+            &eventType,
+            nil,
+            nil
+        )
     }
 
     // MARK: - Permission Check
