@@ -9,9 +9,17 @@ APP_VERSION="1.0"
 BUILD_DIR=".build/release"
 APP_BUNDLE="${BUILD_DIR}/${APP_NAME}.app"
 DMG_NAME="${APP_NAME}-${APP_VERSION}.dmg"
+EXECUTABLE="${BUILD_DIR}/${APP_NAME}"
 
 echo "🔨 Building ${APP_NAME} in release mode..."
+# 先clean再build确保最新代码
 swift build -c release
+
+# 检查构建是否成功
+if [ ! -f "$EXECUTABLE" ]; then
+    echo "❌ Build failed: executable not found at $EXECUTABLE"
+    exit 1
+fi
 
 echo "📦 Creating .app bundle structure..."
 rm -rf "$APP_BUNDLE"
@@ -19,7 +27,7 @@ mkdir -p "$APP_BUNDLE/Contents/MacOS"
 mkdir -p "$APP_BUNDLE/Contents/Resources"
 
 # Copy executable
-cp "${BUILD_DIR}/${APP_NAME}" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
+cp "${EXECUTABLE}" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
 
 # Generate Info.plist with hardcoded values
 # (Source Info.plist uses Xcode build variables that won't resolve with swift build)
@@ -60,6 +68,9 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << 'EOF'
     <string>Copyright © 2026 PasteDeck. All rights reserved.</string>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
+    <!-- Accessibility permission is required for global hotkey monitoring -->
+    <key>NSAppleEventsUsageDescription</key>
+    <string>PasteDeck 需要监控键盘快捷键（⌘+Shift+V）来快速呼出剪切板历史面板。</string>
 </dict>
 </plist>
 EOF
@@ -67,33 +78,58 @@ EOF
 # Create PkgInfo
 echo -n "APPL????" > "$APP_BUNDLE/Contents/PkgInfo"
 
-echo "🎨 Compiling asset catalog..."
-xcrun actool --compile "$APP_BUNDLE/Contents/Resources" \
-    --platform macosx \
-    --minimum-deployment-target 14.0 \
-    PasteDeck/PasteDeck/Resources/Assets.xcassets 2>/dev/null || true
+# Copy assets if they exist
+ASSETS_DIR="PasteDeck/PasteDeck/Resources/Assets.xcassets"
+if [ -d "$ASSETS_DIR" ]; then
+    echo "🎨 Compiling asset catalog..."
+    xcrun actool --compile "$APP_BUNDLE/Contents/Resources" \
+        --platform macosx \
+        --minimum-deployment-target 14.0 \
+        "$ASSETS_DIR" 2>/dev/null || true
+else
+    echo "⚠️  Warning: Assets directory not found at $ASSETS_DIR"
+fi
 
 echo "🖼️ Generating app icon..."
 ICONSET_DIR=$(mktemp -d)/AppIcon.iconset
 mkdir -p "$ICONSET_DIR"
 SRC_DIR="PasteDeck/PasteDeck/Resources/Assets.xcassets/AppIcon.appiconset"
 
-cp "$SRC_DIR/icon_16x16.png" "$ICONSET_DIR/icon_16x16.png"
-cp "$SRC_DIR/icon_16x16@2x.png" "$ICONSET_DIR/icon_16x16@2x.png"
-cp "$SRC_DIR/icon_32x32.png" "$ICONSET_DIR/icon_32x32.png"
-cp "$SRC_DIR/icon_32x32@2x.png" "$ICONSET_DIR/icon_32x32@2x.png"
-cp "$SRC_DIR/icon_128x128.png" "$ICONSET_DIR/icon_128x128.png"
-cp "$SRC_DIR/icon_128x128@2x.png" "$ICONSET_DIR/icon_128x128@2x.png"
-cp "$SRC_DIR/icon_256x256.png" "$ICONSET_DIR/icon_256x256.png"
-cp "$SRC_DIR/icon_256x256@2x.png" "$ICONSET_DIR/icon_256x256@2x.png"
-cp "$SRC_DIR/icon_512x512.png" "$ICONSET_DIR/icon_512x512.png"
-cp "$SRC_DIR/icon_512x512@2x.png" "$ICONSET_DIR/icon_512x512@2x.png"
+if [ -d "$SRC_DIR" ]; then
+    # Copy icon files with fallback checks
+    ICON_FILES=(
+        "icon_16x16.png"
+        "icon_16x16@2x.png"
+        "icon_32x32.png"
+        "icon_32x32@2x.png"
+        "icon_128x128.png"
+        "icon_128x128@2x.png"
+        "icon_256x256.png"
+        "icon_256x256@2x.png"
+        "icon_512x512.png"
+        "icon_512x512@2x.png"
+    )
 
-iconutil -c icns "$ICONSET_DIR" -o "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
-rm -rf "$ICONSET_DIR"
+    for icon in "${ICON_FILES[@]}"; do
+        if [ -f "$SRC_DIR/$icon" ]; then
+            cp "$SRC_DIR/$icon" "$ICONSET_DIR/$icon"
+        else
+            echo "⚠️  Warning: Icon file $icon not found"
+        fi
+    done
+
+    iconutil -c icns "$ICONSET_DIR" -o "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
+    rm -rf "$ICONSET_DIR"
+
+    if [ ! -f "$APP_BUNDLE/Contents/Resources/AppIcon.icns" ]; then
+        echo "⚠️  Warning: Failed to create AppIcon.icns"
+    fi
+else
+    echo "⚠️  Warning: AppIcon directory not found at $SRC_DIR"
+fi
 
 echo "✍️ Applying ad-hoc code signature..."
-codesign --force --deep -s - "$APP_BUNDLE"
+codesign --force --deep --sign - --timestamp=none "$APP_BUNDLE"
 codesign -v "$APP_BUNDLE"
 
 echo "📀 Creating DMG installer..."
@@ -101,8 +137,15 @@ DMG_TEMP=$(mktemp -d)
 cp -R "$APP_BUNDLE" "$DMG_TEMP/"
 ln -s /Applications "$DMG_TEMP/Applications"
 
+echo "   Creating disk image..."
 rm -f "${BUILD_DIR}/${DMG_NAME}" "./${DMG_NAME}"
-hdiutil create -volname "$APP_NAME" -srcfolder "$DMG_TEMP" -ov -format UDZO "${BUILD_DIR}/${DMG_NAME}"
+hdiutil create -volname "$APP_NAME" \
+    -srcfolder "$DMG_TEMP" \
+    -ov \
+    -format UDZO \
+    -imagekey zlib-level=9 \
+    "${BUILD_DIR}/${DMG_NAME}"
+
 rm -rf "$DMG_TEMP"
 
 cp "${BUILD_DIR}/${DMG_NAME}" "./${DMG_NAME}"
@@ -111,3 +154,8 @@ echo ""
 echo "✅ DMG created successfully!"
 echo "📍 Location: $(pwd)/${DMG_NAME}"
 ls -lh "./${DMG_NAME}"
+
+# Optional: show DMG info
+echo ""
+echo "📊 DMG Info:"
+hdiutil imageinfo "./${DMG_NAME}" 2>/dev/null | grep -E "(format:|sectors:|size:|partition-scheme:|class:|writeable:)" || true

@@ -72,7 +72,7 @@ struct MainPanelView: View {
             } else {
                 ScrollViewReader { proxy in
                     ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 12) {
+                        LazyHStack(spacing: 12) {
                             ForEach(Array(filteredItems.enumerated()), id: \.element.id) { index, item in
                                 ClipCardView(
                                     item: item,

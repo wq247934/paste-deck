@@ -238,5 +238,6 @@ class ClipboardMonitor {
     private func saveItem(_ item: ClipboardItem) {
         modelContext.insert(item)
         try? modelContext.save()
+        // 清理逻辑移到启动时执行，避免每次保存都清理
     }
 }

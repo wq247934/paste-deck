@@ -7,6 +7,33 @@
 
 import SwiftUI
 
+struct AsyncLocalImage: View {
+    let path: String
+    @State private var image: NSImage?
+
+    var body: some View {
+        Group {
+            if let image = image {
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+            } else {
+                Image(systemName: "photo")
+                    .font(.system(size: 32))
+                    .foregroundColor(.secondary)
+            }
+        }
+        .task {
+            // 在后台线程读取图片
+            if let loadedImage = await Task.detached(operation: { NSImage(contentsOfFile: path) }).value {
+                await MainActor.run {
+                    self.image = loadedImage
+                }
+            }
+        }
+    }
+}
+
 struct ClipCardView: View {
     let item: ClipboardItem
     let isSelected: Bool
@@ -109,11 +136,8 @@ struct ClipCardView: View {
 
     private var imagePreview: some View {
         Group {
-            if let imagePath = item.imagePath,
-               let nsImage = NSImage(contentsOfFile: imagePath) {
-                Image(nsImage: nsImage)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
+            if let imagePath = item.imagePath {
+                AsyncLocalImage(path: imagePath)
             } else {
                 Image(systemName: "photo")
                     .font(.system(size: 32))
