@@ -28,6 +28,9 @@ struct MainPanelView: View {
     /// 当前焦点所在区域
     @State private var focusZone: FocusZone = .cards
 
+    /// 键盘移动限流，防止按键重复导致频繁刷新
+    @State private var lastMoveTime: Date = .distantPast
+
     /// 搜索栏焦点绑定
     @FocusState private var isSearchFocused: Bool
 
@@ -101,9 +104,7 @@ struct MainPanelView: View {
                     // 当选中项变化时滚动
                     .onChange(of: selectedIndex) { oldIndex, newIndex in
                         guard !filteredItems.isEmpty else { return }
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            proxy.scrollTo(filteredItems[newIndex].id, anchor: .center)
-                        }
+                        proxy.scrollTo(filteredItems[newIndex].id, anchor: .center)
                     }
                 }
             }
@@ -199,6 +200,11 @@ struct MainPanelView: View {
 
     private func moveSelection(by offset: Int) {
         guard !filteredItems.isEmpty else { return }
+
+        // 限流：50ms 内忽略重复的键盘事件（按键重复时）
+        let now = Date()
+        guard now.timeIntervalSince(lastMoveTime) >= 0.05 else { return }
+        lastMoveTime = now
 
         let newIndex = max(0, min(filteredItems.count - 1, selectedIndex + offset))
         selectedIndex = newIndex

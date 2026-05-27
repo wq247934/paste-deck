@@ -109,13 +109,12 @@ struct ClipCardView: View {
     }
 
     private var textPreview: some View {
-        ScrollView {
-            Text(item.textContent ?? "")
-                .font(.system(size: 12))
-                .foregroundColor(.primary)
-                .padding(8)
-                .frame(maxWidth: .infinity, alignment: .topLeading)
-        }
+        Text(item.textContent ?? "")
+            .font(.system(size: 12))
+            .foregroundColor(.primary)
+            .lineLimit(nil)
+            .padding(8)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private var linkPreview: some View {

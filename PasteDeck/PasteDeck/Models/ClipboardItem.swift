@@ -47,22 +47,32 @@ final class ClipboardItem {
         }
     }
 
+    private static let byteCountFormatter: ByteCountFormatter = {
+        let f = ByteCountFormatter()
+        f.countStyle = .file
+        return f
+    }()
+
     var displaySize: String {
         switch contentType {
         case .text, .link:
             let count = textContent?.count ?? 0
             return "\(count) 字符"
         case .image, .file:
-            return ByteCountFormatter.string(fromByteCount: Int64(fileSize), countStyle: .file)
+            return Self.byteCountFormatter.string(fromByteCount: Int64(fileSize))
         case .color:
             return colorHex ?? ""
         }
     }
 
+    private static let relativeDateTimeFormatter: RelativeDateTimeFormatter = {
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .abbreviated
+        return f
+    }()
+
     var displayTime: String {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .abbreviated
-        return formatter.localizedString(for: createdAt, relativeTo: Date())
+        Self.relativeDateTimeFormatter.localizedString(for: createdAt, relativeTo: Date())
     }
 
     // MARK: - Initialization
