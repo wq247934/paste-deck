@@ -561,6 +561,8 @@ struct AppearanceSettingsView: View {
 // MARK: - Advanced Settings
 
 struct AdvancedSettingsView: View {
+    @Environment(\.modelContext) private var modelContext
+    @Query private var settings: [AppSettings]
     @State private var highlightExtensions: [String: String] = PreviewConfigManager.shared.config.highlightExtensions
     @State private var plainTextExtensions: [String] = PreviewConfigManager.shared.config.plainTextExtensions
     @State private var newHighlightExt = ""
@@ -568,6 +570,17 @@ struct AdvancedSettingsView: View {
     @State private var newPlainExt = ""
     @State private var showingClearHistoryAlert = false
     @State private var showingClearCacheAlert = false
+    @State private var isVerifyingBaidu = false
+    @State private var baiduVerifyResult: (isSuccess: Bool, message: String)?
+    private var appSettings: AppSettings {
+        if let existing = settings.first {
+            return existing
+        }
+        let new = AppSettings()
+        modelContext.insert(new)
+        try? modelContext.save()
+        return new
+    }
 
     var body: some View {
         Form {
@@ -659,6 +672,67 @@ struct AdvancedSettingsView: View {
                 }
             }
 
+            Section {
+                Toggle("启用百度翻译", isOn: Binding(
+                    get: { appSettings.baiduTranslateEnabled },
+                    set: { appSettings.baiduTranslateEnabled = $0; try? modelContext.save() }
+                ))
+            } header: {
+                Text("百度翻译")
+            } footer: {
+                HStack {
+                    Text("免费额度：5万字/月")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Link("注册百度翻译开放平台", destination: URL(string: "https://fanyi-api.baidu.com/")!)
+                        .font(.system(size: 11))
+                }
+            }
+
+            if appSettings.baiduTranslateEnabled {
+                Section("翻译配置") {
+                    TextField("App ID", text: Binding(
+                        get: { appSettings.baiduTranslateAppId },
+                        set: { appSettings.baiduTranslateAppId = $0; try? modelContext.save() }
+                    ))
+                    .textFieldStyle(.roundedBorder)
+
+                    SecureField("密钥", text: Binding(
+                        get: { appSettings.baiduTranslateSecretKey },
+                        set: { appSettings.baiduTranslateSecretKey = $0; try? modelContext.save() }
+                    ))
+                    .textFieldStyle(.roundedBorder)
+
+                    Toggle("高级版（支持并发请求）", isOn: Binding(
+                        get: { appSettings.baiduTranslateIsAdvanced },
+                        set: { appSettings.baiduTranslateIsAdvanced = $0; try? modelContext.save() }
+                    ))
+
+                    HStack {
+                        Button("验证配置") {
+                            verifyBaiduApi()
+                        }
+                        .disabled(appSettings.baiduTranslateAppId.isEmpty || appSettings.baiduTranslateSecretKey.isEmpty)
+
+                        if isVerifyingBaidu {
+                            ProgressView()
+                                .controlSize(.small)
+                        }
+
+                        if let result = baiduVerifyResult {
+                            HStack(spacing: 4) {
+                                Image(systemName: result.isSuccess ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                    .foregroundColor(result.isSuccess ? .green : .red)
+                                Text(result.message)
+                                    .font(.system(size: 12))
+                                    .foregroundColor(result.isSuccess ? .green : .secondary)
+                            }
+                        }
+                    }
+                }
+            }
+
             Section("清除数据") {
                 Button("清除所有历史记录") {
                     showingClearHistoryAlert = true
@@ -691,6 +765,29 @@ struct AdvancedSettingsView: View {
             Button("取消", role: .cancel) {}
             Button("清除", role: .destructive) {
                 CacheManager().clearAllCache()
+            }
+        }
+    }
+
+    private func verifyBaiduApi() {
+        isVerifyingBaidu = true
+        baiduVerifyResult = nil
+
+        let service = TranslateService(
+            appId: appSettings.baiduTranslateAppId,
+            secretKey: appSettings.baiduTranslateSecretKey,
+            isAdvanced: appSettings.baiduTranslateIsAdvanced
+        )
+
+        service.translateSegment("hello", from: "en", to: "zh") { result in
+            DispatchQueue.main.async {
+                isVerifyingBaidu = false
+                switch result {
+                case .success:
+                    baiduVerifyResult = (isSuccess: true, message: "验证成功")
+                case .failure(let error):
+                    baiduVerifyResult = (isSuccess: false, message: error.localizedDescription)
+                }
             }
         }
     }

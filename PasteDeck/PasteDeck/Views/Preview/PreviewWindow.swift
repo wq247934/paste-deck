@@ -6,7 +6,26 @@
 //
 
 import SwiftUI
+import SwiftData
 import AppKit
+
+/// 翻译结果缓存，按 ClipboardItem.id 索引，关闭面板时统一清空
+class TranslateCache {
+    static let shared = TranslateCache()
+    private var cache: [UUID: [TranslateSegment]] = [:]
+
+    func get(for id: UUID) -> [TranslateSegment]? {
+        cache[id]
+    }
+
+    func set(_ segments: [TranslateSegment], for id: UUID) {
+        cache[id] = segments
+    }
+
+    func clear() {
+        cache.removeAll()
+    }
+}
 
 // 保存主窗口的引用
 class MainWindowReference {
@@ -22,6 +41,13 @@ struct PreviewWindow: View {
     @State private var previewMode: PreviewMode = .none
     @State private var isTruncated = false
     @State private var loadError: String?
+
+    // 翻译状态
+    @State private var translateSegments: [TranslateSegment] = []
+    @State private var isTranslating = false
+    @State private var translateError: String?
+    @State private var targetLanguage: String = "zh"
+    @State private var showTranslation = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -83,6 +109,12 @@ struct PreviewWindow: View {
 
             Divider()
 
+            // 翻译结果区域
+            if showTranslation {
+                Divider()
+                translateResultArea
+            }
+
             // 底部操作栏
             HStack {
                 Text(item.displaySize)
@@ -90,6 +122,24 @@ struct PreviewWindow: View {
                     .foregroundColor(.secondary)
 
                 Spacer()
+
+                // 翻译按钮（仅文本/链接类型可用）
+                if item.contentType == .text || item.contentType == .link {
+                    Button(action: {
+                        if showTranslation {
+                            showTranslation = false
+                        } else {
+                            startTranslate()
+                        }
+                    }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: showTranslation ? "xmark.circle.fill" : "character.book.closed")
+                            Text(showTranslation ? "关闭翻译" : "翻译")
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isTranslating)
+                }
 
                 Button("复制") {
                     PasteService.shared.copyToPasteboard(item)
@@ -109,6 +159,207 @@ struct PreviewWindow: View {
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .onAppear {
             loadFileContentIfNeeded()
+        }
+    }
+
+    // MARK: - Translate Result View
+
+    @ViewBuilder
+    private var translateResultArea: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: "character.book.closed")
+                    .foregroundColor(.accentColor)
+                Text("翻译结果")
+                    .font(.system(size: 13, weight: .medium))
+
+                Spacer()
+
+                if isTranslating {
+                    let completed = translateSegments.filter { $0.result != nil || $0.error != nil }.count
+                    Text("正在翻译 \(completed)/\(translateSegments.count)...")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                }
+
+                if translateSegments.filter({ $0.result != nil }).count == translateSegments.count && !translateSegments.isEmpty {
+                    Button("复制译文") {
+                        let fullTranslation = translateSegments.compactMap { $0.result }.joined(separator: "\n\n")
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(fullTranslation, forType: .string)
+                    }
+                    .font(.system(size: 11))
+                    .buttonStyle(.plain)
+                    .foregroundColor(.accentColor)
+                }
+            }
+
+            if let error = translateError {
+                HStack {
+                    Image(systemName: "exclamationmark.triangle")
+                        .foregroundColor(.orange)
+                    Text(error)
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            ScrollView(.vertical, showsIndicators: true) {
+                VStack(alignment: .leading, spacing: 12) {
+                    ForEach(translateSegments) { segment in
+                        VStack(alignment: .leading, spacing: 4) {
+                            if let result = segment.result {
+                                Text(result)
+                                    .font(.system(size: 13))
+                                    .textSelection(.enabled)
+                            } else if let error = segment.error {
+                                Text(error)
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.red)
+                            } else if segment.isTranslating {
+                                HStack(spacing: 4) {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                    Text("翻译中...")
+                                        .font(.system(size: 12))
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .frame(maxHeight: 200)
+        }
+        .padding(16)
+        .background(Color.primary.opacity(0.03))
+    }
+
+    // MARK: - Translate Logic
+
+    private func startTranslate() {
+        let text: String
+        switch item.contentType {
+        case .text, .link:
+            text = item.textContent ?? ""
+        default:
+            return
+        }
+
+        guard !text.isEmpty else { return }
+
+        // 检查缓存
+        if let cached = TranslateCache.shared.get(for: item.id) {
+            translateSegments = cached
+            showTranslation = true
+            return
+        }
+
+        // 检查 API 配置
+        let context = ModelContext(AppModelContainer.container)
+        let descriptor = FetchDescriptor<AppSettings>()
+        guard let settings = try? context.fetch(descriptor).first,
+              settings.baiduTranslateEnabled,
+              !settings.baiduTranslateAppId.isEmpty,
+              !settings.baiduTranslateSecretKey.isEmpty else {
+            translateError = "请先在设置中启用并配置百度翻译 API"
+            showTranslation = true
+            return
+        }
+
+        let service = TranslateService(
+            appId: settings.baiduTranslateAppId,
+            secretKey: settings.baiduTranslateSecretKey,
+            isAdvanced: settings.baiduTranslateIsAdvanced
+        )
+
+        // 自动检测目标语言
+        targetLanguage = TranslateService.detectTargetLanguage(for: text)
+
+        // 拆分段落
+        let segments = service.splitText(text)
+        translateSegments = segments.enumerated().map { index, source in
+            TranslateSegment(index: index, total: segments.count, source: source)
+        }
+        showTranslation = true
+        isTranslating = true
+        translateError = nil
+
+        // 串行/并行翻译
+        if settings.baiduTranslateIsAdvanced {
+            // 高级版：并发（最多 5 个并发）
+            translateParallel(service: service, maxConcurrent: 5)
+        } else {
+            // 普通版：串行
+            translateSerial(service: service)
+        }
+    }
+
+    private func translateSerial(service: TranslateService) {
+        let total = translateSegments.count
+
+        func translateNext(index: Int) {
+            guard index < total else {
+                isTranslating = false
+                TranslateCache.shared.set(translateSegments, for: item.id)
+                return
+            }
+
+            translateSegments[index].isTranslating = true
+
+            service.translateSegment(translateSegments[index].source, to: targetLanguage) { [self] result in
+                DispatchQueue.main.async {
+                    if index < translateSegments.count {
+                        switch result {
+                        case .success(let translated):
+                            translateSegments[index].result = translated
+                        case .failure(let error):
+                            translateSegments[index].error = error.localizedDescription
+                        }
+                        translateSegments[index].isTranslating = false
+                    }
+                    translateNext(index: index + 1)
+                }
+            }
+        }
+
+        translateNext(index: 0)
+    }
+
+    private func translateParallel(service: TranslateService, maxConcurrent: Int) {
+        let total = translateSegments.count
+        let group = DispatchGroup()
+        let semaphore = DispatchSemaphore(value: maxConcurrent)
+
+        for i in 0..<total {
+            group.enter()
+            semaphore.wait()
+
+            DispatchQueue.main.async {
+                self.translateSegments[i].isTranslating = true
+            }
+
+            service.translateSegment(translateSegments[i].source, to: targetLanguage) { result in
+                semaphore.signal()
+
+                DispatchQueue.main.async {
+                    if i < self.translateSegments.count {
+                        switch result {
+                        case .success(let translated):
+                            self.translateSegments[i].result = translated
+                        case .failure(let error):
+                            self.translateSegments[i].error = error.localizedDescription
+                        }
+                        self.translateSegments[i].isTranslating = false
+                    }
+                    group.leave()
+                }
+            }
+        }
+
+        group.notify(queue: .main) {
+            self.isTranslating = false
+            TranslateCache.shared.set(self.translateSegments, for: self.item.id)
         }
     }
 

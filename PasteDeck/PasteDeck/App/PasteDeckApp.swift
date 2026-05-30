@@ -19,44 +19,10 @@ struct PasteDeckApp: App {
     let modelContainer: ModelContainer
 
     init() {
-        do {
-            let schema = Schema([
-                ClipboardItem.self,
-                AppSettings.self,
-                FavoriteCollection.self
-            ])
+        modelContainer = AppModelContainer.container
 
-            // 创建专属的存储路径
-            let appSupportURL = try FileManager.default.url(
-                for: .applicationSupportDirectory,
-                in: .userDomainMask,
-                appropriateFor: nil,
-                create: true
-            )
-
-            // 使用 Bundle ID 作为子目录，确保数据隔离
-            let pasteDeckURL = appSupportURL.appendingPathComponent("com.pastedeck.app")
-
-            // 创建目录（如果不存在）
-            try FileManager.default.createDirectory(at: pasteDeckURL, withIntermediateDirectories: true)
-
-            // 指定数据库文件路径
-            let storeURL = pasteDeckURL.appendingPathComponent("PasteDeck.sqlite")
-
-            // 创建 ModelConfiguration
-            let modelConfiguration = ModelConfiguration(
-                schema: schema,
-                url: storeURL,
-                allowsSave: true
-            )
-
-            modelContainer = try ModelContainer(for: schema, configurations: [modelConfiguration])
-
-            // 确保默认收藏夹存在
-            Self.seedDefaultCollection(context: modelContainer.mainContext)
-        } catch {
-            fatalError("Could not initialize ModelContainer: \(error)")
-        }
+        // 确保默认收藏夹存在
+        Self.seedDefaultCollection(context: modelContainer.mainContext)
     }
 
     /// 如果数据库中没有默认收藏夹，创建一个
@@ -238,37 +204,53 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
 // MARK: - Model Container Singleton
 
-/// Shared ModelContainer used across the app
 enum AppModelContainer {
     static let container: ModelContainer = {
+        let schema = Schema([
+            ClipboardItem.self,
+            AppSettings.self,
+            FavoriteCollection.self
+        ])
+
+        let appSupportURL = try! FileManager.default.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        )
+
+        let pasteDeckURL = appSupportURL.appendingPathComponent("com.pastedeck.app")
+        try? FileManager.default.createDirectory(at: pasteDeckURL, withIntermediateDirectories: true)
+
+        let storeURL = pasteDeckURL.appendingPathComponent("PasteDeck.sqlite")
+
         do {
-            let schema = Schema([
-                ClipboardItem.self,
-                AppSettings.self,
-                FavoriteCollection.self
-            ])
-
-            let appSupportURL = try FileManager.default.url(
-                for: .applicationSupportDirectory,
-                in: .userDomainMask,
-                appropriateFor: nil,
-                create: true
-            )
-
-            let pasteDeckURL = appSupportURL.appendingPathComponent("com.pastedeck.app")
-            try FileManager.default.createDirectory(at: pasteDeckURL, withIntermediateDirectories: true)
-
-            let storeURL = pasteDeckURL.appendingPathComponent("PasteDeck.sqlite")
-
-            let modelConfiguration = ModelConfiguration(
-                schema: schema,
-                url: storeURL,
-                allowsSave: true
-            )
-
+            // 不传 schema 参数给 ModelConfiguration，让 SwiftData 自动处理轻量迁移
+            let modelConfiguration = ModelConfiguration(url: storeURL, allowsSave: true)
             return try ModelContainer(for: schema, configurations: [modelConfiguration])
-        } catch {
-            fatalError("Could not initialize ModelContainer: \(error)")
+        } catch let firstError {
+            NSLog("[PasteDeck] Failed to open database (attempt 1): \(firstError)")
+            // 尝试第二次：指定 schema 让 SwiftData 重建表结构
+            do {
+                let modelConfiguration = ModelConfiguration(schema: schema, url: storeURL, allowsSave: true)
+                return try ModelContainer(for: schema, configurations: [modelConfiguration])
+            } catch let secondError {
+                NSLog("[PasteDeck] Failed to open database (attempt 2): \(secondError)")
+                // 最后兜底：备份旧数据库，重建空库
+                let fm = FileManager.default
+                let timestamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
+                for file in ["PasteDeck.sqlite", "PasteDeck.sqlite-wal", "PasteDeck.sqlite-shm"] {
+                    let src = pasteDeckURL.appendingPathComponent(file)
+                    let dst = pasteDeckURL.appendingPathComponent(file + ".backup-\(timestamp)")
+                    try? fm.moveItem(at: src, to: dst)
+                }
+                do {
+                    let modelConfiguration = ModelConfiguration(url: storeURL, allowsSave: true)
+                    return try ModelContainer(for: schema, configurations: [modelConfiguration])
+                } catch let thirdError {
+                    fatalError("Could not initialize ModelContainer. Old data backed up. Errors: 1)\(firstError) 2)\(secondError) 3)\(thirdError)")
+                }
+            }
         }
     }()
 }

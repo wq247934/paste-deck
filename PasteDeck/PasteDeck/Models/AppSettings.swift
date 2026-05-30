@@ -23,6 +23,12 @@ final class AppSettings {
     var themeMode: Int
     var cardSize: Int
 
+    // 百度翻译 API
+    var baiduTranslateEnabled: Bool
+    var baiduTranslateAppId: String
+    var baiduTranslateSecretKey: String
+    var baiduTranslateIsAdvanced: Bool
+
     init() {
         self.launchAtLogin = true
         self.showMenuBarIcon = true
@@ -34,6 +40,10 @@ final class AppSettings {
         self.blacklistedApps = []
         self.themeMode = 0
         self.cardSize = 1
+        self.baiduTranslateEnabled = false
+        self.baiduTranslateAppId = ""
+        self.baiduTranslateSecretKey = ""
+        self.baiduTranslateIsAdvanced = false
     }
 }
 
