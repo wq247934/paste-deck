@@ -14,6 +14,7 @@ import AppKit
 extension Notification.Name {
     static let clearSearchText = Notification.Name("clearSearchText")
     static let clearSelection = Notification.Name("clearSelection")
+    static let panelDidShow = Notification.Name("panelDidShow")
 }
 
 // MARK: - Focus Zone Enum
@@ -47,6 +48,9 @@ struct MainPanelView: View {
 
     /// 搜索栏焦点绑定
     @FocusState private var isSearchFocused: Bool
+
+    /// 预览窗口控制器（需要持有以防止被释放）
+    @State private var previewController: PreviewWindowController?
 
     var closeHandler: (() -> Void)?
 
@@ -139,6 +143,7 @@ struct MainPanelView: View {
                         items: filteredItems,
                         selectedItemId: selectedItem?.id,
                         selectedItems: selectedItems,
+                        showSelection: focusZone == .cards,
                         cardSize: cardSize,
                         onItemTapped: { index, item in
                             handleItemTap(index: index, item: item)
@@ -188,6 +193,19 @@ struct MainPanelView: View {
                 selectedIndex = 0
                 selectedItem = filteredItems.first
             }
+        }
+        // 面板打开时重置焦点到卡片区，选中第二项
+        .onReceive(NotificationCenter.default.publisher(for: .panelDidShow)) { _ in
+            if filteredItems.count > 1 {
+                selectedIndex = 1
+                selectedItem = filteredItems[1]
+            } else if !filteredItems.isEmpty {
+                selectedIndex = 0
+                selectedItem = filteredItems.first
+            }
+            isSearchFocused = false
+            focusZone = .cards
+            clearMultiSelection()
         }
         // 使用 NSEvent 监听键盘
         .background(
@@ -330,8 +348,8 @@ struct MainPanelView: View {
     }
 
     private func previewItem(_ item: ClipboardItem) {
-        let previewController = PreviewWindowController()
-        previewController.show(item: item, onClose: {})
+        previewController = PreviewWindowController()
+        previewController?.show(item: item, onClose: {})
     }
 
     private func deleteSelectedItem() {
@@ -486,6 +504,7 @@ struct HorizontalScrollHostingView: View {
     let items: [ClipboardItem]
     let selectedItemId: UUID?
     let selectedItems: Set<UUID>
+    var showSelection: Bool = true
     let cardSize: CardSize
     let onItemTapped: (Int, ClipboardItem) -> Void
     let onItemDoubleTapped: (ClipboardItem) -> Void
@@ -497,8 +516,8 @@ struct HorizontalScrollHostingView: View {
                 ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                     ClipCardView(
                         item: item,
-                        isSelected: selectedItems.contains(item.id) || selectedItemId == item.id,
-                        isMultiSelected: selectedItems.contains(item.id) && selectedItems.count > 1,
+                        isSelected: showSelection && (selectedItems.contains(item.id) || selectedItemId == item.id),
+                        isMultiSelected: showSelection && selectedItems.contains(item.id) && selectedItems.count > 1,
                         cardSize: cardSize
                     )
                     .id(item.id)

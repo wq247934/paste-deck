@@ -231,8 +231,11 @@ class ClipboardMonitor {
     }
 
     private func isBlacklisted(_ appName: String) -> Bool {
-        // TODO: Check against settings
-        return false
+        let descriptor = FetchDescriptor<AppSettings>()
+        guard let settings = try? modelContext.fetch(descriptor).first else {
+            return false
+        }
+        return settings.blacklistedApps.contains(appName)
     }
 
     private func saveItem(_ item: ClipboardItem) {

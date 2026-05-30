@@ -80,6 +80,14 @@ class MainPanelController: NSObject, NSWindowDelegate {
 
     // MARK: - Public Methods
 
+    /// 临时禁用 resignKey 自动关闭（预览窗口关闭恢复焦点时调用）
+    func suspendAutoClose() {
+        canCloseOnResignKey = false
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            self?.canCloseOnResignKey = true
+        }
+    }
+
     func showPanel() {
         guard let panel = panel else { return }
 
@@ -88,6 +96,9 @@ class MainPanelController: NSObject, NSWindowDelegate {
         panel.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         isVisible = true
+
+        // 通知 MainPanelView 重置焦点和选中状态
+        NotificationCenter.default.post(name: .panelDidShow, object: nil)
 
         // 注册 Esc 键监听
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in

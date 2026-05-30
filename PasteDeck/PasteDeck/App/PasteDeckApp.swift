@@ -188,6 +188,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         settingsWindow = window
+
+        // 确保有"窗口"菜单包含"关闭"项，使 ⌘+W 可用
+        ensureWindowMenuExists()
     }
 
     @objc private func quitApp() {
@@ -196,6 +199,40 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func toggleMainPanel() {
         mainPanelController?.togglePanel()
+    }
+
+    // MARK: - Window Menu
+
+    /// 确保应用菜单栏包含"窗口"菜单（含"关闭"项），使 ⌘+W 可用
+    private func ensureWindowMenuExists() {
+        // 如果已经有窗口菜单则跳过
+        if NSApp.mainMenu?.items.contains(where: { $0.title == "窗口" }) == true {
+            return
+        }
+
+        let windowMenu = NSMenu(title: "窗口")
+
+        let closeItem = NSMenuItem(title: "关闭", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        windowMenu.addItem(closeItem)
+
+        windowMenu.addItem(NSMenuItem.separator())
+
+        let minimizeItem = NSMenuItem(title: "最小化", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
+        windowMenu.addItem(minimizeItem)
+
+        let zoomItem = NSMenuItem(title: "缩放", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
+        windowMenu.addItem(zoomItem)
+
+        let menuItem = NSMenuItem()
+        menuItem.title = "窗口"
+        menuItem.submenu = windowMenu
+
+        // 插入到帮助菜单之前，如果没有帮助菜单则追加到末尾
+        if let helpIndex = NSApp.mainMenu?.items.firstIndex(where: { $0.title == "帮助" }) {
+            NSApp.mainMenu?.insertItem(menuItem, at: helpIndex)
+        } else {
+            NSApp.mainMenu?.addItem(menuItem)
+        }
     }
 }
 

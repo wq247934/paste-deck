@@ -113,7 +113,8 @@ struct PreviewWindow: View {
     }
 
     private func closeWindow() {
-        NSApp.keyWindow?.close()
+        // 只调用 onClose，由 PreviewWindowController 统一处理关闭和焦点恢复
+        // 不直接调用 NSApp.keyWindow?.close()，避免重复关闭
         onClose?()
     }
 
@@ -394,13 +395,24 @@ struct TextPreviewNSView: NSViewRepresentable {
 
 // MARK: - Preview Window Controller
 
-class PreviewWindowController {
+class PreviewWindowController: NSObject, NSWindowDelegate {
     private var window: NSWindow?
+    private var escMonitor: Any?
+    private var onCloseCallback: (() -> Void)?
+    /// 标记是否已执行过关闭+恢复焦点，防止 windowWillClose 和 close() 重复执行
+    private var didCloseAndRestore = false
 
     func show(item: ClipboardItem, onClose: @escaping () -> Void) {
-        MainWindowReference.window = NSApp.keyWindow
+        // 先清理可能残留的旧窗口和监听器
+        cleanup()
 
-        let previewView = PreviewWindow(item: item, onClose: onClose)
+        MainWindowReference.window = NSApp.keyWindow
+        onCloseCallback = onClose
+        didCloseAndRestore = false
+
+        let previewView = PreviewWindow(item: item, onClose: { [weak self] in
+            self?.performClose()
+        })
         let hostingController = NSHostingController(rootView: previewView)
 
         let window = NSWindow(contentViewController: hostingController)
@@ -413,19 +425,80 @@ class PreviewWindowController {
         window.isReleasedWhenClosed = false
         window.makeKeyAndOrderFront(nil)
         window.hidesOnDeactivate = false
+        window.delegate = self
 
         self.window = window
 
-        var escMonitor: Any?
-        escMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            guard event.keyCode == 53, NSApp.keyWindow === window else { return event }
-            NSEvent.removeMonitor(escMonitor!)
-            escMonitor = nil
-            window.close()
-            onClose()
+        // Esc 键监听：只拦截预览窗口为 keyWindow 时的 Esc
+        escMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self = self, self.window != nil else { return event }
+            guard event.keyCode == 53, NSApp.keyWindow === self.window else { return event }
+            self.performClose()
             return nil
         }
 
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// 统一的关闭入口：移除监听 → 关窗口 → 恢复焦点 → 回调
+    private func performClose() {
+        guard !didCloseAndRestore else { return }
+        didCloseAndRestore = true
+
+        // 先移除 Esc 监听，防止 close 过程中触发其他监听器
+        removeEscMonitor()
+
+        window?.close()
+        window = nil
+
+        // 恢复主面板焦点
+        restoreMainPanelFocus()
+
+        onCloseCallback?()
+        onCloseCallback = nil
+    }
+
+    /// 清理残留的窗口和监听器（不触发恢复焦点和回调）
+    private func cleanup() {
+        removeEscMonitor()
+        window?.close()
+        window = nil
+        onCloseCallback = nil
+        didCloseAndRestore = false
+    }
+
+    private func removeEscMonitor() {
+        if let monitor = escMonitor {
+            NSEvent.removeMonitor(monitor)
+            escMonitor = nil
+        }
+    }
+
+    private func restoreMainPanelFocus() {
+        guard let previousWindow = MainWindowReference.window, previousWindow.isVisible else { return }
+
+        // 临时禁用主面板的 resignKey 自动关闭
+        if let panelController = NSApp.windows
+            .compactMap({ $0.delegate as? MainPanelController })
+            .first {
+            panelController.suspendAutoClose()
+        }
+
+        previousWindow.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    // MARK: - NSWindowDelegate
+
+    @objc func windowWillClose(_ notification: Notification) {
+        // 窗口关闭时的兜底：如果 performClose 已执行则跳过，否则补执行
+        guard !didCloseAndRestore else { return }
+        performClose()
+    }
+
+    @objc func windowShouldClose(_ sender: NSWindow) -> Bool {
+        // 点击关闭按钮时，走统一关闭流程，返回 false 阻止系统自动关闭
+        performClose()
+        return false
     }
 }

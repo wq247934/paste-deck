@@ -183,18 +183,54 @@ struct HistorySettingsView: View {
 // MARK: - Filter Settings
 
 struct FilterSettingsView: View {
-    @State private var blacklist: [String] = []
+    @Environment(\.modelContext) private var modelContext
+    @Query private var settings: [AppSettings]
     @State private var newBlacklistApp = ""
+    @State private var showRunningApps = false
+
+    private var appSettings: AppSettings {
+        if let existing = settings.first {
+            return existing
+        }
+        let new = AppSettings()
+        modelContext.insert(new)
+        try? modelContext.save()
+        return new
+    }
+
+    /// 当前运行中的应用（排除自身和系统 UI 进程）
+    private var runningApps: [RunningAppInfo] {
+        let blacklisted = Set(appSettings.blacklistedApps)
+        return NSWorkspace.shared.runningApplications
+            .filter { app in
+                guard let name = app.localizedName, !name.isEmpty else { return false }
+                // 排除自身
+                if app.bundleIdentifier == "com.pastedeck.app" { return false }
+                // 只显示有 Dock 图标的常规应用（排除系统后台进程）
+                return app.activationPolicy == .regular
+            }
+            .compactMap { app in
+                guard let name = app.localizedName else { return nil }
+                return RunningAppInfo(
+                    name: name,
+                    bundleID: app.bundleIdentifier ?? "",
+                    icon: app.icon
+                )
+            }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            .filter { !blacklisted.contains($0.name) }
+    }
 
     var body: some View {
         Form {
             Section("应用黑名单") {
-                ForEach(blacklist, id: \.self) { app in
+                ForEach(appSettings.blacklistedApps, id: \.self) { app in
                     HStack {
                         Text(app)
                         Spacer()
                         Button(action: {
-                            blacklist.removeAll { $0 == app }
+                            appSettings.blacklistedApps.removeAll { $0 == app }
+                            try? modelContext.save()
                         }) {
                             Image(systemName: "minus.circle.fill")
                                 .foregroundColor(.red)
@@ -204,19 +240,77 @@ struct FilterSettingsView: View {
                 }
 
                 HStack {
-                    TextField("添加应用 Bundle ID", text: $newBlacklistApp)
+                    TextField("添加应用名称", text: $newBlacklistApp)
                         .textFieldStyle(.roundedBorder)
                     Button("添加") {
-                        if !newBlacklistApp.isEmpty {
-                            blacklist.append(newBlacklistApp)
+                        let trimmed = newBlacklistApp.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !trimmed.isEmpty && !appSettings.blacklistedApps.contains(trimmed) {
+                            appSettings.blacklistedApps.append(trimmed)
                             newBlacklistApp = ""
+                            try? modelContext.save()
                         }
                     }
+                }
+            }
+
+            Section("运行中的应用") {
+                if runningApps.isEmpty {
+                    Text("暂无可添加的运行中应用")
+                        .foregroundColor(.secondary)
+                        .font(.system(size: 12))
+                } else {
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 4) {
+                            ForEach(runningApps) { appInfo in
+                                Button(action: {
+                                    if !appSettings.blacklistedApps.contains(appInfo.name) {
+                                        appSettings.blacklistedApps.append(appInfo.name)
+                                        try? modelContext.save()
+                                    }
+                                }) {
+                                    HStack(spacing: 8) {
+                                        if let icon = appInfo.icon {
+                                            Image(nsImage: icon)
+                                                .resizable()
+                                                .frame(width: 20, height: 20)
+                                        }
+                                        Text(appInfo.name)
+                                            .foregroundColor(.primary)
+                                        if !appInfo.bundleID.isEmpty {
+                                            Text(appInfo.bundleID)
+                                                .font(.system(size: 10, design: .monospaced))
+                                                .foregroundColor(.secondary)
+                                                .lineLimit(1)
+                                                .truncationMode(.tail)
+                                        }
+                                        Spacer()
+                                        Image(systemName: "plus.circle.fill")
+                                            .foregroundColor(.accentColor)
+                                            .font(.system(size: 14))
+                                    }
+                                    .padding(.vertical, 4)
+                                    .padding(.horizontal, 8)
+                                    .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.03)))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                    .frame(maxHeight: 200)
                 }
             }
         }
         .formStyle(.grouped)
     }
+}
+
+/// 运行中应用信息
+struct RunningAppInfo: Identifiable {
+    let name: String
+    let bundleID: String
+    let icon: NSImage?
+
+    var id: String { bundleID.isEmpty ? name : bundleID }
 }
 
 // MARK: - Favorites Settings
@@ -358,7 +452,7 @@ struct CollectionRowView: View {
             }
         }
         .onTapGesture(count: 2) {
-            if !collection.isDefault {
+            if !collection.isDefault && !isEditing {
                 startEditing()
             }
         }
@@ -530,7 +624,7 @@ struct AdvancedSettingsView: View {
                 HStack {
                     Text("版本")
                     Spacer()
-                    Text("1.0.1")
+                    Text("1.0.3")
                         .foregroundColor(.secondary)
                 }
             }
