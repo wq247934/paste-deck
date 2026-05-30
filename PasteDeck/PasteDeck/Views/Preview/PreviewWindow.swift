@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import AppKit
 
 // 保存主窗口的引用
 class MainWindowReference {
@@ -61,7 +62,7 @@ struct PreviewWindow: View {
 
             Divider()
 
-            // 预览内容（不使用外层 ScrollView，因为 CodeHighlightView 自带 NSScrollView）
+            // 预览内容
             previewContent
                 .padding(20)
 
@@ -120,13 +121,8 @@ struct PreviewWindow: View {
     private var previewContent: some View {
         switch item.contentType {
         case .text:
-            ScrollView {
-                Text(item.textContent ?? "")
-                    .font(.system(size: 14, design: .monospaced))
-                    .foregroundColor(.primary)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
-            }
+            // 文本预览改用 NSScrollView，确保上下键可以滚动
+            TextPreviewNSView(text: item.textContent ?? "")
 
         case .link:
             VStack(spacing: 16) {
@@ -161,132 +157,71 @@ struct PreviewWindow: View {
             }
 
         case .file:
-            filePreviewContent
+            fileContentPreview
 
         case .color:
             VStack(spacing: 16) {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color(hex: item.colorHex ?? "") ?? .clear)
-                    .frame(width: 200, height: 200)
+                if let hex = item.colorHex {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color(hex: hex) ?? .clear)
+                        .frame(height: 200)
 
-                VStack(spacing: 8) {
-                    infoRow(label: "HEX", value: item.colorHex ?? "-")
+                    Text(hex)
+                        .font(.system(size: 16, weight: .medium, design: .monospaced))
+                        .textSelection(.enabled)
                 }
             }
             .frame(maxWidth: .infinity)
         }
     }
 
-    // MARK: - File Preview
-
     @ViewBuilder
-    private var filePreviewContent: some View {
-        if previewMode == .none {
-            // 不预览内容，显示文件元信息
-            VStack(spacing: 16) {
+    private var fileContentPreview: some View {
+        if let error = loadError {
+            VStack(spacing: 12) {
+                Image(systemName: "exclamationmark.triangle")
+                    .font(.system(size: 32))
+                    .foregroundColor(.orange)
+                Text(error)
+                    .font(.system(size: 13))
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if previewMode == .highlight, let content = fileContent {
+            CodeHighlightView(
+                code: content,
+                language: PreviewConfigManager.shared.highlightLanguage(for: item.fileName),
+                showLineNumbers: true
+            )
+        } else if previewMode == .plain, let content = fileContent {
+            PlainTextView(text: content)
+        } else if previewMode == .none {
+            VStack(spacing: 12) {
                 Image(systemName: fileIcon)
                     .font(.system(size: 48))
                     .foregroundColor(.secondary)
 
                 Text(item.fileName ?? "文件")
-                    .font(.system(size: 16, weight: .medium))
+                    .font(.system(size: 14, weight: .medium))
 
-                VStack(spacing: 8) {
-                    infoRow(label: "类型", value: fileTypeDescription)
-                    infoRow(label: "大小", value: ByteCountFormatter.string(fromByteCount: Int64(item.fileSize), countStyle: .file))
-                    if let filePath = item.filePath {
-                        infoRow(label: "路径", value: filePath)
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity)
-        } else if let content = fileContent {
-            // 有内容可预览
-            switch previewMode {
-            case .highlight:
-                VStack(spacing: 0) {
-                    // 语言标签
-                    HStack {
-                        if let lang = PreviewConfigManager.shared.highlightLanguage(for: item.fileName) {
-                            Text(lang.uppercased())
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 3)
-                                .background(Color.accentColor)
-                                .clipShape(RoundedRectangle(cornerRadius: 4))
-                        }
-                        Spacer()
-                        if let filePath = item.filePath {
-                            Text(filePath)
-                                .font(.system(size: 10, design: .monospaced))
-                                .foregroundColor(.secondary)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                        }
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 12)
-
-                    CodeHighlightView(code: content, language: PreviewConfigManager.shared.highlightLanguage(for: item.fileName))
-                        .padding(.top, 4)
-                }
-
-            case .plain:
-                VStack(spacing: 0) {
-                    HStack {
-                        Text("TEXT")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(Color.secondary)
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
-                        Spacer()
-                        if let filePath = item.filePath {
-                            Text(filePath)
-                                .font(.system(size: 10, design: .monospaced))
-                                .foregroundColor(.secondary)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                        }
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 12)
-
-                    PlainTextView(text: content)
-                        .padding(.top, 4)
-                }
-
-            case .none:
-                EmptyView()
-            }
-        } else if let error = loadError {
-            // 加载失败
-            VStack(spacing: 16) {
-                Image(systemName: "exclamationmark.triangle")
-                    .font(.system(size: 36))
-                    .foregroundColor(.orange)
-
-                Text("无法读取文件")
-                    .font(.system(size: 16, weight: .medium))
-
-                Text(error)
-                    .font(.system(size: 13))
+                Text(fileTypeDescription)
+                    .font(.system(size: 12))
                     .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
 
-                Button("在 Finder 中查看") {
-                    if let filePath = item.filePath {
-                        NSWorkspace.shared.selectFile(filePath, inFileViewerRootedAtPath: "")
+                // 文件信息
+                VStack(alignment: .leading, spacing: 4) {
+                    if let path = item.filePath {
+                        infoRow(label: "路径", value: path)
                     }
+                    infoRow(label: "大小", value: item.displaySize)
+                    infoRow(label: "时间", value: item.displayTime)
                 }
-                .buttonStyle(.bordered)
+                .padding(.top, 8)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            // 加载中
-            ProgressView("加载文件内容...")
+            ProgressView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
@@ -301,32 +236,36 @@ struct PreviewWindow: View {
 
         guard mode != .none, let filePath = item.filePath else { return }
 
-        // 检查文件是否存在
-        let fileManager = FileManager.default
-        if !fileManager.fileExists(atPath: filePath) {
-            loadError = "文件不存在。"
+        // 检查文件大小
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: filePath),
+              let fileSize = attrs[.size] as? Int else {
+            loadError = "无法读取文件信息。"
             return
         }
 
+        let maxSize = PreviewConfigManager.shared.config.maxPreviewSize
+        let readSize = min(fileSize, maxSize)
+        isTruncated = fileSize > maxSize
+
         DispatchQueue.global(qos: .userInitiated).async {
-            let maxSize = PreviewConfigManager.shared.config.maxPreviewSize
-
             do {
-                let data = try Data(contentsOf: URL(fileURLWithPath: filePath))
+                let handle = try FileHandle(forReadingFrom: URL(fileURLWithPath: filePath))
+                let data = handle.readData(ofLength: readSize)
+                handle.closeFile()
 
-                let truncated = data.count > maxSize
-                let readData = truncated ? data.prefix(maxSize) : data
-
-                let content = String(data: readData, encoding: .utf8)
-                    ?? String(data: readData, encoding: .ascii)
-                    ?? ""
+                let encoding: String.Encoding = .utf8
+                guard let content = String(data: data, encoding: encoding) else {
+                    DispatchQueue.main.async {
+                        self.loadError = "文件内容无法解码为文本。"
+                    }
+                    return
+                }
 
                 DispatchQueue.main.async {
                     if content.isEmpty && !data.isEmpty {
                         self.loadError = "文件内容无法解码为文本。"
                     } else {
                         self.fileContent = content
-                        self.isTruncated = truncated
                     }
                 }
             } catch {
@@ -423,6 +362,36 @@ struct PreviewWindow: View {
     }
 }
 
+// MARK: - Text Preview (NSScrollView based, 支持上下键滚动)
+
+/// 文本预览使用 NSScrollView，打开时自动成为 firstResponder
+struct TextPreviewNSView: NSViewRepresentable {
+    let text: String
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let scrollView = NSTextView.scrollableTextView()
+        guard let textView = scrollView.documentView as? NSTextView else { return scrollView }
+
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.backgroundColor = .textBackgroundColor
+        textView.font = NSFont.monospacedSystemFont(ofSize: 14, weight: .regular)
+        textView.string = text
+
+        // 打开后自动成为 firstResponder，使上下键可以滚动
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            scrollView.window?.makeFirstResponder(textView)
+        }
+
+        return scrollView
+    }
+
+    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        guard let textView = scrollView.documentView as? NSTextView else { return }
+        textView.string = text
+    }
+}
+
 // MARK: - Preview Window Controller
 
 class PreviewWindowController {
@@ -438,7 +407,8 @@ class PreviewWindowController {
         window.styleMask = [.titled, .closable, .fullSizeContentView]
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
-        window.level = .floating
+        // 使用与主面板相同的层级，确保预览窗口显示在主面板前面
+        window.level = .popUpMenu
         window.center()
         window.isReleasedWhenClosed = false
         window.makeKeyAndOrderFront(nil)

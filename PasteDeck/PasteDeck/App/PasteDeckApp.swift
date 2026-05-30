@@ -22,7 +22,8 @@ struct PasteDeckApp: App {
         do {
             let schema = Schema([
                 ClipboardItem.self,
-                AppSettings.self
+                AppSettings.self,
+                FavoriteCollection.self
             ])
 
             // 创建专属的存储路径
@@ -50,8 +51,24 @@ struct PasteDeckApp: App {
             )
 
             modelContainer = try ModelContainer(for: schema, configurations: [modelConfiguration])
+
+            // 确保默认收藏夹存在
+            Self.seedDefaultCollection(context: modelContainer.mainContext)
         } catch {
             fatalError("Could not initialize ModelContainer: \(error)")
+        }
+    }
+
+    /// 如果数据库中没有默认收藏夹，创建一个
+    private static func seedDefaultCollection(context: ModelContext) {
+        let descriptor = FetchDescriptor<FavoriteCollection>(
+            predicate: #Predicate { $0.isDefault == true }
+        )
+        let count = (try? context.fetchCount(descriptor)) ?? 0
+        if count == 0 {
+            let defaultCollection = FavoriteCollection(name: "收藏", sortOrder: 0, isDefault: true)
+            context.insert(defaultCollection)
+            try? context.save()
         }
     }
 
@@ -71,6 +88,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var clipboardMonitor: ClipboardMonitor?
     private var hotKeyManager: HotKeyManager?
     private var mainPanelController: MainPanelController?
+    private var settingsWindow: NSWindow?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Setup UI first (status bar is always available)
@@ -152,14 +170,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func openSettings() {
+        // 如果已有设置窗口且可见，直接前置
+        if let existing = settingsWindow, existing.isVisible {
+            existing.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+
         let settingsView = SettingsWindow()
+            .modelContainer(AppModelContainer.container)
         let hostingController = NSHostingController(rootView: settingsView)
         let window = NSWindow(contentViewController: hostingController)
-        window.title = "设置"
-        window.styleMask = [.titled, .closable]
+        window.title = "PasteDeck 设置"
+        window.styleMask = [.titled, .closable, .miniaturizable]
         window.center()
+        window.isReleasedWhenClosed = false
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        settingsWindow = window
     }
 
     @objc private func quitApp() {
@@ -173,16 +201,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
 // MARK: - Model Container Singleton
 
-/// Shared SwiftData container for the entire app
+/// Shared ModelContainer used across the app
 enum AppModelContainer {
     static let container: ModelContainer = {
         do {
             let schema = Schema([
                 ClipboardItem.self,
-                AppSettings.self
+                AppSettings.self,
+                FavoriteCollection.self
             ])
 
-            // 创建专属的存储路径
             let appSupportURL = try FileManager.default.url(
                 for: .applicationSupportDirectory,
                 in: .userDomainMask,
@@ -190,16 +218,11 @@ enum AppModelContainer {
                 create: true
             )
 
-            // 使用 Bundle ID 作为子目录，确保数据隔离
             let pasteDeckURL = appSupportURL.appendingPathComponent("com.pastedeck.app")
-
-            // 创建目录（如果不存在）
             try FileManager.default.createDirectory(at: pasteDeckURL, withIntermediateDirectories: true)
 
-            // 指定数据库文件路径
             let storeURL = pasteDeckURL.appendingPathComponent("PasteDeck.sqlite")
 
-            // 创建 ModelConfiguration
             let modelConfiguration = ModelConfiguration(
                 schema: schema,
                 url: storeURL,

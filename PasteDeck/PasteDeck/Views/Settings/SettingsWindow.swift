@@ -31,6 +31,11 @@ struct SettingsWindow: View {
                     Label("过滤", systemImage: "line.3.horizontal.decrease")
                 }
 
+            FavoritesSettingsView()
+                .tabItem {
+                    Label("收藏夹", systemImage: "star")
+                }
+
             AppearanceSettingsView()
                 .tabItem {
                     Label("外观", systemImage: "paintpalette")
@@ -45,6 +50,8 @@ struct SettingsWindow: View {
         .padding(20)
     }
 }
+
+// MARK: - General Settings
 
 struct GeneralSettingsView: View {
     @State private var launchAtLogin = true
@@ -98,6 +105,8 @@ struct GeneralSettingsView: View {
     }
 }
 
+// MARK: - Hotkey Settings
+
 struct HotkeySettingsView: View {
     @State private var currentShortcut = "⌘ + Shift + V"
 
@@ -118,6 +127,8 @@ struct HotkeySettingsView: View {
         .formStyle(.grouped)
     }
 }
+
+// MARK: - History Settings
 
 struct HistorySettingsView: View {
     @State private var historyCountLimit = 500
@@ -154,44 +165,53 @@ struct HistorySettingsView: View {
                 HStack {
                     Text("当前缓存占用")
                     Spacer()
-                    Text("\(CacheManager().getTotalCacheSize() / 1024 / 1024) MB")
+                    Text(formatBytes(CacheManager().getTotalCacheSize()))
                         .foregroundColor(.secondary)
                 }
             }
         }
         .formStyle(.grouped)
     }
+
+    private func formatBytes(_ bytes: Int) -> String {
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        return formatter.string(fromByteCount: Int64(bytes))
+    }
 }
 
+// MARK: - Filter Settings
+
 struct FilterSettingsView: View {
-    @State private var blacklistedApps: [String] = []
+    @State private var blacklist: [String] = []
+    @State private var newBlacklistApp = ""
 
     var body: some View {
         Form {
             Section("应用黑名单") {
-                Text("以下应用的复制内容将不会被记录")
-                    .font(.system(size: 12))
-                    .foregroundColor(.secondary)
-
-                if blacklistedApps.isEmpty {
-                    Text("暂无黑名单应用")
-                        .foregroundColor(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .padding()
-                } else {
-                    List {
-                        ForEach(blacklistedApps, id: \.self) { app in
-                            Text(app)
+                ForEach(blacklist, id: \.self) { app in
+                    HStack {
+                        Text(app)
+                        Spacer()
+                        Button(action: {
+                            blacklist.removeAll { $0 == app }
+                        }) {
+                            Image(systemName: "minus.circle.fill")
+                                .foregroundColor(.red)
                         }
-                        .onDelete { indexSet in
-                            blacklistedApps.remove(atOffsets: indexSet)
-                        }
+                        .buttonStyle(.plain)
                     }
-                    .frame(height: 150)
                 }
 
-                Button("添加应用") {
-                    // TODO: Show app selection
+                HStack {
+                    TextField("添加应用 Bundle ID", text: $newBlacklistApp)
+                        .textFieldStyle(.roundedBorder)
+                    Button("添加") {
+                        if !newBlacklistApp.isEmpty {
+                            blacklist.append(newBlacklistApp)
+                            newBlacklistApp = ""
+                        }
+                    }
                 }
             }
         }
@@ -199,23 +219,190 @@ struct FilterSettingsView: View {
     }
 }
 
+// MARK: - Favorites Settings
+
+struct FavoritesSettingsView: View {
+    @Environment(\.modelContext) private var modelContext
+    @Query(sort: \FavoriteCollection.sortOrder) private var collections: [FavoriteCollection]
+
+    @State private var showDeleteAlert = false
+    @State private var collectionToDelete: FavoriteCollection?
+
+    var body: some View {
+        Form {
+            Section {
+                if collections.isEmpty {
+                    Text("暂无收藏夹")
+                        .foregroundColor(.secondary)
+                } else {
+                    List {
+                        ForEach(collections, id: \.id) { collection in
+                            CollectionRowView(
+                                collection: collection,
+                                onDelete: {
+                                    collectionToDelete = collection
+                                    showDeleteAlert = true
+                                }
+                            )
+                        }
+                        .onMove { from, to in
+                            moveCollections(from: from, to: to)
+                        }
+                    }
+                }
+            } header: {
+                HStack {
+                    Text("收藏夹列表")
+                    Spacer()
+                    Text("拖拽排序")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .alert("确认删除", isPresented: $showDeleteAlert) {
+            Button("取消", role: .cancel) {}
+            Button("删除", role: .destructive) {
+                if let collection = collectionToDelete {
+                    deleteCollection(collection)
+                }
+            }
+        } message: {
+            Text("删除收藏夹「\(collectionToDelete?.name ?? "")」？其中的卡片不会被删除，仅解除关联。")
+        }
+    }
+
+    private func moveCollections(from source: IndexSet, to destination: Int) {
+        var reordered = collections
+        reordered.move(fromOffsets: source, toOffset: destination)
+        for (index, collection) in reordered.enumerated() {
+            collection.sortOrder = index
+        }
+        try? modelContext.save()
+    }
+
+    private func deleteCollection(_ collection: FavoriteCollection) {
+        // 仅解除卡片关联，不删除卡片
+        collection.items?.forEach { item in
+            item.collections?.removeAll(where: { $0.id == collection.id })
+        }
+        modelContext.delete(collection)
+        try? modelContext.save()
+    }
+}
+
+// MARK: - Collection Row View (支持改名)
+
+struct CollectionRowView: View {
+    let collection: FavoriteCollection
+    let onDelete: () -> Void
+
+    @State private var isEditing = false
+    @State private var editedName: String = ""
+    @FocusState private var isTextFieldFocused: Bool
+
+    var body: some View {
+        HStack {
+            Image(systemName: collection.isDefault ? "star.fill" : "folder")
+                .foregroundColor(collection.isDefault ? .yellow : .secondary)
+
+            if isEditing {
+                TextField("收藏夹名称", text: $editedName)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13))
+                    .focused($isTextFieldFocused)
+                    .onSubmit {
+                        saveRename()
+                    }
+                    .onExitCommand {
+                        cancelRename()
+                    }
+            } else {
+                Text(collection.name)
+                    .font(.system(size: 13))
+            }
+
+            if collection.isDefault {
+                Text("默认")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Capsule().fill(Color.accentColor.opacity(0.7)))
+            }
+
+            Spacer()
+
+            Text("\(collection.items?.count ?? 0) 项")
+                .font(.system(size: 12))
+                .foregroundColor(.secondary)
+
+            if !collection.isDefault {
+                Button(action: onDelete) {
+                    Image(systemName: "trash")
+                        .font(.system(size: 12))
+                        .foregroundColor(.red.opacity(0.7))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.vertical, 2)
+        .contextMenu {
+            if !collection.isDefault {
+                Button("改名") {
+                    startEditing()
+                }
+                Divider()
+                Button("删除", role: .destructive, action: onDelete)
+            }
+        }
+        .onTapGesture(count: 2) {
+            if !collection.isDefault {
+                startEditing()
+            }
+        }
+    }
+
+    private func startEditing() {
+        editedName = collection.name
+        isEditing = true
+        isTextFieldFocused = true
+    }
+
+    private func saveRename() {
+        let trimmed = editedName.trimmingCharacters(in: .whitespaces)
+        if !trimmed.isEmpty && trimmed != collection.name {
+            collection.name = trimmed
+            try? collection.modelContext?.save()
+        }
+        isEditing = false
+    }
+
+    private func cancelRename() {
+        isEditing = false
+    }
+}
+
+// MARK: - Appearance Settings
+
 struct AppearanceSettingsView: View {
     @State private var themeMode = 0
-    @State private var cardSize = 1
+    @State private var cardSizeOption = 1
 
     var body: some View {
         Form {
             Section("主题") {
                 Picker("外观模式", selection: $themeMode) {
                     Text("跟随系统").tag(0)
-                    Text("亮色").tag(1)
-                    Text("暗色").tag(2)
+                    Text("浅色").tag(1)
+                    Text("深色").tag(2)
                 }
-                .pickerStyle(.radioGroup)
+                .pickerStyle(.segmented)
             }
 
             Section("卡片") {
-                Picker("卡片大小", selection: $cardSize) {
+                Picker("卡片大小", selection: $cardSizeOption) {
                     Text("小").tag(0)
                     Text("中").tag(1)
                     Text("大").tag(2)
@@ -226,34 +413,30 @@ struct AppearanceSettingsView: View {
     }
 }
 
-struct AdvancedSettingsView: View {
-    @State private var showingClearHistoryAlert = false
-    @State private var showingClearCacheAlert = false
+// MARK: - Advanced Settings
 
-    // 预览配置
+struct AdvancedSettingsView: View {
     @State private var highlightExtensions: [String: String] = PreviewConfigManager.shared.config.highlightExtensions
     @State private var plainTextExtensions: [String] = PreviewConfigManager.shared.config.plainTextExtensions
     @State private var newHighlightExt = ""
     @State private var newHighlightLang = ""
     @State private var newPlainExt = ""
+    @State private var showingClearHistoryAlert = false
+    @State private var showingClearCacheAlert = false
 
     var body: some View {
         Form {
-            Section("预览 - 代码高亮后缀") {
-                Text("匹配这些后缀的文件将使用语法高亮显示文件内容")
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
-
+            Section("语法高亮后缀") {
                 FlowLayout(spacing: 6) {
-                    ForEach(highlightExtensions.keys.sorted(), id: \.self) { ext in
+                    ForEach(Array(highlightExtensions.keys.sorted()), id: \.self) { ext in
                         HStack(spacing: 4) {
                             Text("." + ext)
                                 .font(.system(size: 12, design: .monospaced))
                             Text("→")
                                 .font(.system(size: 10))
                                 .foregroundColor(.secondary)
-                            Text(highlightExtensions[ext] ?? "?")
-                                .font(.system(size: 11, design: .monospaced))
+                            Text(highlightExtensions[ext] ?? "")
+                                .font(.system(size: 11))
                                 .foregroundColor(.secondary)
                             Button(action: {
                                 highlightExtensions.removeValue(forKey: ext)
@@ -267,7 +450,7 @@ struct AdvancedSettingsView: View {
                         }
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(Color.accentColor.opacity(0.1))
+                        .background(Color.secondary.opacity(0.1))
                         .clipShape(RoundedRectangle(cornerRadius: 4))
                     }
                 }
@@ -277,13 +460,12 @@ struct AdvancedSettingsView: View {
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 80)
                     Text("→")
-                        .foregroundColor(.secondary)
                     TextField("语言", text: $newHighlightLang)
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 100)
                     Button("添加") {
                         let ext = newHighlightExt.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
-                        let lang = newHighlightLang.trimmingCharacters(in: .whitespaces)
+                        let lang = newHighlightLang.lowercased().trimmingCharacters(in: .whitespaces)
                         if !ext.isEmpty && !lang.isEmpty {
                             highlightExtensions[ext] = lang
                             newHighlightExt = ""
@@ -294,11 +476,7 @@ struct AdvancedSettingsView: View {
                 }
             }
 
-            Section("预览 - 纯文本后缀") {
-                Text("匹配这些后缀的文件将用等宽字体显示内容（无高亮）")
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
-
+            Section("纯文本后缀") {
                 FlowLayout(spacing: 6) {
                     ForEach(plainTextExtensions, id: \.self) { ext in
                         HStack(spacing: 4) {

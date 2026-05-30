@@ -97,31 +97,3 @@ struct CardListView: View {
         selectedItem = items.first
     }
 }
-
-struct CardContextMenu: View {
-    let item: ClipboardItem
-    @Environment(\.modelContext) private var modelContext
-
-    var body: some View {
-        Button("复制") {
-            PasteService.shared.copyToPasteboard(item)
-        }
-
-        Button(item.isPinned ? "取消置顶" : "置顶") {
-            item.isPinned.toggle()
-            try? modelContext.save()
-        }
-
-        Button(item.isFavorite ? "取消收藏" : "收藏") {
-            item.isFavorite.toggle()
-            try? modelContext.save()
-        }
-
-        Divider()
-
-        Button("删除", role: .destructive) {
-            modelContext.delete(item)
-            try? modelContext.save()
-        }
-    }
-}

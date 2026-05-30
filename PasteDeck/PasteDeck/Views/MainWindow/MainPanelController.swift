@@ -117,6 +117,10 @@ class MainPanelController: NSObject, NSWindowDelegate {
         }
         panel?.orderOut(nil)
         isVisible = false
+
+        // 隐藏面板时清空搜索框、多选和筛选状态
+        NotificationCenter.default.post(name: .clearSearchText, object: nil)
+
         // 隐藏 app 自身，让之前的 app 重新获得焦点
         // 这对后续 simulatePaste(Cmd+V) 至关重要
         NSApp.hide(nil)

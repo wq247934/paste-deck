@@ -7,6 +7,14 @@
 
 import SwiftUI
 import SwiftData
+import AppKit
+
+// MARK: - Notification Names
+
+extension Notification.Name {
+    static let clearSearchText = Notification.Name("clearSearchText")
+    static let clearSelection = Notification.Name("clearSelection")
+}
 
 // MARK: - Focus Zone Enum
 
@@ -19,11 +27,17 @@ enum FocusZone {
 struct MainPanelView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \ClipboardItem.createdAt, order: .reverse) private var items: [ClipboardItem]
+    @Query(sort: \FavoriteCollection.sortOrder) private var allCollections: [FavoriteCollection]
 
     @State private var searchText = ""
-    @State private var selectedFilter: ClipboardFilter = .all
+    @State private var selectedFilter: FilterOption = .all
     @State private var selectedItem: ClipboardItem?
     @State private var selectedIndex = 0
+
+    /// 多选集合
+    @State private var selectedItems: Set<UUID> = []
+    /// Shift 选区锚点索引
+    @State private var anchorIndex: Int = 0
 
     /// 当前焦点所在区域
     @State private var focusZone: FocusZone = .cards
@@ -37,7 +51,49 @@ struct MainPanelView: View {
     var closeHandler: (() -> Void)?
 
     private let cardSize: CardSize = .medium
-    private let itemsPerPage = 5 // 每页显示的卡片数
+
+    // MARK: - Filtered & Sorted Items
+
+    /// 当前筛选标签索引（用于 Tab 循环）
+    private var filterOptions: [FilterOption] {
+        var options: [FilterOption] = [.all]
+        for collection in allCollections {
+            options.append(.collection(collection))
+        }
+        return options
+    }
+
+    private var filteredItems: [ClipboardItem] {
+        var result = items.filter { !$0.isDeleted }
+
+        // 搜索过滤
+        if !searchText.isEmpty {
+            result = result.filter { item in
+                switch item.contentType {
+                case .text, .link:
+                    return (item.textContent ?? "").localizedCaseInsensitiveContains(searchText)
+                case .file:
+                    return (item.fileName ?? "").localizedCaseInsensitiveContains(searchText)
+                case .color:
+                    return (item.colorHex ?? "").localizedCaseInsensitiveContains(searchText)
+                case .image:
+                    return false
+                }
+            }
+        }
+
+        // 收藏夹过滤
+        switch selectedFilter {
+        case .all:
+            break
+        case .collection(let collection):
+            result = result.filter { item in
+                item.collections?.contains(where: { $0.id == collection.id }) ?? false
+            }
+        }
+
+        return result
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -60,10 +116,15 @@ struct MainPanelView: View {
                     if !filteredItems.isEmpty {
                         selectedIndex = 0
                         selectedItem = filteredItems.first
+                        clearMultiSelection()
                     }
                 }
 
-                FilterTabs(selectedFilter: $selectedFilter)
+                FavoriteFilterTabs(
+                    options: filterOptions,
+                    selectedFilter: $selectedFilter,
+                    modelContext: modelContext
+                )
             }
             .padding(.horizontal, 20)
             .padding(.top, 16)
@@ -74,36 +135,25 @@ struct MainPanelView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollViewReader { proxy in
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        LazyHStack(spacing: 12) {
-                            ForEach(Array(filteredItems.enumerated()), id: \.element.id) { index, item in
-                                ClipCardView(
-                                    item: item,
-                                    isSelected: selectedItem?.id == item.id,
-                                    cardSize: cardSize
-                                )
-                                .id(item.id)
-                                .onTapGesture {
-                                    selectedIndex = index
-                                    selectedItem = item
-                                    // 点击卡片后焦点切到卡片区
-                                    focusZone = .cards
-                                }
-                                .onTapGesture(count: 2) {
-                                    pasteItem(item)
-                                }
-                                .contextMenu {
-                                    CardContextMenu(item: item)
-                                }
-                            }
+                    HorizontalScrollHostingView(
+                        items: filteredItems,
+                        selectedItemId: selectedItem?.id,
+                        selectedItems: selectedItems,
+                        cardSize: cardSize,
+                        onItemTapped: { index, item in
+                            handleItemTap(index: index, item: item)
+                        },
+                        onItemDoubleTapped: { item in
+                            pasteItem(item)
+                        },
+                        onItemContextRequested: { item in
+                            // context menu handled by SwiftUI
                         }
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 8)
-                    }
+                    )
                     .padding(.top, 12)
                     // 当选中项变化时滚动
                     .onChange(of: selectedIndex) { oldIndex, newIndex in
-                        guard !filteredItems.isEmpty else { return }
+                        guard newIndex >= 0, newIndex < filteredItems.count else { return }
                         proxy.scrollTo(filteredItems[newIndex].id, anchor: .center)
                     }
                 }
@@ -112,10 +162,12 @@ struct MainPanelView: View {
         .frame(width: 800, height: 400)
         .onAppear {
             if !filteredItems.isEmpty {
-                selectedIndex = 0
-                selectedItem = filteredItems.first
+                let idx = filteredItems.count > 1 ? 1 : 0
+                selectedIndex = idx
+                selectedItem = filteredItems[idx]
             }
             // 打开面板时焦点默认在卡片区
+            isSearchFocused = false
             focusZone = .cards
         }
         .onChange(of: filteredItems.count) { _, _ in
@@ -124,320 +176,285 @@ struct MainPanelView: View {
             }
             selectedItem = filteredItems.isEmpty ? nil : filteredItems[selectedIndex]
         }
+        // 监听清空搜索通知
+        .onReceive(NotificationCenter.default.publisher(for: .clearSearchText)) { _ in
+            searchText = ""
+            clearMultiSelection()
+            selectedFilter = .all
+            if filteredItems.count > 1 {
+                selectedIndex = 1
+                selectedItem = filteredItems[1]
+            } else if !filteredItems.isEmpty {
+                selectedIndex = 0
+                selectedItem = filteredItems.first
+            }
+        }
         // 使用 NSEvent 监听键盘
         .background(
-            KeyboardView(
+            KeyboardEventMonitorView(
                 focusZone: $focusZone,
-                onLeftArrow: {
-                    moveSelection(by: -1)
+                selectedFilter: $selectedFilter,
+                filterOptions: filterOptions,
+                onLeftArrow: { extend in
+                    moveSelection(by: -1, extending: extend)
                 },
-                onRightArrow: {
-                    moveSelection(by: 1)
+                onRightArrow: { extend in
+                    moveSelection(by: 1, extending: extend)
                 },
-                onUpArrow: {
-                    // 上翻页
-                    moveSelection(by: -itemsPerPage)
-                },
-                onDownArrow: {
-                    // 下翻页
-                    moveSelection(by: itemsPerPage)
-                },
+                onUpArrow: {},
+                onDownArrow: {},
                 onEnter: {
+                    // Enter 在搜索模式 → 焦点切到卡片区
                     if focusZone == .search {
-                        // 搜索栏回车 → 焦点切到卡片区
                         focusZone = .cards
                         if !filteredItems.isEmpty {
                             selectedIndex = 0
                             selectedItem = filteredItems.first
+                            clearMultiSelection()
                         }
-                    } else if let item = selectedItem {
-                        pasteItem(item)
+                    } else {
+                        pasteSelectedItems()
                     }
                 },
                 onEscape: {
-                    if focusZone == .search {
-                        // 搜索栏 Esc → 焦点回到卡片区
-                        focusZone = .cards
-                    }
-                    // 卡片区 Esc 由 MainPanelController 的 NSEvent monitor 处理
+                    closeHandler?()
                 },
                 onSpace: {
                     if let item = selectedItem {
-                        showPreviewWindow(item: item)
+                        previewItem(item)
                     }
                 },
                 onDelete: {
-                    if let item = selectedItem {
-                        deleteItem(item)
-                    }
+                    deleteSelectedItem()
+                },
+                onCmdF: {
+                    focusZone = .search
                 }
             )
         )
     }
 
-    private var filteredItems: [ClipboardItem] {
-        var result = items
+    // MARK: - Selection Logic
 
-        if selectedFilter == .favorites {
-            result = result.filter { $0.isFavorite }
+    /// 单纯移动选区（方向键）
+    private func moveSelection(by offset: Int, extending: Bool) {
+        guard !filteredItems.isEmpty else { return }
+        let newIndex = max(0, min(filteredItems.count - 1, selectedIndex + offset))
+
+        if extending {
+            // Shift+方向键：扩展/收缩选区
+            _ = selectedIndex
+            selectedIndex = newIndex
+            selectedItem = filteredItems[newIndex]
+            rebuildExtendedSelection(from: anchorIndex, to: newIndex)
+        } else {
+            // 普通方向键：单选移动，清除多选
+            selectedIndex = newIndex
+            selectedItem = filteredItems[newIndex]
+            clearMultiSelection()
+            anchorIndex = newIndex
         }
-
-        if !searchText.isEmpty {
-            result = result.filter { item in
-                switch item.contentType {
-                case .text, .link:
-                    return item.textContent?.localizedCaseInsensitiveContains(searchText) ?? false
-                case .file:
-                    return item.fileName?.localizedCaseInsensitiveContains(searchText) ?? false
-                case .image, .color:
-                    return false
-                }
-            }
-        }
-
-        return result.sorted { $0.isPinned && !$1.isPinned }
     }
 
-    private func moveSelection(by offset: Int) {
-        guard !filteredItems.isEmpty else { return }
+    /// 点击卡片处理
+    private func handleItemTap(index: Int, item: ClipboardItem) {
+        let isCmdHeld = NSEvent.modifierFlags.contains(.command)
+        let isShiftHeld = NSEvent.modifierFlags.contains(.shift)
 
-        // 限流：50ms 内忽略重复的键盘事件（按键重复时）
-        let now = Date()
-        guard now.timeIntervalSince(lastMoveTime) >= 0.05 else { return }
-        lastMoveTime = now
+        if isCmdHeld {
+            // Cmd+Click: toggle 选中
+            if selectedItems.contains(item.id) {
+                selectedItems.remove(item.id)
+                // 如果移除的是当前选中项，更新当前选中
+                if selectedItem?.id == item.id {
+                    selectedItem = selectedItems.isEmpty ? nil : filteredItems.first(where: { selectedItems.contains($0.id) })
+                    selectedIndex = filteredItems.firstIndex(where: { $0.id == (selectedItem?.id ?? UUID()) }) ?? index
+                }
+            } else {
+                selectedItems.insert(item.id)
+                selectedIndex = index
+                selectedItem = item
+                anchorIndex = index
+            }
+        } else if isShiftHeld {
+            // Shift+Click: 区间选中
+            selectedIndex = index
+            selectedItem = item
+            rebuildExtendedSelection(from: anchorIndex, to: index)
+        } else {
+            // 普通点击：清除多选，单选
+            selectedIndex = index
+            selectedItem = item
+            clearMultiSelection()
+            anchorIndex = index
+        }
+        focusZone = .cards
+    }
 
-        let newIndex = max(0, min(filteredItems.count - 1, selectedIndex + offset))
-        selectedIndex = newIndex
-        selectedItem = filteredItems[newIndex]
+    /// 重建 Shift 选区
+    private func rebuildExtendedSelection(from: Int, to: Int) {
+        let lo = min(from, to)
+        let hi = max(from, to)
+        selectedItems = Set(filteredItems[lo...hi].map { $0.id })
+    }
+
+    /// 清除多选
+    private func clearMultiSelection() {
+        selectedItems.removeAll()
+    }
+
+    // MARK: - Actions
+
+    /// 批量粘贴所有选中项（若无多选则粘贴当前项）
+    private func pasteSelectedItems() {
+        let itemsToPaste: [ClipboardItem]
+        if selectedItems.count > 1 {
+            // 按显示顺序（newest first）排列
+            itemsToPaste = filteredItems.filter { selectedItems.contains($0.id) }
+        } else if let item = selectedItem {
+            itemsToPaste = [item]
+        } else {
+            return
+        }
+
+        closeHandler?()
+        PasteService.shared.batchPaste(itemsToPaste)
     }
 
     private func pasteItem(_ item: ClipboardItem) {
-        // 1. 先把内容复制到剪贴板
         PasteService.shared.preparePaste(item)
-        // 2. 关闭面板，让之前的 app 重新获得焦点
         closeHandler?()
-        // 3. 延迟一小段时间，等前一 app 激活后再模拟 Cmd+V
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             PasteService.shared.performPaste()
         }
     }
 
-    private func showPreviewWindow(item: ClipboardItem) {
-        // 保存当前主窗口引用
-        MainWindowReference.window = NSApp.keyWindow
-
-        // 创建预览视图
-        let previewView = PreviewWindow(item: item, onClose: {
-            // 关闭预览后，焦点回到剪切板窗口
-            DispatchQueue.main.async {
-                MainWindowReference.window?.makeKeyAndOrderFront(nil)
-                NSApp.activate(ignoringOtherApps: true)
-            }
-        })
-        let hostingController = NSHostingController(rootView: previewView)
-
-        // 创建窗口
-        let window = NSWindow(contentViewController: hostingController)
-        window.styleMask = [.titled, .closable, .fullSizeContentView]
-        window.titlebarAppearsTransparent = true
-        window.titleVisibility = .hidden
-        window.level = .screenSaver  // 最顶层，确保在剪切板窗口上方
-        window.center()
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
-
-        // 添加 ESC 键监听（窗口关闭时自动移除）
-        var escMonitor: Any?
-        escMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            // 只在预览窗口是 keyWindow 时拦截 ESC
-            guard event.keyCode == 53, NSApp.keyWindow === window else { return event }
-            NSEvent.removeMonitor(escMonitor!)
-            escMonitor = nil
-            window.close()
-            // 焦点回到主窗口
-            DispatchQueue.main.async {
-                MainWindowReference.window?.makeKeyAndOrderFront(nil)
-                NSApp.activate(ignoringOtherApps: true)
-            }
-            return nil
-        }
-        // 窗口关闭时也移除监听器（防止通过关闭按钮关闭时泄漏）
-        NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { _ in
-            if let monitor = escMonitor {
-                NSEvent.removeMonitor(monitor)
-                escMonitor = nil
-            }
-        }
+    private func previewItem(_ item: ClipboardItem) {
+        let previewController = PreviewWindowController()
+        previewController.show(item: item, onClose: {})
     }
 
-    private func deleteItem(_ item: ClipboardItem) {
+    private func deleteSelectedItem() {
+        guard let item = selectedItem else { return }
+        let nextIndex = selectedIndex
         modelContext.delete(item)
         try? modelContext.save()
 
         if !filteredItems.isEmpty {
-            selectedIndex = min(selectedIndex, filteredItems.count - 1)
+            selectedIndex = min(nextIndex, filteredItems.count - 1)
             selectedItem = filteredItems[selectedIndex]
         } else {
             selectedItem = nil
         }
+        clearMultiSelection()
     }
 }
 
-// MARK: - Keyboard View using NSEvent
-struct KeyboardView: NSViewRepresentable {
-    @Binding var focusZone: FocusZone
-    var onLeftArrow: () -> Void
-    var onRightArrow: () -> Void
-    var onUpArrow: () -> Void
-    var onDownArrow: () -> Void
-    var onEnter: () -> Void
-    var onEscape: () -> Void
-    var onSpace: () -> Void
-    var onDelete: () -> Void
+// MARK: - Filter Option
 
-    func makeNSView(context: Context) -> NSView {
-        let view = KeyboardNSView()
-        view.focusZone = $focusZone
-        view.onLeftArrow = onLeftArrow
-        view.onRightArrow = onRightArrow
-        view.onUpArrow = onUpArrow
-        view.onDownArrow = onDownArrow
-        view.onEnter = onEnter
-        view.onEscape = onEscape
-        view.onSpace = onSpace
-        view.onDelete = onDelete
-        return view
+/// 筛选选项，替代原来的 ClipboardFilter 枚举
+enum FilterOption: Equatable, Hashable {
+    case all
+    case collection(FavoriteCollection)
+
+    var displayName: String {
+        switch self {
+        case .all: return "全部"
+        case .collection(let c): return c.name
+        }
     }
 
-    func updateNSView(_ nsView: NSView, context: Context) {
-        if let view = nsView as? KeyboardNSView {
-            view.focusZone = $focusZone
-            view.onLeftArrow = onLeftArrow
-            view.onRightArrow = onRightArrow
-            view.onUpArrow = onUpArrow
-            view.onDownArrow = onDownArrow
-            view.onEnter = onEnter
-            view.onEscape = onEscape
-            view.onSpace = onSpace
-            view.onDelete = onDelete
+    static func == (lhs: FilterOption, rhs: FilterOption) -> Bool {
+        switch (lhs, rhs) {
+        case (.all, .all): return true
+        case (.collection(let a), .collection(let b)): return a.id == b.id
+        default: return false
+        }
+    }
 
-            // 焦点区域变化时，控制 firstResponder
-            if focusZone == .cards {
-                view.window?.makeFirstResponder(view)
-            }
+    func hash(into hasher: inout Hasher) {
+        switch self {
+        case .all:
+            hasher.combine("all")
+        case .collection(let c):
+            hasher.combine(c.id)
         }
     }
 }
 
-class KeyboardNSView: NSView {
-    var focusZone: Binding<FocusZone>?
-    var onLeftArrow: (() -> Void)?
-    var onRightArrow: (() -> Void)?
-    var onUpArrow: (() -> Void)?
-    var onDownArrow: (() -> Void)?
-    var onEnter: (() -> Void)?
-    var onEscape: (() -> Void)?
-    var onSpace: (() -> Void)?
-    var onDelete: (() -> Void)?
+// MARK: - Favorite Filter Tabs
 
-    override var acceptsFirstResponder: Bool { true }
+struct FavoriteFilterTabs: View {
+    let options: [FilterOption]
+    @Binding var selectedFilter: FilterOption
+    let modelContext: ModelContext
 
-    override func keyDown(with event: NSEvent) {
-        let keyCode = event.keyCode
-        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-
-        switch keyCode {
-        case 123: // Left arrow
-            onLeftArrow?()
-        case 124: // Right arrow
-            onRightArrow?()
-        case 126: // Up arrow
-            onUpArrow?()
-        case 125: // Down arrow
-            onDownArrow?()
-        case 36: // Enter
-            onEnter?()
-        case 53: // Escape
-            onEscape?()
-        case 49: // Space
-            onSpace?()
-        case 51: // Delete (Backspace)
-            onDelete?()
-        case 48: // Tab → 切换焦点区域
-            focusZone?.wrappedValue = (focusZone?.wrappedValue == .cards) ? .search : .cards
-        default:
-            // 普通字符输入 → 自动切到搜索栏
-            // 方向键/功能键之外的按键（有字符输入且无修饰键）转发到搜索栏
-            if let chars = event.characters, !chars.isEmpty,
-               modifiers.isEmpty || modifiers == .shift {
-                focusZone?.wrappedValue = .search
-                // 将按键转发给搜索栏（带重试机制）
-                forwardKeyEventToSearchField(event)
-            } else {
-                super.keyDown(with: event)
-            }
-        }
-    }
-
-    /// 将按键事件转发到搜索栏，增加重试机制以等待 SwiftUI 焦点就绪
-    private func forwardKeyEventToSearchField(_ event: NSEvent, retries: Int = 5) {
-        DispatchQueue.main.async { [weak self] in
-            guard let window = self?.window else { return }
-
-            // 尝试寻找当前 firstResponder（搜索栏的 field editor）
-            if let fieldEditor = window.firstResponder as? NSTextView,
-               fieldEditor.inputContext != nil {
-                // 焦点已经成功转移，让 field editor 消费这个按键
-                fieldEditor.keyDown(with: event)
-            } else if retries > 0 {
-                // 焦点还没过去（SwiftUI 的状态更新需要时间），延迟 10 毫秒后重试
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) {
-                    self?.forwardKeyEventToSearchField(event, retries: retries - 1)
-                }
-            }
-        }
-    }
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        // 确保在主线程延迟执行，等待窗口完全加载
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-            guard let self = self else { return }
-            // 只在焦点区域为 cards 时抢占 firstResponder
-            if self.focusZone?.wrappedValue == .cards {
-                self.window?.makeFirstResponder(self)
-            }
-        }
-    }
-}
-
-enum ClipboardFilter: String, CaseIterable {
-    case all = "全部"
-    case favorites = "收藏"
-}
-
-struct FilterTabs: View {
-    @Binding var selectedFilter: ClipboardFilter
+    @State private var showNewCollectionSheet = false
+    @State private var newCollectionName = "新建收藏夹"
 
     var body: some View {
         HStack(spacing: 0) {
-            ForEach(ClipboardFilter.allCases, id: \.self) { filter in
-                Button(action: {
-                    selectedFilter = filter
-                }) {
-                    Text(filter.rawValue)
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(selectedFilter == filter ? .white : .primary)
-                        .frame(minWidth: 60)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 6)
-                        .background(
-                            Capsule()
-                                .fill(selectedFilter == filter ? Color.accentColor : Color.clear)
-                        )
+            // 标签栏（横向滚动）
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 0) {
+                    ForEach(Array(options.enumerated()), id: \.offset) { _, option in
+                        Button(action: {
+                            selectedFilter = option
+                        }) {
+                            Text(option.displayName)
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(selectedFilter == option ? .white : .primary)
+                                .frame(minWidth: 60)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 6)
+                                .background(
+                                    Capsule()
+                                        .fill(selectedFilter == option ? Color.accentColor : Color.clear)
+                                )
+                        }
+                        .buttonStyle(.plain)
+                        .contentShape(Capsule())
+                    }
                 }
-                .buttonStyle(.plain)
-                .contentShape(Capsule()) // 扩大点击区域
+            }
+
+            // + 按钮
+            Button(action: {
+                newCollectionName = "新建收藏夹"
+                showNewCollectionSheet = true
+            }) {
+                Image(systemName: "plus")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.secondary)
+                    .frame(width: 28, height: 28)
+                    .background(Circle().fill(Color.primary.opacity(0.08)))
+            }
+            .buttonStyle(.plain)
+            .sheet(isPresented: $showNewCollectionSheet) {
+                VStack(spacing: 16) {
+                    Text("新建收藏夹")
+                        .font(.headline)
+
+                    TextField("收藏夹名称", text: $newCollectionName)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 250)
+
+                    HStack {
+                        Button("取消") {
+                            showNewCollectionSheet = false
+                        }
+                        .keyboardShortcut(.cancelAction)
+
+                        Button("创建") {
+                            createCollection()
+                            showNewCollectionSheet = false
+                        }
+                        .keyboardShortcut(.defaultAction)
+                        .disabled(newCollectionName.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
+                }
+                .padding(24)
+                .frame(width: 320)
             }
         }
         .padding(3)
@@ -446,7 +463,234 @@ struct FilterTabs: View {
                 .fill(Color.primary.opacity(0.1))
         )
     }
+
+    private func createCollection() {
+        let maxOrder = options.compactMap { option -> Int? in
+            if case .collection(let c) = option { return c.sortOrder }
+            return nil
+        }.max() ?? 0
+
+        let newCollection = FavoriteCollection(
+            name: newCollectionName.trimmingCharacters(in: .whitespaces),
+            sortOrder: maxOrder + 1
+        )
+        modelContext.insert(newCollection)
+        try? modelContext.save()
+    }
 }
+
+// MARK: - Horizontal Scroll Hosting View (NSViewRepresentable for scroll wheel)
+
+/// 包装卡片列表的 NSView，用于拦截鼠标滚轮事件实现横向滚动
+struct HorizontalScrollHostingView: View {
+    let items: [ClipboardItem]
+    let selectedItemId: UUID?
+    let selectedItems: Set<UUID>
+    let cardSize: CardSize
+    let onItemTapped: (Int, ClipboardItem) -> Void
+    let onItemDoubleTapped: (ClipboardItem) -> Void
+    let onItemContextRequested: (ClipboardItem) -> Void
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            LazyHStack(spacing: 12) {
+                ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                    ClipCardView(
+                        item: item,
+                        isSelected: selectedItems.contains(item.id) || selectedItemId == item.id,
+                        isMultiSelected: selectedItems.contains(item.id) && selectedItems.count > 1,
+                        cardSize: cardSize
+                    )
+                    .id(item.id)
+                    .onTapGesture {
+                        onItemTapped(index, item)
+                    }
+                    .onTapGesture(count: 2) {
+                        onItemDoubleTapped(item)
+                    }
+                    .contextMenu {
+                        CardContextMenu(item: item)
+                    }
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 8)
+        }
+        .background(ScrollWheelInterceptor())
+    }
+}
+
+/// 拦截鼠标滚轮事件，将垂直滚动转发为水平滚动
+struct ScrollWheelInterceptor: NSViewRepresentable {
+    func makeNSView(context: Context) -> ScrollWheelNSView {
+        let view = ScrollWheelNSView()
+        return view
+    }
+
+    func updateNSView(_ nsView: ScrollWheelNSView, context: Context) {}
+}
+
+class ScrollWheelNSView: NSView {
+    override func scrollWheel(with event: NSEvent) {
+        // 将垂直滚轮事件转发为水平滚动
+        if abs(event.scrollingDeltaY) > abs(event.scrollingDeltaX) {
+            // 查找最近的 NSScrollView 祖先并直接水平滚动
+            var view: NSView? = self.superview
+            while view != nil {
+                if let scrollView = view as? NSScrollView {
+                    let clipView = scrollView.contentView
+                    var newOrigin = clipView.bounds.origin
+                    newOrigin.x -= event.scrollingDeltaY
+                    clipView.scroll(to: newOrigin)
+                    scrollView.reflectScrolledClipView(clipView)
+                    return
+                }
+                view = view?.superview
+            }
+        } else {
+            super.scrollWheel(with: event)
+        }
+    }
+}
+
+// MARK: - Keyboard Event Monitor
+
+/// 使用 NSEvent.addLocalMonitorForEvents 拦截键盘事件，
+/// 无论焦点在搜索栏还是卡片区都能响应方向键、Enter 等。
+struct KeyboardEventMonitorView: NSViewRepresentable {
+    @Binding var focusZone: FocusZone
+    @Binding var selectedFilter: FilterOption
+    let filterOptions: [FilterOption]
+    var onLeftArrow: ((Bool) -> Void)?
+    var onRightArrow: ((Bool) -> Void)?
+    var onUpArrow: (() -> Void)?
+    var onDownArrow: (() -> Void)?
+    var onEnter: (() -> Void)?
+    var onEscape: (() -> Void)?
+    var onSpace: (() -> Void)?
+    var onDelete: (() -> Void)?
+    var onCmdF: (() -> Void)?
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        context.coordinator.startMonitor()
+        // 初始时让卡片区获得焦点
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            view.window?.makeFirstResponder(view.window?.contentView)
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.parent = self
+    }
+
+    class Coordinator {
+        var parent: KeyboardEventMonitorView
+        private var monitor: Any?
+
+        init(_ parent: KeyboardEventMonitorView) {
+            self.parent = parent
+        }
+
+        func startMonitor() {
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                guard let self = self else { return event }
+                return self.handleKey(event)
+            }
+        }
+
+        deinit {
+            if let monitor = monitor {
+                NSEvent.removeMonitor(monitor)
+            }
+        }
+
+        private func handleKey(_ event: NSEvent) -> NSEvent? {
+            let keyCode = event.keyCode
+            let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+
+            // Cmd+F → 聚焦搜索框（任何模式下都响应）
+            if keyCode == 3 && modifiers == .command {
+                parent.onCmdF?()
+                return nil
+            }
+
+            // ===== 搜索模式：只拦截 Enter 和 Cmd+F，其余全部交给 TextField =====
+            if parent.focusZone == .search {
+                if keyCode == 36 { // Enter → 焦点回到卡片区
+                    parent.onEnter?()
+                    return nil
+                }
+                // 其余按键（方向键、空格、删除等）全部交给搜索栏自然处理
+                return event
+            }
+
+            // ===== 卡片区模式：处理所有特殊键 =====
+            switch keyCode {
+            case 123: // Left arrow
+                let extending = modifiers.contains(.shift)
+                parent.onLeftArrow?(extending)
+                return nil
+            case 124: // Right arrow
+                let extending = modifiers.contains(.shift)
+                parent.onRightArrow?(extending)
+                return nil
+            case 126: // Up arrow
+                parent.onUpArrow?()
+                return nil
+            case 125: // Down arrow
+                parent.onDownArrow?()
+                return nil
+            case 36: // Enter
+                parent.onEnter?()
+                return nil
+            case 53: // Escape
+                parent.onEscape?()
+                return nil
+            case 49: // Space
+                parent.onSpace?()
+                return nil
+            case 51: // Delete
+                parent.onDelete?()
+                return nil
+            case 48: // Tab
+                cycleFilterTab()
+                return nil
+            default:
+                break
+            }
+
+            // 普通字符输入（卡片区模式）→ 切到搜索栏，让 TextField 接收此事件
+            if let chars = event.characters, !chars.isEmpty,
+               modifiers.isEmpty || modifiers == .shift {
+                parent.focusZone = .search
+                return event
+            }
+
+            return event
+        }
+
+        /// Tab 切换筛选标签
+        private func cycleFilterTab() {
+            let options = parent.filterOptions
+            let current = parent.selectedFilter
+            guard !options.isEmpty else { return }
+            if let idx = options.firstIndex(of: current) {
+                let nextIdx = (idx + 1) % options.count
+                parent.selectedFilter = options[nextIdx]
+            } else {
+                parent.selectedFilter = options[0]
+            }
+        }
+    }
+}
+
+// MARK: - Empty State
 
 struct EmptyStateView: View {
     var body: some View {

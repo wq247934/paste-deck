@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import SwiftData
 
 struct AsyncLocalImage: View {
     let path: String
@@ -24,7 +25,6 @@ struct AsyncLocalImage: View {
             }
         }
         .task {
-            // 在后台线程读取图片
             if let loadedImage = await Task.detached(operation: { NSImage(contentsOfFile: path) }).value {
                 await MainActor.run {
                     self.image = loadedImage
@@ -37,7 +37,10 @@ struct AsyncLocalImage: View {
 struct ClipCardView: View {
     let item: ClipboardItem
     let isSelected: Bool
+    var isMultiSelected: Bool = false
     let cardSize: CardSize
+
+    @Environment(\.modelContext) private var modelContext
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -58,20 +61,50 @@ struct ClipCardView: View {
                         .foregroundColor(.secondary)
                 }
 
-                Text(item.displaySize)
-                    .font(.system(size: 10))
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
+                HStack(spacing: 4) {
+                    Text(item.displaySize)
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+
+                    Spacer()
+
+                    // 非默认收藏夹 badge
+                    let nonDefault = item.nonDefaultCollections
+                    if !nonDefault.isEmpty {
+                        HStack(spacing: 2) {
+                            ForEach(nonDefault.prefix(2), id: \.id) { collection in
+                                Text(collection.name)
+                                    .font(.system(size: 8, weight: .medium))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 4)
+                                    .padding(.vertical, 1)
+                                    .background(Capsule().fill(Color.accentColor.opacity(0.7)))
+                            }
+                            if nonDefault.count > 2 {
+                                Text("+\(nonDefault.count - 2)")
+                                    .font(.system(size: 8, weight: .medium))
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                }
             }
             .padding(8)
             .background(Color.primary.opacity(0.05))
         }
         .frame(width: cardSize.width)
-        .background(Color.primary.opacity(0.03))
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(isMultiSelected ? Color.accentColor.opacity(0.08) : Color.primary.opacity(0.03))
+        )
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 2)
+                .stroke(
+                    isSelected ? Color.accentColor : Color.clear,
+                    lineWidth: isMultiSelected ? 3 : 2
+                )
         )
         .overlay(alignment: .topTrailing) {
             HStack(spacing: 4) {
@@ -81,15 +114,44 @@ struct ClipCardView: View {
                         .foregroundColor(.accentColor)
                 }
 
-                if item.isFavorite {
-                    Image(systemName: "star.fill")
-                        .font(.system(size: 10))
-                        .foregroundColor(.yellow)
+                // 收藏星标
+                Button(action: {
+                    toggleDefaultFavorite()
+                }) {
+                    Image(systemName: item.isFavorite ? "star.fill" : "star")
+                        .font(.system(size: 12))
+                        .foregroundColor(item.isFavorite ? .yellow : .gray.opacity(0.5))
                 }
+                .buttonStyle(.plain)
             }
             .padding(6)
         }
         .shadow(color: .black.opacity(0.1), radius: isSelected ? 8 : 2, x: 0, y: isSelected ? 4 : 1)
+        .contextMenu {
+            CardContextMenu(item: item)
+        }
+    }
+
+    /// 切换默认收藏夹
+    private func toggleDefaultFavorite() {
+        let descriptor = FetchDescriptor<FavoriteCollection>(
+            predicate: #Predicate { $0.isDefault == true }
+        )
+        guard let defaultCollection = try? modelContext.fetch(descriptor).first else { return }
+
+        if item.isFavorite {
+            // 移出默认收藏夹
+            item.collections?.removeAll(where: { $0.id == defaultCollection.id })
+        } else {
+            // 加入默认收藏夹
+            if item.collections == nil {
+                item.collections = []
+            }
+            if !(item.collections?.contains(where: { $0.id == defaultCollection.id }) ?? false) {
+                item.collections?.append(defaultCollection)
+            }
+        }
+        try? modelContext.save()
     }
 
     @ViewBuilder
@@ -189,5 +251,60 @@ struct ClipCardView: View {
         case "json", "xml", "yaml", "yml", "toml": return "doc.badge.gearshape"
         default: return "doc"
         }
+    }
+}
+
+// MARK: - Card Context Menu
+
+struct CardContextMenu: View {
+    let item: ClipboardItem
+    @Environment(\.modelContext) private var modelContext
+    @Query(sort: \FavoriteCollection.sortOrder) private var allCollections: [FavoriteCollection]
+
+    var body: some View {
+        Button("复制") {
+            PasteService.shared.copyToPasteboard(item)
+        }
+
+        Button(item.isPinned ? "取消置顶" : "置顶") {
+            item.isPinned.toggle()
+            try? modelContext.save()
+        }
+
+        // 收藏夹子菜单
+        Menu("添加到收藏夹") {
+            ForEach(allCollections, id: \.id) { collection in
+                let isInCollection = item.collections?.contains(where: { $0.id == collection.id }) ?? false
+                Button(action: {
+                    toggleCollection(collection)
+                }) {
+                    HStack {
+                        Text(collection.name)
+                        if isInCollection {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+            }
+        }
+
+        Divider()
+
+        Button("删除", role: .destructive) {
+            modelContext.delete(item)
+            try? modelContext.save()
+        }
+    }
+
+    private func toggleCollection(_ collection: FavoriteCollection) {
+        if item.collections == nil {
+            item.collections = []
+        }
+        if let idx = item.collections?.firstIndex(where: { $0.id == collection.id }) {
+            item.collections?.remove(at: idx)
+        } else {
+            item.collections?.append(collection)
+        }
+        try? modelContext.save()
     }
 }

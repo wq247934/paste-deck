@@ -50,6 +50,30 @@ class PasteService {
         }
     }
 
+    /// 批量粘贴：暂停监控 → 依次粘贴 → 恢复监控
+    /// - Parameters:
+    ///   - items: 要粘贴的项目列表（按显示顺序）
+    ///   - interval: 每次粘贴间隔（秒），默认 0.15
+    func batchPaste(_ items: [ClipboardItem], interval: TimeInterval = 0.15) {
+        guard !items.isEmpty else { return }
+
+        clipboardMonitor?.pause()
+
+        for (i, item) in items.enumerated() {
+            let delay = Double(i) * interval
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                self?.copyToPasteboard(item)
+                self?.simulatePaste()
+            }
+        }
+
+        // 恢复监控（在最后一次粘贴完成后）
+        let totalDelay = Double(items.count) * interval + 0.5
+        DispatchQueue.main.asyncAfter(deadline: .now() + totalDelay) { [weak self] in
+            self?.clipboardMonitor?.resume()
+        }
+    }
+
     /// Copies clipboard item content to the system pasteboard
     func copyToPasteboard(_ item: ClipboardItem) {
         let pasteboard = NSPasteboard.general

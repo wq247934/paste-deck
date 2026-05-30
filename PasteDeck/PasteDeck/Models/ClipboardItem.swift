@@ -27,10 +27,19 @@ final class ClipboardItem {
     var sourceApp: String?
     var createdAt: Date
     var isPinned: Bool
-    var isFavorite: Bool
     var isDeleted: Bool
 
+    /// 收藏夹关联（多对多）
+    var collections: [FavoriteCollection]?
+
     // MARK: - Computed Properties
+
+    /// 是否在默认收藏夹中
+    var isFavorite: Bool {
+        get {
+            collections?.contains(where: { $0.isDefault }) ?? false
+        }
+    }
 
     var displayTitle: String {
         switch contentType {
@@ -75,6 +84,11 @@ final class ClipboardItem {
         Self.relativeDateTimeFormatter.localizedString(for: createdAt, relativeTo: Date())
     }
 
+    /// 获取非默认收藏夹列表（用于显示 badge）
+    var nonDefaultCollections: [FavoriteCollection] {
+        (collections ?? []).filter { !$0.isDefault }.sorted { $0.sortOrder < $1.sortOrder }
+    }
+
     // MARK: - Initialization
 
     init(
@@ -102,7 +116,6 @@ final class ClipboardItem {
         self.sourceApp = sourceApp
         self.createdAt = Date()
         self.isPinned = false
-        self.isFavorite = false
         self.isDeleted = false
     }
 
