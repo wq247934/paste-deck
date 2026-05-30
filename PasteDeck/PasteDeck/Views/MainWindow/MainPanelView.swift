@@ -235,7 +235,7 @@ struct MainPanelView: View {
                     }
                 },
                 onEscape: {
-                    closeHandler?()
+                    closePreviewOrPanel()
                 },
                 onSpace: {
                     if let item = selectedItem {
@@ -345,6 +345,17 @@ struct MainPanelView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             PasteService.shared.performPaste()
         }
+    }
+
+    /// Esc 统一处理：如果预览窗口打开则关闭预览，否则关闭主面板
+    private func closePreviewOrPanel() {
+        // 如果预览窗口打开且是 keyWindow，关闭预览窗口
+        if let controller = previewController, controller.isWindowVisible {
+            controller.performClose()
+            return
+        }
+        // 否则关闭主面板
+        closeHandler?()
     }
 
     private func previewItem(_ item: ClipboardItem) {
@@ -630,14 +641,25 @@ struct KeyboardEventMonitorView: NSViewRepresentable {
         }
 
         private func handleKey(_ event: NSEvent) -> NSEvent? {
-            // 只在主面板窗口激活时拦截按键，避免影响设置窗口等其他窗口
-            guard let keyWindow = NSApp.keyWindow,
-                  keyWindow.level == .popUpMenu else {
-                return event
-            }
-
             let keyCode = event.keyCode
             let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+
+            // Esc 特殊处理：如果预览窗口是 keyWindow，关闭预览窗口
+            if keyCode == 53 {
+                guard let keyWindow = NSApp.keyWindow,
+                      keyWindow.level == .popUpMenu else {
+                    return event
+                }
+                parent.onEscape?()
+                return nil
+            }
+
+            // 其余按键只在主面板窗口激活时拦截，避免影响设置窗口和预览窗口
+            guard let keyWindow = NSApp.keyWindow,
+                  keyWindow.level == .popUpMenu,
+                  keyWindow.delegate == nil || keyWindow.delegate is MainPanelController else {
+                return event
+            }
 
             // Cmd+F → 聚焦搜索框（任何模式下都响应）
             if keyCode == 3 && modifiers == .command {
@@ -673,9 +695,6 @@ struct KeyboardEventMonitorView: NSViewRepresentable {
                 return nil
             case 36: // Enter
                 parent.onEnter?()
-                return nil
-            case 53: // Escape
-                parent.onEscape?()
                 return nil
             case 49: // Space
                 parent.onSpace?()

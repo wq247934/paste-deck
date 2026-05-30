@@ -24,8 +24,7 @@ class MainPanelController: NSObject, NSWindowDelegate {
     /// Debounce timer to prevent rapid toggle from key repeat
     private var lastToggleTime: Date = Date.distantPast
 
-    /// Esc 键全局监听器
-    private var keyMonitor: Any?
+    /// Esc 键监听已移至 KeyboardEventMonitorView 统一处理
 
     override init() {
         super.init()
@@ -100,19 +99,6 @@ class MainPanelController: NSObject, NSWindowDelegate {
         // 通知 MainPanelView 重置焦点和选中状态
         NotificationCenter.default.post(name: .panelDidShow, object: nil)
 
-        // 注册 Esc 键监听
-        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self = self, self.isVisible else { return event }
-            // 只处理当前 panel 是 keyWindow 的情况
-            guard NSApp.keyWindow === self.panel else { return event }
-
-            if event.keyCode == 53 { // Esc
-                self.hidePanel()
-                return nil
-            }
-            return event
-        }
-
         // Delay enabling auto-close to prevent immediate dismissal
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             self?.canCloseOnResignKey = true
@@ -121,11 +107,6 @@ class MainPanelController: NSObject, NSWindowDelegate {
 
     func hidePanel() {
         canCloseOnResignKey = false
-        // 移除 Esc 键监听
-        if let monitor = keyMonitor {
-            NSEvent.removeMonitor(monitor)
-            keyMonitor = nil
-        }
         panel?.orderOut(nil)
         isVisible = false
 

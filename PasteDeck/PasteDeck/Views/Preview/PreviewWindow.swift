@@ -397,7 +397,7 @@ struct TextPreviewNSView: NSViewRepresentable {
 
 class PreviewWindowController: NSObject, NSWindowDelegate {
     private var window: NSWindow?
-    private var escMonitor: Any?
+    // Esc 监听已移至 KeyboardEventMonitorView 统一处理
     private var onCloseCallback: (() -> Void)?
     /// 标记是否已执行过关闭+恢复焦点，防止 windowWillClose 和 close() 重复执行
     private var didCloseAndRestore = false
@@ -429,24 +429,19 @@ class PreviewWindowController: NSObject, NSWindowDelegate {
 
         self.window = window
 
-        // Esc 键监听：只拦截预览窗口为 keyWindow 时的 Esc
-        escMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self = self, self.window != nil else { return event }
-            guard event.keyCode == 53, NSApp.keyWindow === self.window else { return event }
-            self.performClose()
-            return nil
-        }
-
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    /// 统一的关闭入口：移除监听 → 关窗口 → 恢复焦点 → 回调
-    private func performClose() {
+    /// 预览窗口是否可见
+    var isWindowVisible: Bool {
+        window?.isVisible == true
+    }
+
+    /// 统一的关闭入口：关窗口 → 恢复焦点 → 回调
+    /// public 以便 MainPanelView 的 Esc 处理调用
+    func performClose() {
         guard !didCloseAndRestore else { return }
         didCloseAndRestore = true
-
-        // 先移除 Esc 监听，防止 close 过程中触发其他监听器
-        removeEscMonitor()
 
         window?.close()
         window = nil
@@ -460,19 +455,13 @@ class PreviewWindowController: NSObject, NSWindowDelegate {
 
     /// 清理残留的窗口和监听器（不触发恢复焦点和回调）
     private func cleanup() {
-        removeEscMonitor()
         window?.close()
         window = nil
         onCloseCallback = nil
         didCloseAndRestore = false
     }
 
-    private func removeEscMonitor() {
-        if let monitor = escMonitor {
-            NSEvent.removeMonitor(monitor)
-            escMonitor = nil
-        }
-    }
+
 
     private func restoreMainPanelFocus() {
         guard let previousWindow = MainWindowReference.window, previousWindow.isVisible else { return }
