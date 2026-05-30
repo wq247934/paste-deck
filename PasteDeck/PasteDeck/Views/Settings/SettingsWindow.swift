@@ -396,6 +396,12 @@ struct CollectionRowView: View {
     @State private var editedName: String = ""
     @FocusState private var isTextFieldFocused: Bool
 
+    init(collection: FavoriteCollection, onDelete: @escaping () -> Void) {
+        self.collection = collection
+        self.onDelete = onDelete
+        _editedName = State(initialValue: collection.name)
+    }
+
     var body: some View {
         HStack {
             Image(systemName: collection.isDefault ? "star.fill" : "folder")
@@ -449,11 +455,6 @@ struct CollectionRowView: View {
                 }
                 Divider()
                 Button("删除", role: .destructive, action: onDelete)
-            }
-        }
-        .onTapGesture(count: 2) {
-            if !collection.isDefault && !isEditing {
-                startEditing()
             }
         }
     }

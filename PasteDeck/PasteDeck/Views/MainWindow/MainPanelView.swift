@@ -630,6 +630,12 @@ struct KeyboardEventMonitorView: NSViewRepresentable {
         }
 
         private func handleKey(_ event: NSEvent) -> NSEvent? {
+            // 只在主面板窗口激活时拦截按键，避免影响设置窗口等其他窗口
+            guard let keyWindow = NSApp.keyWindow,
+                  keyWindow.level == .popUpMenu else {
+                return event
+            }
+
             let keyCode = event.keyCode
             let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
 
