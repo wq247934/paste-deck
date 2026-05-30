@@ -54,20 +54,36 @@ struct SettingsWindow: View {
 // MARK: - General Settings
 
 struct GeneralSettingsView: View {
-    @State private var launchAtLogin = true
-    @State private var showMenuBarIcon = true
+    @Environment(\.modelContext) private var modelContext
+    @Query private var settings: [AppSettings]
     @State private var accessibilityGranted = AXIsProcessTrusted()
 
     private let timer = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
 
+    private var appSettings: AppSettings {
+        if let existing = settings.first {
+            return existing
+        }
+        let new = AppSettings()
+        modelContext.insert(new)
+        try? modelContext.save()
+        return new
+    }
+
     var body: some View {
         Form {
             Section("启动") {
-                Toggle("开机启动", isOn: $launchAtLogin)
+                Toggle("开机启动", isOn: Binding(
+                    get: { appSettings.launchAtLogin },
+                    set: { appSettings.launchAtLogin = $0; try? modelContext.save() }
+                ))
             }
 
             Section("菜单栏") {
-                Toggle("显示菜单栏图标", isOn: $showMenuBarIcon)
+                Toggle("显示菜单栏图标", isOn: Binding(
+                    get: { appSettings.showMenuBarIcon },
+                    set: { appSettings.showMenuBarIcon = $0; try? modelContext.save() }
+                ))
             }
 
             Section("权限") {
@@ -131,14 +147,26 @@ struct HotkeySettingsView: View {
 // MARK: - History Settings
 
 struct HistorySettingsView: View {
-    @State private var historyCountLimit = 500
-    @State private var historyDaysLimit = 0
-    @State private var cacheSizeLimit = 500
+    @Environment(\.modelContext) private var modelContext
+    @Query private var settings: [AppSettings]
+
+    private var appSettings: AppSettings {
+        if let existing = settings.first {
+            return existing
+        }
+        let new = AppSettings()
+        modelContext.insert(new)
+        try? modelContext.save()
+        return new
+    }
 
     var body: some View {
         Form {
             Section("历史记录限制") {
-                Picker("条数限制", selection: $historyCountLimit) {
+                Picker("条数限制", selection: Binding(
+                    get: { appSettings.historyCountLimit },
+                    set: { appSettings.historyCountLimit = $0; try? modelContext.save() }
+                )) {
                     Text("100 条").tag(100)
                     Text("500 条").tag(500)
                     Text("1000 条").tag(1000)
@@ -146,7 +174,10 @@ struct HistorySettingsView: View {
                     Text("无限制").tag(0)
                 }
 
-                Picker("时间限制", selection: $historyDaysLimit) {
+                Picker("时间限制", selection: Binding(
+                    get: { appSettings.historyDaysLimit },
+                    set: { appSettings.historyDaysLimit = $0; try? modelContext.save() }
+                )) {
                     Text("7 天").tag(7)
                     Text("14 天").tag(14)
                     Text("30 天").tag(30)
@@ -155,7 +186,10 @@ struct HistorySettingsView: View {
             }
 
             Section("缓存空间") {
-                Picker("最大缓存空间", selection: $cacheSizeLimit) {
+                Picker("最大缓存空间", selection: Binding(
+                    get: { appSettings.cacheSizeLimit },
+                    set: { appSettings.cacheSizeLimit = $0; try? modelContext.save() }
+                )) {
                     Text("100 MB").tag(100)
                     Text("500 MB").tag(500)
                     Text("1 GB").tag(1000)
@@ -482,13 +516,26 @@ struct CollectionRowView: View {
 // MARK: - Appearance Settings
 
 struct AppearanceSettingsView: View {
-    @State private var themeMode = 0
-    @State private var cardSizeOption = 1
+    @Environment(\.modelContext) private var modelContext
+    @Query private var settings: [AppSettings]
+
+    private var appSettings: AppSettings {
+        if let existing = settings.first {
+            return existing
+        }
+        let new = AppSettings()
+        modelContext.insert(new)
+        try? modelContext.save()
+        return new
+    }
 
     var body: some View {
         Form {
             Section("主题") {
-                Picker("外观模式", selection: $themeMode) {
+                Picker("外观模式", selection: Binding(
+                    get: { appSettings.themeMode },
+                    set: { appSettings.themeMode = $0; try? modelContext.save() }
+                )) {
                     Text("跟随系统").tag(0)
                     Text("浅色").tag(1)
                     Text("深色").tag(2)
@@ -497,7 +544,10 @@ struct AppearanceSettingsView: View {
             }
 
             Section("卡片") {
-                Picker("卡片大小", selection: $cardSizeOption) {
+                Picker("卡片大小", selection: Binding(
+                    get: { appSettings.cardSize },
+                    set: { appSettings.cardSize = $0; try? modelContext.save() }
+                )) {
                     Text("小").tag(0)
                     Text("中").tag(1)
                     Text("大").tag(2)
