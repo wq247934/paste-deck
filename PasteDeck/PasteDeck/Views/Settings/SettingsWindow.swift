@@ -148,7 +148,13 @@ struct HotkeySettingsView: View {
 
 struct HistorySettingsView: View {
     @Environment(\.modelContext) private var modelContext
+    @Query(sort: \ClipboardItem.createdAt, order: .reverse) private var items: [ClipboardItem]
     @Query private var settings: [AppSettings]
+
+    @State private var cleanupCount = 100
+    @State private var cleanupDays = 30
+    @State private var showCleanupCountAlert = false
+    @State private var showCleanupDaysAlert = false
 
     private var appSettings: AppSettings {
         if let existing = settings.first {
@@ -160,9 +166,47 @@ struct HistorySettingsView: View {
         return new
     }
 
+    /// 当前记录条数
+    private var totalItemCount: Int {
+        items.count
+    }
+
+    /// 最早记录的日期
+    private var earliestDate: Date? {
+        items.last?.createdAt
+    }
+
     var body: some View {
         Form {
-            Section("历史记录限制") {
+            Section("当前状态") {
+                HStack {
+                    Text("记录条数")
+                    Spacer()
+                    Text("\(totalItemCount) 条")
+                        .foregroundColor(.secondary)
+                }
+
+                HStack {
+                    Text("最早记录")
+                    Spacer()
+                    if let date = earliestDate {
+                        Text(dateFormatter.string(from: date))
+                            .foregroundColor(.secondary)
+                    } else {
+                        Text("无记录")
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                HStack {
+                    Text("缓存占用")
+                    Spacer()
+                    Text(formatBytes(CacheManager().getTotalCacheSize()))
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            Section("自动限制") {
                 Picker("条数限制", selection: Binding(
                     get: { appSettings.historyCountLimit },
                     set: { appSettings.historyCountLimit = $0; try? modelContext.save() }
@@ -195,16 +239,79 @@ struct HistorySettingsView: View {
                     Text("1 GB").tag(1000)
                     Text("无限制").tag(0)
                 }
+            }
+
+            Section("手动清理") {
+                HStack {
+                    Stepper("清理最早", value: $cleanupCount, in: 1...1000, step: 10)
+                    Text("\(cleanupCount) 条")
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Button("清理") {
+                        showCleanupCountAlert = true
+                    }
+                    .foregroundColor(.red)
+                }
 
                 HStack {
-                    Text("当前缓存占用")
-                    Spacer()
-                    Text(formatBytes(CacheManager().getTotalCacheSize()))
+                    Stepper("清理", value: $cleanupDays, in: 1...365, step: 7)
+                    Text("\(cleanupDays) 天前的数据")
+                        .font(.system(size: 12))
                         .foregroundColor(.secondary)
+                    Spacer()
+                    Button("清理") {
+                        showCleanupDaysAlert = true
+                    }
+                    .foregroundColor(.red)
                 }
             }
         }
         .formStyle(.grouped)
+        .alert("确定清理最早的 \(cleanupCount) 条记录吗？", isPresented: $showCleanupCountAlert) {
+            Button("取消", role: .cancel) {}
+            Button("清理", role: .destructive) {
+                cleanupOldestItems(count: cleanupCount)
+            }
+        }
+        .alert("确定清理 \(cleanupDays) 天前的所有记录吗？", isPresented: $showCleanupDaysAlert) {
+            Button("取消", role: .cancel) {}
+            Button("清理", role: .destructive) {
+                cleanupItemsOlderThan(days: cleanupDays)
+            }
+        }
+    }
+
+    // MARK: - Cleanup Methods
+
+    private func cleanupOldestItems(count: Int) {
+        let allItems = items.sorted(by: { $0.createdAt < $1.createdAt })
+        let toDelete = Array(allItems.prefix(count))
+        for item in toDelete {
+            modelContext.delete(item)
+        }
+        try? modelContext.save()
+    }
+
+    private func cleanupItemsOlderThan(days: Int) {
+        let cutoff = Calendar.current.date(byAdding: .day, value: -days, to: Date()) ?? Date()
+        let descriptor = FetchDescriptor<ClipboardItem>(
+            predicate: #Predicate { $0.createdAt < cutoff }
+        )
+        guard let oldItems = try? modelContext.fetch(descriptor) else { return }
+        for item in oldItems {
+            modelContext.delete(item)
+        }
+        try? modelContext.save()
+    }
+
+    // MARK: - Formatters
+
+    private var dateFormatter: DateFormatter {
+        let f = DateFormatter()
+        f.dateStyle = .medium
+        f.timeStyle = .short
+        return f
     }
 
     private func formatBytes(_ bytes: Int) -> String {

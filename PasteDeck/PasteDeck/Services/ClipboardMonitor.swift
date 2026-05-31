@@ -31,6 +31,9 @@ class ClipboardMonitor {
 
     /// Starts monitoring clipboard changes at regular intervals
     func startMonitoring() {
+        // 启动时执行一次自动清理
+        autoCleanup()
+
         timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             self?.checkForChanges()
         }
@@ -241,6 +244,47 @@ class ClipboardMonitor {
     private func saveItem(_ item: ClipboardItem) {
         modelContext.insert(item)
         try? modelContext.save()
-        // 清理逻辑移到启动时执行，避免每次保存都清理
+    }
+
+    // MARK: - Auto Cleanup
+
+    /// 根据 AppSettings 的限制自动清理过期或超量的记录
+    private func autoCleanup() {
+        let descriptor = FetchDescriptor<AppSettings>()
+        guard let appSettings = try? modelContext.fetch(descriptor).first else { return }
+
+        var deletedCount = 0
+
+        // 按天数清理
+        if appSettings.historyDaysLimit > 0 {
+            let cutoff = Calendar.current.date(byAdding: .day, value: -appSettings.historyDaysLimit, to: Date()) ?? Date()
+            let oldDescriptor = FetchDescriptor<ClipboardItem>(
+                predicate: #Predicate { $0.createdAt < cutoff }
+            )
+            if let oldItems = try? modelContext.fetch(oldDescriptor) {
+                for item in oldItems {
+                    modelContext.delete(item)
+                    deletedCount += 1
+                }
+            }
+        }
+
+        // 按条数清理（保留最新的 N 条）
+        if appSettings.historyCountLimit > 0 {
+            var allDescriptor = FetchDescriptor<ClipboardItem>()
+            allDescriptor.sortBy = [SortDescriptor(\ClipboardItem.createdAt, order: .reverse)]
+            if let allItems: [ClipboardItem] = try? modelContext.fetch(allDescriptor), allItems.count > appSettings.historyCountLimit {
+                let toDelete = allItems[appSettings.historyCountLimit...]
+                for item in toDelete {
+                    modelContext.delete(item)
+                    deletedCount += 1
+                }
+            }
+        }
+
+        if deletedCount > 0 {
+            try? modelContext.save()
+            NSLog("[PasteDeck] Auto cleanup: removed \(deletedCount) items")
+        }
     }
 }
