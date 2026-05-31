@@ -16,6 +16,7 @@ final class AppSettings {
     var showMenuBarIcon: Bool
     var hotkeyKeyCode: Int
     var hotkeyModifiers: Int
+    var hotkeyDisplay: String
     var historyCountLimit: Int
     var historyDaysLimit: Int
     var cacheSizeLimit: Int
@@ -34,6 +35,7 @@ final class AppSettings {
         self.showMenuBarIcon = true
         self.hotkeyKeyCode = 9
         self.hotkeyModifiers = Int(NSEvent.ModifierFlags.command.rawValue | NSEvent.ModifierFlags.shift.rawValue)
+        self.hotkeyDisplay = "V"
         self.historyCountLimit = 500
         self.historyDaysLimit = 0
         self.cacheSizeLimit = 500

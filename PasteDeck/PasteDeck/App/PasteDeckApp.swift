@@ -119,14 +119,28 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Connect clipboard monitor to paste service
         PasteService.shared.setClipboardMonitor(clipboardMonitor!)
 
-        // Register global hotkey: ⌘+Shift+V (keyCode 9 = V)
-        // HotKeyManager 使用 Carbon API 在系统底层拦截快捷键，防止按键透传
+        // Register global hotkey from AppSettings
+        let settingsContext = ModelContext(AppModelContainer.container)
+        let settingsDescriptor = FetchDescriptor<AppSettings>()
+        let appSettings = (try? settingsContext.fetch(settingsDescriptor).first) ?? AppSettings()
+
         hotKeyManager = HotKeyManager.shared
-        hotKeyManager?.registerHotKey(keyCode: 9, modifiers: [.command, .shift]) { [weak self] in
+        hotKeyManager?.registerHotKey(
+            keyCode: UInt32(appSettings.hotkeyKeyCode),
+            modifiers: NSEvent.ModifierFlags(rawValue: UInt(appSettings.hotkeyModifiers))
+        ) { [weak self] in
             DispatchQueue.main.async {
                 self?.toggleMainPanel()
             }
         }
+
+        // 监听快捷键变更通知（设置页修改快捷键后发送）
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(toggleMainPanel),
+            name: .toggleMainPanel,
+            object: nil
+        )
 
         // Initialize main panel controller
         mainPanelController = MainPanelController()
@@ -223,7 +237,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSLog("[PasteDeck] Injected \(totalCount) test data items")
     }
 
-    private func toggleMainPanel() {
+    @objc private func toggleMainPanel() {
         mainPanelController?.togglePanel()
     }
 

@@ -139,7 +139,25 @@ struct GeneralSettingsView: View {
 // MARK: - Hotkey Settings
 
 struct HotkeySettingsView: View {
-    @State private var currentShortcut = "⌘ + Shift + V"
+    @Environment(\.modelContext) private var modelContext
+    @Query private var settings: [AppSettings]
+
+    @State private var isRecording = false
+
+    private var appSettings: AppSettings {
+        if let existing = settings.first {
+            return existing
+        }
+        let new = AppSettings()
+        modelContext.insert(new)
+        try? modelContext.save()
+        return new
+    }
+
+    /// 当前快捷键的显示文本
+    private var shortcutDisplay: String {
+        formatShortcut(display: appSettings.hotkeyDisplay, modifiers: appSettings.hotkeyModifiers)
+    }
 
     var body: some View {
         Form {
@@ -147,15 +165,127 @@ struct HotkeySettingsView: View {
                 HStack {
                     Text("弹出窗口")
                     Spacer()
-                    Text(currentShortcut)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 4)
-                        .background(Color.primary.opacity(0.1))
-                        .cornerRadius(4)
+                    if isRecording {
+                        Text("按下新的快捷键...")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.accentColor)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 4)
+                            .background(Color.accentColor.opacity(0.1))
+                            .cornerRadius(4)
+                    } else {
+                        Text(shortcutDisplay)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 4)
+                            .background(Color.primary.opacity(0.1))
+                            .cornerRadius(4)
+                    }
+                    Button(isRecording ? "取消" : "修改") {
+                        isRecording.toggle()
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
+
+            Section {
+                Button("恢复默认 (⌘ + Shift + V)") {
+                    appSettings.hotkeyKeyCode = 9
+                    appSettings.hotkeyModifiers = Int(NSEvent.ModifierFlags.command.rawValue | NSEvent.ModifierFlags.shift.rawValue)
+                    appSettings.hotkeyDisplay = "V"
+                    try? modelContext.save()
+                    reregisterHotkey()
                 }
             }
         }
         .formStyle(.grouped)
+        .overlay {
+            if isRecording {
+                HotkeyRecorderView { keyCode, modifiers, displayChar in
+                    appSettings.hotkeyKeyCode = Int(keyCode)
+                    appSettings.hotkeyModifiers = modifiers
+                    appSettings.hotkeyDisplay = displayChar
+                    try? modelContext.save()
+                    reregisterHotkey()
+                    isRecording = false
+                } onCancel: {
+                    isRecording = false
+                }
+            }
+        }
+    }
+
+    // MARK: - Helper
+
+    private func reregisterHotkey() {
+        HotKeyManager.shared.unregister()
+        HotKeyManager.shared.registerHotKey(
+            keyCode: UInt32(appSettings.hotkeyKeyCode),
+            modifiers: NSEvent.ModifierFlags(rawValue: UInt(appSettings.hotkeyModifiers))
+        ) {
+            NotificationCenter.default.post(name: .toggleMainPanel, object: nil)
+        }
+    }
+
+    private func formatShortcut(display: String, modifiers: Int) -> String {
+        let flags = NSEvent.ModifierFlags(rawValue: UInt(modifiers))
+        var parts: [String] = []
+        if flags.contains(.control) { parts.append("⌃") }
+        if flags.contains(.option) { parts.append("⌥") }
+        if flags.contains(.shift) { parts.append("⇧") }
+        if flags.contains(.command) { parts.append("⌘") }
+        parts.append(display.uppercased())
+        return parts.joined(separator: " + ")
+    }
+}
+
+/// 快捷键录制视图，拦截键盘事件
+struct HotkeyRecorderView: NSViewRepresentable {
+    let onRecorded: (UInt32, Int, String) -> Void
+    let onCancel: () -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = HotkeyRecorderNSView()
+        view.onRecorded = onRecorded
+        view.onCancel = onCancel
+        DispatchQueue.main.async {
+            view.window?.makeFirstResponder(view)
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    class HotkeyRecorderNSView: NSView {
+        var onRecorded: ((UInt32, Int, String) -> Void)?
+        var onCancel: (() -> Void)?
+
+        override var acceptsFirstResponder: Bool { true }
+
+        override func keyDown(with event: NSEvent) {
+            let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            // 必须至少一个修饰键
+            guard !modifiers.isEmpty else { return }
+            // 不允许单独的修饰键组合（没有实际字母）
+            let modifierOnly = [.shift, .command, .control, .option,
+                                 NSEvent.ModifierFlags(arrayLiteral: .command, .shift),
+                                 NSEvent.ModifierFlags(arrayLiteral: .command, .option),
+                                 NSEvent.ModifierFlags(arrayLiteral: .command, .control),
+                                 NSEvent.ModifierFlags(arrayLiteral: .control, .shift),
+                                 NSEvent.ModifierFlags(arrayLiteral: .control, .option),
+                                 NSEvent.ModifierFlags(arrayLiteral: .option, .shift)]
+            guard !modifierOnly.contains(modifiers) || event.charactersIgnoringModifiers != nil else { return }
+
+            let modifierInt = Int(modifiers.rawValue)
+            let keyCode = UInt32(event.keyCode)
+            // 用 charactersIgnoringModifiers 获取实际按键字符，不受键盘布局影响
+            let displayChar = event.charactersIgnoringModifiers?.uppercased() ?? "Key\(keyCode)"
+
+            onRecorded?(keyCode, modifierInt, displayChar)
+        }
+
+        override func cancelOperation(_ sender: Any?) {
+            onCancel?()
+        }
     }
 }
 
