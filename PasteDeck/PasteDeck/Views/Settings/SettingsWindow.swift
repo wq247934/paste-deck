@@ -7,6 +7,7 @@
 
 import SwiftUI
 import SwiftData
+import ServiceManagement
 
 struct SettingsWindow: View {
     var body: some View {
@@ -74,8 +75,22 @@ struct GeneralSettingsView: View {
         Form {
             Section("启动") {
                 Toggle("开机启动", isOn: Binding(
-                    get: { appSettings.launchAtLogin },
-                    set: { appSettings.launchAtLogin = $0; try? modelContext.save() }
+                    get: {
+                        SMAppService.mainApp.status == .enabled
+                    },
+                    set: { enabled in
+                        do {
+                            if enabled {
+                                try SMAppService.mainApp.register()
+                            } else {
+                                try SMAppService.mainApp.unregister()
+                            }
+                            appSettings.launchAtLogin = enabled
+                            try? modelContext.save()
+                        } catch {
+                            NSLog("[PasteDeck] Failed to toggle launch at login: \(error)")
+                        }
+                    }
                 ))
             }
 
