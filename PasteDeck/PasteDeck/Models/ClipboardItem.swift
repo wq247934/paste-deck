@@ -27,7 +27,6 @@ final class ClipboardItem {
     var sourceApp: String?
     var createdAt: Date
     var isPinned: Bool
-    var isDeleted: Bool
 
     /// 收藏夹关联（多对多）
     var collections: [FavoriteCollection]?
@@ -116,7 +115,6 @@ final class ClipboardItem {
         self.sourceApp = sourceApp
         self.createdAt = Date()
         self.isPinned = false
-        self.isDeleted = false
     }
 
     // MARK: - Methods

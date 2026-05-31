@@ -69,7 +69,7 @@ struct MainPanelView: View {
     }
 
     private var filteredItems: [ClipboardItem] {
-        var result = items.filter { !$0.isDeleted }
+        var result = items
 
         // 搜索过滤
         if !searchText.isEmpty {

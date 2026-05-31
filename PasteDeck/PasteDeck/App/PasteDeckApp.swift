@@ -298,33 +298,11 @@ enum AppModelContainer {
 
         let storeURL = pasteDeckURL.appendingPathComponent("PasteDeck.sqlite")
 
+        let modelConfiguration = ModelConfiguration(url: storeURL, allowsSave: true)
         do {
-            // 不传 schema 参数给 ModelConfiguration，让 SwiftData 自动处理轻量迁移
-            let modelConfiguration = ModelConfiguration(url: storeURL, allowsSave: true)
             return try ModelContainer(for: schema, configurations: [modelConfiguration])
-        } catch let firstError {
-            NSLog("[PasteDeck] Failed to open database (attempt 1): \(firstError)")
-            // 尝试第二次：指定 schema 让 SwiftData 重建表结构
-            do {
-                let modelConfiguration = ModelConfiguration(schema: schema, url: storeURL, allowsSave: true)
-                return try ModelContainer(for: schema, configurations: [modelConfiguration])
-            } catch let secondError {
-                NSLog("[PasteDeck] Failed to open database (attempt 2): \(secondError)")
-                // 最后兜底：备份旧数据库，重建空库
-                let fm = FileManager.default
-                let timestamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
-                for file in ["PasteDeck.sqlite", "PasteDeck.sqlite-wal", "PasteDeck.sqlite-shm"] {
-                    let src = pasteDeckURL.appendingPathComponent(file)
-                    let dst = pasteDeckURL.appendingPathComponent(file + ".backup-\(timestamp)")
-                    try? fm.moveItem(at: src, to: dst)
-                }
-                do {
-                    let modelConfiguration = ModelConfiguration(url: storeURL, allowsSave: true)
-                    return try ModelContainer(for: schema, configurations: [modelConfiguration])
-                } catch let thirdError {
-                    fatalError("Could not initialize ModelContainer. Old data backed up. Errors: 1)\(firstError) 2)\(secondError) 3)\(thirdError)")
-                }
-            }
+        } catch {
+            fatalError("Could not initialize ModelContainer: \(error)")
         }
     }()
 }
