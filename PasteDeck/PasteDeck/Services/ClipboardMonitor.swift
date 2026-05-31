@@ -81,7 +81,8 @@ class ClipboardMonitor {
             return
         }
 
-        if let item = parsePasteboard(pasteboard, sourceApp: sourceApp) {
+        let parsedItems = parsePasteboard(pasteboard, sourceApp: sourceApp)
+        for item in parsedItems {
             if !isDuplicate(item) {
                 saveItem(item)
             }
@@ -115,27 +116,36 @@ class ClipboardMonitor {
         }
     }
 
-    private func parsePasteboard(_ pasteboard: NSPasteboard, sourceApp: String?) -> ClipboardItem? {
-        guard let types = pasteboard.types else { return nil }
+    private func parsePasteboard(_ pasteboard: NSPasteboard, sourceApp: String?) -> [ClipboardItem] {
+        guard let types = pasteboard.types else { return [] }
 
         // 文件优先于图片（Finder 复制文件时会同时带文件URL和图标预览图）
         if types.contains(.fileURL) {
-            return parseFile(pasteboard, sourceApp: sourceApp)
+            return parseFiles(pasteboard, sourceApp: sourceApp)
         }
 
         if types.contains(.tiff) || types.contains(.png) {
-            return parseImage(pasteboard, sourceApp: sourceApp)
+            if let item = parseImage(pasteboard, sourceApp: sourceApp) {
+                return [item]
+            }
+            return []
         }
 
         if types.contains(.string) {
-            return parseText(pasteboard, sourceApp: sourceApp)
+            if let item = parseText(pasteboard, sourceApp: sourceApp) {
+                return [item]
+            }
+            return []
         }
 
         if types.contains(.color) {
-            return parseColor(pasteboard, sourceApp: sourceApp)
+            if let item = parseColor(pasteboard, sourceApp: sourceApp) {
+                return [item]
+            }
+            return []
         }
 
-        return nil
+        return []
     }
 
     private func parseImage(_ pasteboard: NSPasteboard, sourceApp: String?) -> ClipboardItem? {
@@ -157,19 +167,23 @@ class ClipboardMonitor {
         )
     }
 
-    private func parseFile(_ pasteboard: NSPasteboard, sourceApp: String?) -> ClipboardItem? {
+    private func parseFiles(_ pasteboard: NSPasteboard, sourceApp: String?) -> [ClipboardItem] {
         guard let fileURLs = pasteboard.readObjects(forClasses: [NSURL.self], options: nil) as? [URL],
-              let fileURL = fileURLs.first else {
-            return nil
+              !fileURLs.isEmpty else {
+            return []
         }
 
-        return ClipboardItem(
-            contentType: .file,
-            filePath: fileURL.path,
-            fileName: fileURL.lastPathComponent,
-            fileSize: cacheManager.getFileSize(at: fileURL.path),
-            sourceApp: sourceApp
-        )
+        return fileURLs.compactMap { fileURL in
+            // 跳过不存在的文件路径
+            guard FileManager.default.fileExists(atPath: fileURL.path) else { return nil }
+            return ClipboardItem(
+                contentType: .file,
+                filePath: fileURL.path,
+                fileName: fileURL.lastPathComponent,
+                fileSize: cacheManager.getFileSize(at: fileURL.path),
+                sourceApp: sourceApp
+            )
+        }
     }
 
     private func parseText(_ pasteboard: NSPasteboard, sourceApp: String?) -> ClipboardItem? {
