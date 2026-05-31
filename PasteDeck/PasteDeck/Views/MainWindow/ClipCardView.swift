@@ -38,6 +38,7 @@ struct ClipCardView: View {
     let item: ClipboardItem
     let isSelected: Bool
     var isMultiSelected: Bool = false
+    var showPinOption: Bool = true
     let cardSize: CardSize
 
     @Environment(\.modelContext) private var modelContext
@@ -128,7 +129,7 @@ struct ClipCardView: View {
         }
         .shadow(color: .black.opacity(0.1), radius: isSelected ? 8 : 2, x: 0, y: isSelected ? 4 : 1)
         .contextMenu {
-            CardContextMenu(item: item)
+            CardContextMenu(item: item, showPinOption: showPinOption)
         }
     }
 
@@ -258,6 +259,7 @@ struct ClipCardView: View {
 
 struct CardContextMenu: View {
     let item: ClipboardItem
+    var showPinOption: Bool = true
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \FavoriteCollection.sortOrder) private var allCollections: [FavoriteCollection]
 
@@ -266,9 +268,11 @@ struct CardContextMenu: View {
             PasteService.shared.copyToPasteboard(item)
         }
 
-        Button(item.isPinned ? "取消置顶" : "置顶") {
-            item.isPinned.toggle()
-            try? modelContext.save()
+        if showPinOption {
+            Button(item.isPinned ? "取消置顶" : "置顶") {
+                item.isPinned.toggle()
+                try? modelContext.save()
+            }
         }
 
         // 收藏夹子菜单

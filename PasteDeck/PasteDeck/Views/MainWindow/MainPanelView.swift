@@ -15,6 +15,7 @@ extension Notification.Name {
     static let clearSearchText = Notification.Name("clearSearchText")
     static let clearSelection = Notification.Name("clearSelection")
     static let panelDidShow = Notification.Name("panelDidShow")
+    static let toggleMainPanel = Notification.Name("toggleMainPanel")
 }
 
 // MARK: - Focus Zone Enum
@@ -94,6 +95,8 @@ struct MainPanelView: View {
             result = result.filter { item in
                 item.collections?.contains(where: { $0.id == collection.id }) ?? false
             }
+            // 收藏夹视图下，置顶项排最前
+            result.sort { $0.isPinned && !$1.isPinned }
         }
 
         return result
@@ -144,6 +147,7 @@ struct MainPanelView: View {
                         selectedItemId: selectedItem?.id,
                         selectedItems: selectedItems,
                         showSelection: focusZone == .cards,
+                        showPinOption: selectedFilter != .all,
                         cardSize: cardSize,
                         onItemTapped: { index, item in
                             handleItemTap(index: index, item: item)
@@ -516,6 +520,7 @@ struct HorizontalScrollHostingView: View {
     let selectedItemId: UUID?
     let selectedItems: Set<UUID>
     var showSelection: Bool = true
+    var showPinOption: Bool = true
     let cardSize: CardSize
     let onItemTapped: (Int, ClipboardItem) -> Void
     let onItemDoubleTapped: (ClipboardItem) -> Void
@@ -529,6 +534,7 @@ struct HorizontalScrollHostingView: View {
                         item: item,
                         isSelected: showSelection && (selectedItems.contains(item.id) || selectedItemId == item.id),
                         isMultiSelected: showSelection && selectedItems.contains(item.id) && selectedItems.count > 1,
+                        showPinOption: showPinOption,
                         cardSize: cardSize
                     )
                     .id(item.id)
@@ -539,7 +545,7 @@ struct HorizontalScrollHostingView: View {
                         onItemDoubleTapped(item)
                     }
                     .contextMenu {
-                        CardContextMenu(item: item)
+                        CardContextMenu(item: item, showPinOption: showPinOption)
                     }
                 }
             }
@@ -700,6 +706,8 @@ struct KeyboardEventMonitorView: NSViewRepresentable {
                 parent.onSpace?()
                 return nil
             case 51: // Delete
+                // 如果当前焦点在文本输入控件中，放行让 TextField 处理
+                if Self.isEditingText { return event }
                 parent.onDelete?()
                 return nil
             case 48: // Tab
@@ -717,6 +725,14 @@ struct KeyboardEventMonitorView: NSViewRepresentable {
             }
 
             return event
+        }
+
+        /// 检查当前 keyWindow 的 firstResponder 是否是文本输入控件
+        static var isEditingText: Bool {
+            guard let keyWindow = NSApp.keyWindow else { return false }
+            guard let firstResponder = keyWindow.firstResponder else { return false }
+            // NSTextView 是 TextField 的底层编辑器，NSTextField 本身编辑时也指向其 fieldEditor
+            return firstResponder is NSTextView || firstResponder is NSTextField
         }
 
         /// Tab 切换筛选标签
