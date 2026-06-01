@@ -26,6 +26,12 @@ enum FocusZone {
     case search
 }
 
+/// 翻页方向
+enum ScrollDirection {
+    case up
+    case down
+}
+
 struct MainPanelView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \ClipboardItem.createdAt, order: .reverse) private var items: [ClipboardItem]
@@ -223,8 +229,12 @@ struct MainPanelView: View {
                 onRightArrow: { extend in
                     moveSelection(by: 1, extending: extend)
                 },
-                onUpArrow: {},
-                onDownArrow: {},
+                onUpArrow: {
+                    scrollPage(direction: .up)
+                },
+                onDownArrow: {
+                    scrollPage(direction: .down)
+                },
                 onEnter: {
                     // Enter 在搜索模式 → 焦点切到卡片区
                     if focusZone == .search {
@@ -348,6 +358,20 @@ struct MainPanelView: View {
         closeHandler?()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             PasteService.shared.performPaste()
+        }
+    }
+
+    /// 上下键翻页：滚动卡片列表一屏
+    private func scrollPage(direction: ScrollDirection) {
+        guard !filteredItems.isEmpty else { return }
+        // 每页大约显示的卡片数（根据卡片宽度和间距估算）
+        let cardsPerPage = 5
+        let offset = direction == .up ? -cardsPerPage : cardsPerPage
+        let newIndex = max(0, min(filteredItems.count - 1, selectedIndex + offset))
+        if newIndex != selectedIndex {
+            selectedIndex = newIndex
+            selectedItem = filteredItems[newIndex]
+            clearMultiSelection()
         }
     }
 

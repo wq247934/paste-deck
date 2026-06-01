@@ -162,8 +162,11 @@ class MainPanelController: NSObject, NSWindowDelegate {
             window.contentViewController?.view is NSHostingView<PreviewWindow>
         }
 
-        // Only auto-close if no preview window is open
-        if canCloseOnResignKey && !hasPreviewWindow {
+        // Check if a sheet is attached to the panel (e.g. new collection sheet)
+        let hasSheet = panel?.attachedSheet != nil
+
+        // Only auto-close if no preview window or sheet is open
+        if canCloseOnResignKey && !hasPreviewWindow && !hasSheet {
             hidePanel()
         }
     }
