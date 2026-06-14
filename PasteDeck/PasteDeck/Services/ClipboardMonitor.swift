@@ -199,13 +199,16 @@ class ClipboardMonitor {
             )
         }
 
+        // 尝试读取 RTF 富文本数据
+        let rtfData = pasteboard.data(forType: .rtf)
+
         return ClipboardItem(
             contentType: .text,
             textContent: text,
-            sourceApp: sourceApp
+            sourceApp: sourceApp,
+            rtfData: rtfData
         )
     }
-
     private func parseColor(_ pasteboard: NSPasteboard, sourceApp: String?) -> ClipboardItem? {
         guard let color = pasteboard.readObjects(forClasses: [NSColor.self], options: nil)?.first as? NSColor else {
             return nil

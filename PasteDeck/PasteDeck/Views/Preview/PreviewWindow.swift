@@ -374,7 +374,7 @@ struct PreviewWindow: View {
         switch item.contentType {
         case .text:
             // 文本预览改用 NSScrollView，确保上下键可以滚动
-            TextPreviewNSView(text: item.textContent ?? "")
+            TextPreviewNSView(text: item.textContent ?? "", rtfData: item.rtfData)
 
         case .link:
             VStack(spacing: 16) {
@@ -614,11 +614,19 @@ struct PreviewWindow: View {
     }
 }
 
+
 // MARK: - Text Preview (NSScrollView based, 支持上下键滚动)
 
 /// 文本预览使用 NSScrollView，打开时自动成为 firstResponder
+/// 支持 RTF 富文本渲染，无 RTF 数据时回退到纯文本
 struct TextPreviewNSView: NSViewRepresentable {
     let text: String
+    let rtfData: Data?
+
+    init(text: String, rtfData: Data? = nil) {
+        self.text = text
+        self.rtfData = rtfData
+    }
 
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = NSTextView.scrollableTextView()
@@ -627,8 +635,18 @@ struct TextPreviewNSView: NSViewRepresentable {
         textView.isEditable = false
         textView.isSelectable = true
         textView.backgroundColor = .textBackgroundColor
-        textView.font = NSFont.monospacedSystemFont(ofSize: 14, weight: .regular)
-        textView.string = text
+
+        // 优先使用 RTF 富文本渲染
+        if let rtfData = rtfData,
+           let attributedString = try? NSAttributedString(data: rtfData, options: [
+               .documentType: NSAttributedString.DocumentType.rtf,
+               .characterEncoding: String.Encoding.utf8.rawValue
+           ], documentAttributes: nil) {
+            textView.textStorage?.setAttributedString(attributedString)
+        } else {
+            textView.font = NSFont.monospacedSystemFont(ofSize: 14, weight: .regular)
+            textView.string = text
+        }
 
         // 打开后自动成为 firstResponder，使上下键可以滚动
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
@@ -640,7 +658,17 @@ struct TextPreviewNSView: NSViewRepresentable {
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let textView = scrollView.documentView as? NSTextView else { return }
-        textView.string = text
+
+        // 优先使用 RTF 富文本渲染
+        if let rtfData = rtfData,
+           let attributedString = try? NSAttributedString(data: rtfData, options: [
+               .documentType: NSAttributedString.DocumentType.rtf,
+               .characterEncoding: String.Encoding.utf8.rawValue
+           ], documentAttributes: nil) {
+            textView.textStorage?.setAttributedString(attributedString)
+        } else {
+            textView.string = text
+        }
     }
 }
 
@@ -711,8 +739,6 @@ class PreviewWindowController: NSObject, NSWindowDelegate {
         onCloseCallback = nil
         didCloseAndRestore = false
     }
-
-
 
     private func restoreMainPanelFocus() {
         guard let previousWindow = MainWindowReference.window, previousWindow.isVisible else { return }

@@ -28,6 +28,9 @@ final class ClipboardItem {
     var createdAt: Date
     var isPinned: Bool
 
+    /// RTF 富文本数据（字体、颜色、样式等）
+    var rtfData: Data?
+
     /// 收藏夹关联（多对多）
     var collections: [FavoriteCollection]?
 
@@ -100,7 +103,8 @@ final class ClipboardItem {
         imageWidth: Int = 0,
         imageHeight: Int = 0,
         colorHex: String? = nil,
-        sourceApp: String? = nil
+        sourceApp: String? = nil,
+        rtfData: Data? = nil
     ) {
         self.id = UUID()
         self.contentType = contentType
@@ -115,6 +119,7 @@ final class ClipboardItem {
         self.sourceApp = sourceApp
         self.createdAt = Date()
         self.isPinned = false
+        self.rtfData = rtfData
     }
 
     // MARK: - Methods

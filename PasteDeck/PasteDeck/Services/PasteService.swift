@@ -24,9 +24,9 @@ class PasteService {
     }
 
     /// Copies item to clipboard (call before hiding panel)
-    func preparePaste(_ item: ClipboardItem) {
+    func preparePaste(_ item: ClipboardItem, plainText: Bool = false) {
         clipboardMonitor?.pause()
-        copyToPasteboard(item)
+        copyToPasteboard(item, plainText: plainText)
     }
 
     /// Simulates Cmd+V after panel is hidden and previous app has focus
@@ -41,9 +41,9 @@ class PasteService {
 
     /// Legacy: Copies item to clipboard and simulates Cmd+V keystroke
     /// ⚠️ Should not be used when panel is visible — use preparePaste + performPaste instead
-    func paste(_ item: ClipboardItem) {
+    func paste(_ item: ClipboardItem, plainText: Bool = false) {
         clipboardMonitor?.pause()
-        copyToPasteboard(item)
+        copyToPasteboard(item, plainText: plainText)
         simulatePaste()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             self?.clipboardMonitor?.resume()
@@ -54,7 +54,7 @@ class PasteService {
     /// - Parameters:
     ///   - items: 要粘贴的项目列表（按显示顺序）
     ///   - interval: 每次粘贴间隔（秒），默认 0.15
-    func batchPaste(_ items: [ClipboardItem], interval: TimeInterval = 0.15) {
+    func batchPaste(_ items: [ClipboardItem], interval: TimeInterval = 0.15, plainText: Bool = false) {
         guard !items.isEmpty else { return }
 
         clipboardMonitor?.pause()
@@ -62,7 +62,7 @@ class PasteService {
         for (i, item) in items.enumerated() {
             let delay = Double(i) * interval
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-                self?.copyToPasteboard(item)
+                self?.copyToPasteboard(item, plainText: plainText)
                 self?.simulatePaste()
             }
         }
@@ -75,7 +75,7 @@ class PasteService {
     }
 
     /// Copies clipboard item content to the system pasteboard
-    func copyToPasteboard(_ item: ClipboardItem) {
+    func copyToPasteboard(_ item: ClipboardItem, plainText: Bool = false) {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
 
@@ -83,6 +83,10 @@ class PasteService {
         case .text:
             if let text = item.textContent {
                 pasteboard.setString(text, forType: .string)
+                // 带格式粘贴：同时写入 RTF 数据
+                if !plainText, let rtfData = item.rtfData {
+                    pasteboard.setData(rtfData, forType: .rtf)
+                }
             }
 
         case .link:
