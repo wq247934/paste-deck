@@ -165,6 +165,9 @@ struct MainPanelView: View {
                     onCopy: { itemID in
                         historyStore.copyToPasteboard(id: itemID)
                     },
+                    onPastePlain: { itemID in
+                        pasteItem(id: itemID, plainText: true)
+                    },
                     onTogglePinned: { itemID in
                         historyStore.togglePinned(id: itemID)
                     },
@@ -239,7 +242,7 @@ struct MainPanelView: View {
                 onDownArrow: {
                     scrollPage(direction: .down)
                 },
-                onEnter: {
+                onEnter: { shiftHeld in
                     // Enter 在搜索模式 → 焦点切到卡片区
                     if focusZone == .search {
                         focusCards()
@@ -249,7 +252,7 @@ struct MainPanelView: View {
                             clearMultiSelection()
                         }
                     } else {
-                        pasteSelectedItems()
+                        pasteSelectedItems(plainText: shiftHeld)
                     }
                 },
                 onEscape: {
@@ -348,7 +351,7 @@ struct MainPanelView: View {
     // MARK: - Actions
 
     /// 批量粘贴所有选中项（若无多选则粘贴当前项）
-    private func pasteSelectedItems() {
+    private func pasteSelectedItems(plainText: Bool = false) {
         let idsToPaste: [UUID]
         if selectedItems.count > 1 {
             // 按显示顺序（newest first）排列
@@ -362,13 +365,13 @@ struct MainPanelView: View {
         historyStore.promotePastedItems(ids: idsToPaste)
         closeHandler?()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            historyStore.batchPaste(ids: idsToPaste)
+            historyStore.batchPaste(ids: idsToPaste, plainText: plainText)
         }
     }
 
-    private func pasteItem(id: UUID) {
+    private func pasteItem(id: UUID, plainText: Bool = false) {
         historyStore.promotePastedItems(ids: [id])
-        historyStore.preparePaste(id: id)
+        historyStore.preparePaste(id: id, plainText: plainText)
         closeHandler?()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             PasteService.shared.performPaste()
@@ -532,6 +535,7 @@ struct VirtualizedCardList: NSViewRepresentable {
     let onItemTapped: (Int, UUID) -> Void
     let onItemDoubleTapped: (UUID) -> Void
     let onCopy: (UUID) -> Void
+    var onPastePlain: ((UUID) -> Void)? = nil
     let onTogglePinned: (UUID) -> Void
     let onToggleFavorite: (UUID) -> Void
     let onToggleCollection: (UUID, UUID) -> Void
@@ -630,6 +634,9 @@ struct VirtualizedCardList: NSViewRepresentable {
                 collections: parent.collections,
                 onCopy: { [weak self] in
                     self?.parent.onCopy(snapshot.id)
+                },
+                onPastePlain: { [weak self] in
+                    self?.parent.onPastePlain?(snapshot.id)
                 },
                 onTogglePinned: { [weak self] in
                     self?.parent.onTogglePinned(snapshot.id)
@@ -739,7 +746,7 @@ struct KeyboardEventMonitorView: NSViewRepresentable {
     var onRightArrow: ((Bool) -> Void)?
     var onUpArrow: (() -> Void)?
     var onDownArrow: (() -> Void)?
-    var onEnter: (() -> Void)?
+    var onEnter: ((Bool) -> Void)?
     var onEscape: (() -> Void)?
     var onSpace: (() -> Void)?
     var onDelete: (() -> Void)?
@@ -826,7 +833,7 @@ struct KeyboardEventMonitorView: NSViewRepresentable {
             // ===== 搜索模式：只拦截 Enter 和 Cmd+F，其余全部交给 TextField =====
             if parent.focusZone == .search {
                 if keyCode == 36 { // Enter → 焦点回到卡片区
-                    parent.onEnter?()
+                    parent.onEnter?(false)
                     return nil
                 }
                 // 其余按键（方向键、空格、删除等）全部交给搜索栏自然处理
@@ -850,7 +857,7 @@ struct KeyboardEventMonitorView: NSViewRepresentable {
                 parent.onDownArrow?()
                 return nil
             case 36: // Enter
-                parent.onEnter?()
+                parent.onEnter?(modifiers.contains(.shift))
                 return nil
             case 49: // Space
                 parent.onSpace?()

@@ -254,15 +254,15 @@ final class ClipboardHistoryStore: ObservableObject {
         PasteService.shared.copyToPasteboard(item)
     }
 
-    func preparePaste(id: UUID) {
+    func preparePaste(id: UUID, plainText: Bool = false) {
         guard let item = fetchItem(id: id) else { return }
-        PasteService.shared.preparePaste(item)
+        PasteService.shared.preparePaste(item, plainText: plainText)
     }
 
-    func batchPaste(ids: [UUID]) {
+    func batchPaste(ids: [UUID], plainText: Bool = false) {
         let items = ids.compactMap(fetchItem)
         guard !items.isEmpty else { return }
-        PasteService.shared.batchPaste(items)
+        PasteService.shared.batchPaste(items, plainText: plainText)
     }
 
     func togglePinned(id: UUID) {

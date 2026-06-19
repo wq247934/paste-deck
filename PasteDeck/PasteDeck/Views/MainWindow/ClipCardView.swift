@@ -65,6 +65,7 @@ struct ClipCardView: View, Equatable {
     let cardSize: CardSize
     let collections: [ClipboardCollectionSnapshot]
     let onCopy: () -> Void
+    var onPastePlain: (() -> Void)? = nil
     let onTogglePinned: () -> Void
     let onToggleFavorite: () -> Void
     let onToggleCollection: (UUID) -> Void
@@ -141,6 +142,7 @@ struct ClipCardView: View, Equatable {
                     isEditingTitle = true
                 },
                 onCopy: onCopy,
+                onPastePlain: onPastePlain,
                 onTogglePinned: onTogglePinned,
                 onToggleCollection: onToggleCollection,
                 onClearTitle: { onSaveTitle(nil) },
@@ -328,6 +330,7 @@ struct CardContextMenu: View {
     var showPinOption: Bool = true
     var onEditTitle: (() -> Void)?
     let onCopy: () -> Void
+    var onPastePlain: (() -> Void)? = nil
     let onTogglePinned: () -> Void
     let onToggleCollection: (UUID) -> Void
     let onClearTitle: () -> Void
@@ -336,6 +339,12 @@ struct CardContextMenu: View {
     var body: some View {
         Button("复制") {
             onCopy()
+        }
+
+        if let onPastePlain, item.contentType == .text {
+            Button("纯文本粘贴") {
+                onPastePlain()
+            }
         }
 
         if showPinOption {
