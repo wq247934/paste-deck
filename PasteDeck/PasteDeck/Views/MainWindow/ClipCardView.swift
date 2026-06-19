@@ -83,57 +83,19 @@ struct ClipCardView: View, Equatable {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        ZStack(alignment: .topLeading) {
             contentPreview
                 .frame(width: cardSize.width, height: cardSize.height)
                 .clipped()
 
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Image(systemName: item.contentType.icon)
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary)
-
-                    Spacer()
-
-                    Text(item.displayTime)
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary)
-                }
-
-                HStack(spacing: 4) {
-                    Text(item.displaySize)
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-
-                    Spacer()
-
-                    // 非默认收藏夹 badge
-                    let nonDefault = item.nonDefaultCollections
-                    if !nonDefault.isEmpty {
-                        HStack(spacing: 2) {
-                            ForEach(nonDefault.prefix(2), id: \.id) { collection in
-                                Text(collection.name)
-                                    .font(.system(size: 8, weight: .medium))
-                                    .foregroundColor(.white)
-                                    .padding(.horizontal, 4)
-                                    .padding(.vertical, 1)
-                                    .background(Capsule().fill(Color.accentColor.opacity(0.7)))
-                            }
-                            if nonDefault.count > 2 {
-                                Text("+\(nonDefault.count - 2)")
-                                    .font(.system(size: 8, weight: .medium))
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                    }
-                }
+            VStack(alignment: .leading, spacing: 0) {
+                topMetadata
+                Spacer(minLength: 0)
+                bottomMetadata
             }
-            .padding(8)
-            .background(Color.primary.opacity(0.05))
+            .padding(6)
         }
-        .frame(width: cardSize.width)
+        .frame(width: cardSize.width, height: cardSize.height)
         .background(
             RoundedRectangle(cornerRadius: 12)
                 .fill(isMultiSelected ? Color.accentColor.opacity(0.08) : Color.primary.opacity(0.03))
@@ -188,6 +150,76 @@ struct ClipCardView: View, Equatable {
         }
     }
 
+    private var topMetadata: some View {
+        HStack(spacing: 5) {
+            Image(systemName: item.contentType.icon)
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundColor(.secondary)
+
+            if item.customTitle != nil {
+                Text(item.displayTitle)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            } else {
+                Text(item.contentType.displayName)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 4)
+        .background(.regularMaterial, in: Capsule())
+    }
+
+    private var bottomMetadata: some View {
+        HStack(spacing: 4) {
+            Text(item.displaySize)
+                .font(.system(size: 9, weight: .medium))
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+
+            Text("·")
+                .font(.system(size: 9, weight: .medium))
+                .foregroundColor(.secondary)
+
+            Text(item.displayTime)
+                .font(.system(size: 9, weight: .medium))
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+
+            collectionBadges
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 4)
+        .background(.regularMaterial, in: Capsule())
+    }
+
+    @ViewBuilder
+    private var collectionBadges: some View {
+        let nonDefault = item.nonDefaultCollections
+        if !nonDefault.isEmpty {
+            ForEach(nonDefault.prefix(1), id: \.id) { collection in
+                Text(collection.name)
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundColor(.white)
+                    .lineLimit(1)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 1)
+                    .background(Capsule().fill(Color.accentColor.opacity(0.75)))
+            }
+
+            if nonDefault.count > 1 {
+                Text("+\(nonDefault.count - 1)")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+
     private func saveTitle() {
         let trimmed = titleDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         item.customTitle = trimmed.isEmpty ? nil : trimmed
@@ -239,24 +271,29 @@ struct ClipCardView: View, Equatable {
             .font(.system(size: 12))
             .foregroundColor(.primary)
             .lineLimit(nil)
-            .padding(8)
+            .padding(.horizontal, 8)
+            .padding(.top, 32)
+            .padding(.bottom, 28)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private var linkPreview: some View {
-        VStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 8) {
             Image(systemName: "link")
-                .font(.system(size: 24))
+                .font(.system(size: 18, weight: .semibold))
                 .foregroundColor(.accentColor)
 
             Text(item.textContent ?? "")
-                .font(.system(size: 11))
-                .foregroundColor(.secondary)
-                .lineLimit(2)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 8)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(.primary)
+                .lineLimit(4)
+                .multilineTextAlignment(.leading)
+                .textSelection(.enabled)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.horizontal, 10)
+        .padding(.top, 34)
+        .padding(.bottom, 30)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private var imagePreview: some View {
@@ -285,6 +322,8 @@ struct ClipCardView: View, Equatable {
                 .padding(.horizontal, 8)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.top, 18)
+        .padding(.bottom, 20)
     }
 
     private var colorPreview: some View {
@@ -298,7 +337,9 @@ struct ClipCardView: View, Equatable {
                 .foregroundColor(.primary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(8)
+        .padding(.horizontal, 8)
+        .padding(.top, 26)
+        .padding(.bottom, 24)
     }
 
     private var fileIcon: String {
