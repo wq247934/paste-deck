@@ -83,19 +83,14 @@ struct ClipCardView: View, Equatable {
     }
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
+        VStack(alignment: .leading, spacing: 0) {
             contentPreview
                 .frame(width: cardSize.width, height: cardSize.height)
                 .clipped()
 
-            VStack(alignment: .leading, spacing: 0) {
-                topMetadata
-                Spacer(minLength: 0)
-                bottomMetadata
-            }
-            .padding(6)
+            metadataBar
         }
-        .frame(width: cardSize.width, height: cardSize.height)
+        .frame(width: cardSize.width)
         .background(
             RoundedRectangle(cornerRadius: 12)
                 .fill(isMultiSelected ? Color.accentColor.opacity(0.08) : Color.primary.opacity(0.03))
@@ -150,52 +145,37 @@ struct ClipCardView: View, Equatable {
         }
     }
 
-    private var topMetadata: some View {
+    private var metadataBar: some View {
         HStack(spacing: 5) {
             Image(systemName: item.contentType.icon)
-                .font(.system(size: 9, weight: .semibold))
+                .font(.system(size: 9, weight: .medium))
                 .foregroundColor(.secondary)
 
             if item.customTitle != nil {
                 Text(item.displayTitle)
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: 10, weight: .medium))
                     .foregroundColor(.primary)
                     .lineLimit(1)
                     .truncationMode(.tail)
             } else {
-                Text(item.contentType.displayName)
-                    .font(.system(size: 10, weight: .medium))
+                Text(item.displaySize)
+                    .font(.system(size: 10))
                     .foregroundColor(.secondary)
                     .lineLimit(1)
             }
-        }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 4)
-        .background(.regularMaterial, in: Capsule())
-    }
 
-    private var bottomMetadata: some View {
-        HStack(spacing: 4) {
-            Text(item.displaySize)
-                .font(.system(size: 9, weight: .medium))
-                .foregroundColor(.secondary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-
-            Text("·")
-                .font(.system(size: 9, weight: .medium))
-                .foregroundColor(.secondary)
-
-            Text(item.displayTime)
-                .font(.system(size: 9, weight: .medium))
-                .foregroundColor(.secondary)
-                .lineLimit(1)
+            Spacer(minLength: 4)
 
             collectionBadges
+
+            Text(item.displayTime)
+                .font(.system(size: 10))
+                .foregroundColor(.secondary)
+                .lineLimit(1)
         }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 4)
-        .background(.regularMaterial, in: Capsule())
+        .frame(height: 26)
+        .padding(.horizontal, 8)
+        .background(Color.primary.opacity(0.035))
     }
 
     @ViewBuilder
@@ -271,28 +251,24 @@ struct ClipCardView: View, Equatable {
             .font(.system(size: 12))
             .foregroundColor(.primary)
             .lineLimit(nil)
-            .padding(.horizontal, 8)
-            .padding(.top, 32)
-            .padding(.bottom, 28)
+            .padding(10)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private var linkPreview: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 7) {
             Image(systemName: "link")
-                .font(.system(size: 18, weight: .semibold))
+                .font(.system(size: 17, weight: .semibold))
                 .foregroundColor(.accentColor)
 
             Text(item.textContent ?? "")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundColor(.primary)
-                .lineLimit(4)
+                .lineLimit(5)
                 .multilineTextAlignment(.leading)
-                .textSelection(.enabled)
         }
         .padding(.horizontal, 10)
-        .padding(.top, 34)
-        .padding(.bottom, 30)
+        .padding(.vertical, 12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
@@ -322,8 +298,7 @@ struct ClipCardView: View, Equatable {
                 .padding(.horizontal, 8)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(.top, 18)
-        .padding(.bottom, 20)
+        .padding(8)
     }
 
     private var colorPreview: some View {
@@ -337,9 +312,7 @@ struct ClipCardView: View, Equatable {
                 .foregroundColor(.primary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(.horizontal, 8)
-        .padding(.top, 26)
-        .padding(.bottom, 24)
+        .padding(8)
     }
 
     private var fileIcon: String {
