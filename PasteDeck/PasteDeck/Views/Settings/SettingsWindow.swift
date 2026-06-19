@@ -430,12 +430,15 @@ struct HistorySettingsView: View {
     // MARK: - Cleanup Methods
 
     private func cleanupOldestItems(count: Int) {
-        let allItems = items.sorted(by: { $0.createdAt < $1.createdAt })
+        let allItems = items
+            .filter(\.isCleanupEligible)
+            .sorted(by: { $0.createdAt < $1.createdAt })
         let toDelete = Array(allItems.prefix(count))
         for item in toDelete {
             modelContext.delete(item)
         }
         try? modelContext.save()
+        NotificationCenter.default.post(name: .clipboardDataChanged, object: nil)
     }
 
     private func cleanupItemsOlderThan(days: Int) {
@@ -444,10 +447,11 @@ struct HistorySettingsView: View {
             predicate: #Predicate { $0.createdAt < cutoff }
         )
         guard let oldItems = try? modelContext.fetch(descriptor) else { return }
-        for item in oldItems {
+        for item in oldItems where item.isCleanupEligible {
             modelContext.delete(item)
         }
         try? modelContext.save()
+        NotificationCenter.default.post(name: .clipboardDataChanged, object: nil)
     }
 
     // MARK: - Formatters
@@ -660,6 +664,7 @@ struct FavoritesSettingsView: View {
             collection.sortOrder = index
         }
         try? modelContext.save()
+        NotificationCenter.default.post(name: .clipboardDataChanged, object: nil)
     }
 
     private func deleteCollection(_ collection: FavoriteCollection) {
@@ -669,6 +674,7 @@ struct FavoritesSettingsView: View {
         }
         modelContext.delete(collection)
         try? modelContext.save()
+        NotificationCenter.default.post(name: .clipboardDataChanged, object: nil)
     }
 }
 
@@ -756,6 +762,7 @@ struct CollectionRowView: View {
         if !trimmed.isEmpty && trimmed != collection.name {
             collection.name = trimmed
             try? collection.modelContext?.save()
+            NotificationCenter.default.post(name: .clipboardDataChanged, object: nil)
         }
         isEditing = false
     }
@@ -1054,10 +1061,11 @@ struct AdvancedSettingsView: View {
         let context = ModelContext(AppModelContainer.container)
         let descriptor = FetchDescriptor<ClipboardItem>()
         if let items = try? context.fetch(descriptor) {
-            for item in items {
+            for item in items where item.isCleanupEligible {
                 context.delete(item)
             }
             try? context.save()
+            NotificationCenter.default.post(name: .clipboardDataChanged, object: nil)
         }
     }
 }

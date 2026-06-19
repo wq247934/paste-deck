@@ -100,6 +100,10 @@ final class ClipboardItem {
         (collections ?? []).filter { !$0.isDefault }.sorted { $0.sortOrder < $1.sortOrder }
     }
 
+    var isCleanupEligible: Bool {
+        !isPinned && (collections?.isEmpty ?? true)
+    }
+
     // MARK: - Initialization
 
     init(

@@ -261,6 +261,7 @@ class ClipboardMonitor {
     private func saveItem(_ item: ClipboardItem) {
         modelContext.insert(item)
         try? modelContext.save()
+        NotificationCenter.default.post(name: .clipboardDataChanged, object: nil)
     }
 
     // MARK: - Auto Cleanup
@@ -279,7 +280,7 @@ class ClipboardMonitor {
                 predicate: #Predicate { $0.createdAt < cutoff }
             )
             if let oldItems = try? modelContext.fetch(oldDescriptor) {
-                for item in oldItems {
+                for item in oldItems where item.isCleanupEligible {
                     modelContext.delete(item)
                     deletedCount += 1
                 }
@@ -291,7 +292,10 @@ class ClipboardMonitor {
             var allDescriptor = FetchDescriptor<ClipboardItem>()
             allDescriptor.sortBy = [SortDescriptor(\ClipboardItem.createdAt, order: .reverse)]
             if let allItems: [ClipboardItem] = try? modelContext.fetch(allDescriptor), allItems.count > appSettings.historyCountLimit {
-                let toDelete = allItems[appSettings.historyCountLimit...]
+                let protectedCount = allItems.filter { !$0.isCleanupEligible }.count
+                let deletableLimit = max(0, appSettings.historyCountLimit - protectedCount)
+                let cleanupCandidates = allItems.filter(\.isCleanupEligible)
+                let toDelete = cleanupCandidates.dropFirst(deletableLimit)
                 for item in toDelete {
                     modelContext.delete(item)
                     deletedCount += 1

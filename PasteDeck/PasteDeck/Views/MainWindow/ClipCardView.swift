@@ -58,13 +58,19 @@ struct AsyncLocalImage: View {
 }
 
 struct ClipCardView: View, Equatable {
-    let item: ClipboardItem
+    let item: ClipboardItemSnapshot
     let isSelected: Bool
     var isMultiSelected: Bool = false
     var showPinOption: Bool = true
     let cardSize: CardSize
+    let collections: [ClipboardCollectionSnapshot]
+    let onCopy: () -> Void
+    let onTogglePinned: () -> Void
+    let onToggleFavorite: () -> Void
+    let onToggleCollection: (UUID) -> Void
+    let onSaveTitle: (String?) -> Void
+    let onDelete: () -> Void
 
-    @Environment(\.modelContext) private var modelContext
     @State private var isEditingTitle = false
     @State private var titleDraft = ""
 
@@ -79,7 +85,8 @@ struct ClipCardView: View, Equatable {
             && lhs.item.isPinned == rhs.item.isPinned
             && lhs.item.isFavorite == rhs.item.isFavorite
             && lhs.item.customTitle == rhs.item.customTitle
-            && (lhs.item.collections?.map { $0.id } ?? []) == (rhs.item.collections?.map { $0.id } ?? [])
+            && lhs.item.collections.map(\.id) == rhs.item.collections.map(\.id)
+            && lhs.collections.map(\.id) == rhs.collections.map(\.id)
     }
 
     var body: some View {
@@ -113,7 +120,7 @@ struct ClipCardView: View, Equatable {
 
                 // 收藏星标
                 Button(action: {
-                    toggleDefaultFavorite()
+                    onToggleFavorite()
                 }) {
                     Image(systemName: item.isFavorite ? "star.fill" : "star")
                         .font(.system(size: 12))
@@ -127,11 +134,17 @@ struct ClipCardView: View, Equatable {
         .contextMenu {
             CardContextMenu(
                 item: item,
+                collections: collections,
                 showPinOption: showPinOption,
                 onEditTitle: {
                     titleDraft = item.customTitle ?? ""
                     isEditingTitle = true
-                }
+                },
+                onCopy: onCopy,
+                onTogglePinned: onTogglePinned,
+                onToggleCollection: onToggleCollection,
+                onClearTitle: { onSaveTitle(nil) },
+                onDelete: onDelete
             )
         }
         .alert("重命名", isPresented: $isEditingTitle) {
@@ -202,32 +215,7 @@ struct ClipCardView: View, Equatable {
 
     private func saveTitle() {
         let trimmed = titleDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-        item.customTitle = trimmed.isEmpty ? nil : trimmed
-        try? modelContext.save()
-        NotificationCenter.default.post(name: .clipboardDataChanged, object: nil)
-    }
-
-    /// 切换默认收藏夹
-    private func toggleDefaultFavorite() {
-        let descriptor = FetchDescriptor<FavoriteCollection>(
-            predicate: #Predicate { $0.isDefault == true }
-        )
-        guard let defaultCollection = try? modelContext.fetch(descriptor).first else { return }
-
-        if item.isFavorite {
-            // 移出默认收藏夹
-            item.collections?.removeAll(where: { $0.id == defaultCollection.id })
-        } else {
-            // 加入默认收藏夹
-            if item.collections == nil {
-                item.collections = []
-            }
-            if !(item.collections?.contains(where: { $0.id == defaultCollection.id }) ?? false) {
-                item.collections?.append(defaultCollection)
-            }
-        }
-        try? modelContext.save()
-        NotificationCenter.default.post(name: .clipboardDataChanged, object: nil)
+        onSaveTitle(trimmed.isEmpty ? nil : trimmed)
     }
 
     @ViewBuilder
@@ -335,22 +323,24 @@ struct ClipCardView: View, Equatable {
 // MARK: - Card Context Menu
 
 struct CardContextMenu: View {
-    let item: ClipboardItem
+    let item: ClipboardItemSnapshot
+    let collections: [ClipboardCollectionSnapshot]
     var showPinOption: Bool = true
     var onEditTitle: (() -> Void)?
-    @Environment(\.modelContext) private var modelContext
-    @Query(sort: \FavoriteCollection.sortOrder) private var allCollections: [FavoriteCollection]
+    let onCopy: () -> Void
+    let onTogglePinned: () -> Void
+    let onToggleCollection: (UUID) -> Void
+    let onClearTitle: () -> Void
+    let onDelete: () -> Void
 
     var body: some View {
         Button("复制") {
-            PasteService.shared.copyToPasteboard(item)
+            onCopy()
         }
 
         if showPinOption {
             Button(item.isPinned ? "取消置顶" : "置顶") {
-                item.isPinned.toggle()
-                try? modelContext.save()
-                NotificationCenter.default.post(name: .clipboardDataChanged, object: nil)
+                onTogglePinned()
             }
         }
 
@@ -361,19 +351,17 @@ struct CardContextMenu: View {
 
             if item.customTitle != nil {
                 Button("清除别名") {
-                    item.customTitle = nil
-                    try? modelContext.save()
-                    NotificationCenter.default.post(name: .clipboardDataChanged, object: nil)
+                    onClearTitle()
                 }
             }
         }
 
         // 收藏夹子菜单
         Menu("添加到收藏夹") {
-            ForEach(allCollections, id: \.id) { collection in
-                let isInCollection = item.collections?.contains(where: { $0.id == collection.id }) ?? false
+            ForEach(collections, id: \.id) { collection in
+                let isInCollection = item.collectionIDs.contains(collection.id)
                 Button(action: {
-                    toggleCollection(collection)
+                    onToggleCollection(collection.id)
                 }) {
                     HStack {
                         Text(collection.name)
@@ -388,21 +376,7 @@ struct CardContextMenu: View {
         Divider()
 
         Button("删除", role: .destructive) {
-            modelContext.delete(item)
-            try? modelContext.save()
+            onDelete()
         }
-    }
-
-    private func toggleCollection(_ collection: FavoriteCollection) {
-        if item.collections == nil {
-            item.collections = []
-        }
-        if let idx = item.collections?.firstIndex(where: { $0.id == collection.id }) {
-            item.collections?.remove(at: idx)
-        } else {
-            item.collections?.append(collection)
-        }
-        try? modelContext.save()
-        NotificationCenter.default.post(name: .clipboardDataChanged, object: nil)
     }
 }

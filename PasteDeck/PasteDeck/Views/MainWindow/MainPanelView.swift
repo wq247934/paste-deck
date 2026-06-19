@@ -35,13 +35,13 @@ enum ScrollDirection {
 }
 
 struct MainPanelView: View {
-    @Environment(\.modelContext) private var modelContext
-    @Query(sort: \ClipboardItem.createdAt, order: .reverse) private var items: [ClipboardItem]
-    @Query(sort: \FavoriteCollection.sortOrder) private var allCollections: [FavoriteCollection]
+    @StateObject private var historyStore = ClipboardHistoryStore(
+        modelContext: ModelContext(AppModelContainer.container)
+    )
 
     @State private var searchText = ""
-    @State private var selectedFilter: FilterOption = .all
-    @State private var selectedItem: ClipboardItem?
+    @State private var selectedFilter: ClipboardFilterOption = .all
+    @State private var selectedItemID: UUID?
     @State private var selectedIndex = 0
 
     /// 多选集合
@@ -52,10 +52,6 @@ struct MainPanelView: View {
     /// 当前焦点所在区域
     @State private var focusZone: FocusZone = .cards
     @State private var cardFocusRequest = 0
-
-    /// 缓存的过滤结果，仅在 items/searchText/selectedFilter 变化时重算，
-    /// 避免每次 body 求值都重复 O(n) 过滤整个历史
-    @State private var filteredItems: [ClipboardItem] = []
 
     /// 搜索栏焦点绑定
     @FocusState private var isSearchFocused: Bool
@@ -70,71 +66,35 @@ struct MainPanelView: View {
     // MARK: - Filtered & Sorted Items
 
     /// 当前筛选标签索引（用于 Tab 循环）
-    private var filterOptions: [FilterOption] {
-        var options: [FilterOption] = [.all]
-        for collection in allCollections {
-            options.append(.collection(collection))
-        }
-        return options
-    }
-
-    private func computeFilteredItems() -> [ClipboardItem] {
-        var result = items
-
-        // 搜索过滤
-        if !searchText.isEmpty {
-            result = result.filter { item in
-                if item.displayTitle.localizedCaseInsensitiveContains(searchText) {
-                    return true
-                }
-
-                switch item.contentType {
-                case .text, .link:
-                    return (item.textContent ?? "").localizedCaseInsensitiveContains(searchText)
-                case .file:
-                    return (item.fileName ?? "").localizedCaseInsensitiveContains(searchText)
-                case .color:
-                    return (item.colorHex ?? "").localizedCaseInsensitiveContains(searchText)
-                case .image:
-                    return false
-                }
-            }
-        }
-
-        // 收藏夹过滤
-        switch selectedFilter {
-        case .all:
-            break
-        case .collection(let collection):
-            result = result.filter { item in
-                item.collections?.contains(where: { $0.id == collection.id }) ?? false
-            }
-            // 收藏夹视图下，置顶项排最前
-            result.sort { $0.isPinned && !$1.isPinned }
-        }
-
-        return result
+    private var filterOptions: [ClipboardFilterOption] {
+        [.all] + historyStore.collections.map { .collection($0.id) }
     }
 
     /// 重算过滤缓存，并修正可能越界的选中索引
-    private func refreshFilteredItems() {
-        filteredItems = computeFilteredItems()
-        if selectedIndex >= filteredItems.count {
-            selectedIndex = max(0, filteredItems.count - 1)
+    private func reconcileSelection() {
+        let items = historyStore.filteredItems
+        if selectedIndex >= items.count {
+            selectedIndex = max(0, items.count - 1)
         }
-        selectedItem = filteredItems.isEmpty ? nil : filteredItems[selectedIndex]
+        if let selectedItemID,
+           let index = items.firstIndex(where: { $0.id == selectedItemID }) {
+            selectedIndex = index
+        } else {
+            selectedItemID = items.isEmpty ? nil : items[selectedIndex].id
+        }
     }
 
     private func selectDefaultCard() {
-        if filteredItems.count > 1 {
+        let items = historyStore.filteredItems
+        if items.count > 1 {
             selectedIndex = 1
-            selectedItem = filteredItems[1]
-        } else if !filteredItems.isEmpty {
+            selectedItemID = items[1].id
+        } else if !items.isEmpty {
             selectedIndex = 0
-            selectedItem = filteredItems.first
+            selectedItemID = items.first?.id
         } else {
             selectedIndex = 0
-            selectedItem = nil
+            selectedItemID = nil
         }
     }
 
@@ -164,9 +124,9 @@ struct MainPanelView: View {
                 .onSubmit {
                     // 搜索框按 Enter → 焦点切到卡片区，选中第一个
                     focusCards()
-                    if !filteredItems.isEmpty {
+                    if !historyStore.filteredItems.isEmpty {
                         selectedIndex = 0
-                        selectedItem = filteredItems.first
+                        selectedItemID = historyStore.filteredItems.first?.id
                         clearMultiSelection()
                     }
                 }
@@ -174,83 +134,88 @@ struct MainPanelView: View {
                 FavoriteFilterTabs(
                     options: filterOptions,
                     selectedFilter: $selectedFilter,
-                    modelContext: modelContext
+                    collections: historyStore.collections,
+                    onCreateCollection: { name in
+                        historyStore.createCollection(name: name)
+                    }
                 )
             }
             .padding(.horizontal, 20)
             .padding(.top, 16)
 
             // 卡片列表
-            if filteredItems.isEmpty {
+            if historyStore.filteredItems.isEmpty {
                 EmptyStateView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                ScrollViewReader { proxy in
-                    HorizontalScrollHostingView(
-                        items: filteredItems,
-                        selectedItemId: selectedItem?.id,
-                        selectedItems: selectedItems,
-                        showSelection: focusZone == .cards,
-                        showPinOption: selectedFilter != .all,
-                        cardSize: cardSize,
-                        onItemTapped: { index, item in
-                            handleItemTap(index: index, item: item)
-                        },
-                        onItemDoubleTapped: { item in
-                            pasteItem(item)
-                        },
-                        onItemContextRequested: { item in
-                            // context menu handled by SwiftUI
-                        }
-                    )
-                    .padding(.top, 12)
-                    // 当选中项变化时滚动：键盘导航是离散操作，即时跟随选中项。
-                    // 套动画会在连按时互相打断造成卡顿，且高亮先于滚动到达，
-                    // 视觉上表现为「先选中、卡片才慢慢出现」。
-                    .onChange(of: selectedIndex) { _, newIndex in
-                        guard newIndex >= 0, newIndex < filteredItems.count else { return }
-                        proxy.scrollTo(filteredItems[newIndex].id, anchor: nil)
+                VirtualizedCardList(
+                    items: historyStore.filteredItems,
+                    collections: historyStore.collections,
+                    selectedItemId: selectedItemID,
+                    selectedItems: selectedItems,
+                    showSelection: focusZone == .cards,
+                    showPinOption: selectedFilter != .all,
+                    cardSize: cardSize,
+                    onItemTapped: { index, itemID in
+                        handleItemTap(index: index, itemID: itemID)
+                    },
+                    onItemDoubleTapped: { itemID in
+                        pasteItem(id: itemID)
+                    },
+                    onCopy: { itemID in
+                        historyStore.copyToPasteboard(id: itemID)
+                    },
+                    onTogglePinned: { itemID in
+                        historyStore.togglePinned(id: itemID)
+                    },
+                    onToggleFavorite: { itemID in
+                        historyStore.toggleDefaultFavorite(id: itemID)
+                    },
+                    onToggleCollection: { itemID, collectionID in
+                        historyStore.toggleCollection(itemID: itemID, collectionID: collectionID)
+                    },
+                    onSaveTitle: { itemID, title in
+                        historyStore.saveTitle(id: itemID, title: title)
+                    },
+                    onDelete: { itemID in
+                        deleteItem(id: itemID)
                     }
-                }
+                )
+                .padding(.top, 12)
             }
         }
         .frame(width: 800, height: 400)
         .onAppear {
-            refreshFilteredItems()
+            reconcileSelection()
             selectDefaultCard()
             // 打开面板时焦点默认在卡片区
             focusCards()
         }
-        // 仅在真正的输入变化时重算过滤缓存
-        .onChange(of: items) { _, _ in
-            refreshFilteredItems()
-        }
         .onChange(of: searchText) { _, _ in
-            refreshFilteredItems()
+            historyStore.setSearchText(searchText)
         }
         .onChange(of: selectedFilter) { _, _ in
-            refreshFilteredItems()
+            historyStore.setFilter(selectedFilter)
         }
-        // 就地修改置顶/收藏夹归属后刷新缓存（@Query 数组成员未变，onChange(items) 不触发）
+        .onReceive(historyStore.$filteredItems) { _ in
+            reconcileSelection()
+        }
+        // 剪贴板监听或设置页清理会通过通知更新轻量缓存
         .onReceive(NotificationCenter.default.publisher(for: .clipboardDataChanged)) { _ in
-            refreshFilteredItems()
+            historyStore.reloadFromDatabase()
+            reconcileSelection()
         }
         // 监听清空搜索通知
         .onReceive(NotificationCenter.default.publisher(for: .clearSearchText)) { _ in
             searchText = ""
             clearMultiSelection()
             selectedFilter = .all
-            if filteredItems.count > 1 {
-                selectedIndex = 1
-                selectedItem = filteredItems[1]
-            } else if !filteredItems.isEmpty {
-                selectedIndex = 0
-                selectedItem = filteredItems.first
-            }
+            historyStore.setSearchText("")
+            historyStore.setFilter(.all)
+            selectDefaultCard()
         }
         // 面板打开时重置焦点到卡片区，选中第二项
         .onReceive(NotificationCenter.default.publisher(for: .panelDidShow)) { _ in
-            refreshFilteredItems()
             selectDefaultCard()
             focusCards()
             clearMultiSelection()
@@ -278,9 +243,9 @@ struct MainPanelView: View {
                     // Enter 在搜索模式 → 焦点切到卡片区
                     if focusZone == .search {
                         focusCards()
-                        if !filteredItems.isEmpty {
+                        if !historyStore.filteredItems.isEmpty {
                             selectedIndex = 0
-                            selectedItem = filteredItems.first
+                            selectedItemID = historyStore.filteredItems.first?.id
                             clearMultiSelection()
                         }
                     } else {
@@ -291,8 +256,8 @@ struct MainPanelView: View {
                     closePreviewOrPanel()
                 },
                 onSpace: {
-                    if let item = selectedItem {
-                        previewItem(item)
+                    if let selectedItemID {
+                        previewItem(id: selectedItemID)
                     }
                 },
                 onDelete: {
@@ -309,53 +274,54 @@ struct MainPanelView: View {
 
     /// 单纯移动选区（方向键）
     private func moveSelection(by offset: Int, extending: Bool) {
-        guard !filteredItems.isEmpty else { return }
-        let newIndex = max(0, min(filteredItems.count - 1, selectedIndex + offset))
+        let items = historyStore.filteredItems
+        guard !items.isEmpty else { return }
+        let newIndex = max(0, min(items.count - 1, selectedIndex + offset))
 
         if extending {
             // Shift+方向键：扩展/收缩选区
             _ = selectedIndex
             selectedIndex = newIndex
-            selectedItem = filteredItems[newIndex]
+            selectedItemID = items[newIndex].id
             rebuildExtendedSelection(from: anchorIndex, to: newIndex)
         } else {
             // 普通方向键：单选移动，清除多选
             selectedIndex = newIndex
-            selectedItem = filteredItems[newIndex]
+            selectedItemID = items[newIndex].id
             clearMultiSelection()
             anchorIndex = newIndex
         }
     }
 
     /// 点击卡片处理
-    private func handleItemTap(index: Int, item: ClipboardItem) {
+    private func handleItemTap(index: Int, itemID: UUID) {
         let isCmdHeld = NSEvent.modifierFlags.contains(.command)
         let isShiftHeld = NSEvent.modifierFlags.contains(.shift)
 
         if isCmdHeld {
             // Cmd+Click: toggle 选中
-            if selectedItems.contains(item.id) {
-                selectedItems.remove(item.id)
+            if selectedItems.contains(itemID) {
+                selectedItems.remove(itemID)
                 // 如果移除的是当前选中项，更新当前选中
-                if selectedItem?.id == item.id {
-                    selectedItem = selectedItems.isEmpty ? nil : filteredItems.first(where: { selectedItems.contains($0.id) })
-                    selectedIndex = filteredItems.firstIndex(where: { $0.id == (selectedItem?.id ?? UUID()) }) ?? index
+                if selectedItemID == itemID {
+                    selectedItemID = selectedItems.isEmpty ? nil : historyStore.filteredItems.first(where: { selectedItems.contains($0.id) })?.id
+                    selectedIndex = historyStore.filteredItems.firstIndex(where: { $0.id == (selectedItemID ?? UUID()) }) ?? index
                 }
             } else {
-                selectedItems.insert(item.id)
+                selectedItems.insert(itemID)
                 selectedIndex = index
-                selectedItem = item
+                selectedItemID = itemID
                 anchorIndex = index
             }
         } else if isShiftHeld {
             // Shift+Click: 区间选中
             selectedIndex = index
-            selectedItem = item
+            selectedItemID = itemID
             rebuildExtendedSelection(from: anchorIndex, to: index)
         } else {
             // 普通点击：清除多选，单选
             selectedIndex = index
-            selectedItem = item
+            selectedItemID = itemID
             clearMultiSelection()
             anchorIndex = index
         }
@@ -364,9 +330,14 @@ struct MainPanelView: View {
 
     /// 重建 Shift 选区
     private func rebuildExtendedSelection(from: Int, to: Int) {
-        let lo = min(from, to)
-        let hi = max(from, to)
-        selectedItems = Set(filteredItems[lo...hi].map { $0.id })
+        let items = historyStore.filteredItems
+        guard !items.isEmpty else {
+            selectedItems.removeAll()
+            return
+        }
+        let lo = min(min(from, to), items.count - 1)
+        let hi = min(max(from, to), items.count - 1)
+        selectedItems = Set(items[lo...hi].map { $0.id })
     }
 
     /// 清除多选
@@ -378,51 +349,43 @@ struct MainPanelView: View {
 
     /// 批量粘贴所有选中项（若无多选则粘贴当前项）
     private func pasteSelectedItems() {
-        let itemsToPaste: [ClipboardItem]
+        let idsToPaste: [UUID]
         if selectedItems.count > 1 {
             // 按显示顺序（newest first）排列
-            itemsToPaste = filteredItems.filter { selectedItems.contains($0.id) }
-        } else if let item = selectedItem {
-            itemsToPaste = [item]
+            idsToPaste = historyStore.filteredItems.map(\.id).filter { selectedItems.contains($0) }
+        } else if let selectedItemID {
+            idsToPaste = [selectedItemID]
         } else {
             return
         }
 
-        promotePastedItems(itemsToPaste)
+        historyStore.promotePastedItems(ids: idsToPaste)
         closeHandler?()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            PasteService.shared.batchPaste(itemsToPaste)
+            historyStore.batchPaste(ids: idsToPaste)
         }
     }
 
-    private func pasteItem(_ item: ClipboardItem) {
-        promotePastedItems([item])
-        PasteService.shared.preparePaste(item)
+    private func pasteItem(id: UUID) {
+        historyStore.promotePastedItems(ids: [id])
+        historyStore.preparePaste(id: id)
         closeHandler?()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             PasteService.shared.performPaste()
         }
     }
 
-    private func promotePastedItems(_ items: [ClipboardItem]) {
-        let baseDate = Date()
-        for (index, item) in items.enumerated() {
-            item.createdAt = baseDate.addingTimeInterval(Double(-index) * 0.001)
-        }
-        try? modelContext.save()
-        refreshFilteredItems()
-    }
-
     /// 上下键翻页：滚动卡片列表一屏
     private func scrollPage(direction: ScrollDirection) {
-        guard !filteredItems.isEmpty else { return }
+        let items = historyStore.filteredItems
+        guard !items.isEmpty else { return }
         // 每页大约显示的卡片数（根据卡片宽度和间距估算）
         let cardsPerPage = 5
         let offset = direction == .up ? -cardsPerPage : cardsPerPage
-        let newIndex = max(0, min(filteredItems.count - 1, selectedIndex + offset))
+        let newIndex = max(0, min(items.count - 1, selectedIndex + offset))
         if newIndex != selectedIndex {
             selectedIndex = newIndex
-            selectedItem = filteredItems[newIndex]
+            selectedItemID = items[newIndex].id
             clearMultiSelection()
         }
     }
@@ -438,25 +401,28 @@ struct MainPanelView: View {
         closeHandler?()
     }
 
-    private func previewItem(_ item: ClipboardItem) {
+    private func previewItem(id: UUID) {
+        guard let item = historyStore.fetchItem(id: id) else { return }
         previewController = PreviewWindowController()
         previewController?.show(item: item, onClose: {})
     }
 
     private func deleteSelectedItem() {
-        guard let item = selectedItem else { return }
-        let nextIndex = selectedIndex
-        modelContext.delete(item)
-        try? modelContext.save()
+        guard let selectedItemID else { return }
+        deleteItem(id: selectedItemID)
+    }
 
-        // 直接基于删除后的结果重算缓存，避免读到仍含已删项的旧缓存
-        filteredItems = computeFilteredItems()
-        if !filteredItems.isEmpty {
-            selectedIndex = min(nextIndex, filteredItems.count - 1)
-            selectedItem = filteredItems[selectedIndex]
+    private func deleteItem(id: UUID) {
+        let nextIndex = selectedIndex
+        historyStore.deleteItem(id: id)
+
+        let items = historyStore.filteredItems
+        if !items.isEmpty {
+            selectedIndex = min(nextIndex, items.count - 1)
+            selectedItemID = items[selectedIndex].id
         } else {
             selectedIndex = 0
-            selectedItem = nil
+            selectedItemID = nil
         }
         clearMultiSelection()
     }
@@ -464,42 +430,13 @@ struct MainPanelView: View {
 
 // MARK: - Filter Option
 
-/// 筛选选项，替代原来的 ClipboardFilter 枚举
-enum FilterOption: Equatable, Hashable {
-    case all
-    case collection(FavoriteCollection)
-
-    var displayName: String {
-        switch self {
-        case .all: return "全部"
-        case .collection(let c): return c.name
-        }
-    }
-
-    static func == (lhs: FilterOption, rhs: FilterOption) -> Bool {
-        switch (lhs, rhs) {
-        case (.all, .all): return true
-        case (.collection(let a), .collection(let b)): return a.id == b.id
-        default: return false
-        }
-    }
-
-    func hash(into hasher: inout Hasher) {
-        switch self {
-        case .all:
-            hasher.combine("all")
-        case .collection(let c):
-            hasher.combine(c.id)
-        }
-    }
-}
-
 // MARK: - Favorite Filter Tabs
 
 struct FavoriteFilterTabs: View {
-    let options: [FilterOption]
-    @Binding var selectedFilter: FilterOption
-    let modelContext: ModelContext
+    let options: [ClipboardFilterOption]
+    @Binding var selectedFilter: ClipboardFilterOption
+    let collections: [ClipboardCollectionSnapshot]
+    let onCreateCollection: (String) -> Void
 
     @State private var showNewCollectionSheet = false
     @State private var newCollectionName = "新建收藏夹"
@@ -513,7 +450,7 @@ struct FavoriteFilterTabs: View {
                         Button(action: {
                             selectedFilter = option
                         }) {
-                            Text(option.displayName)
+                            Text(option.displayName(collections: collections))
                                 .font(.system(size: 13, weight: .medium))
                                 .foregroundColor(selectedFilter == option ? .white : .primary)
                                 .frame(minWidth: 60)
@@ -577,94 +514,214 @@ struct FavoriteFilterTabs: View {
     }
 
     private func createCollection() {
-        let maxOrder = options.compactMap { option -> Int? in
-            if case .collection(let c) = option { return c.sortOrder }
-            return nil
-        }.max() ?? 0
-
-        let newCollection = FavoriteCollection(
-            name: newCollectionName.trimmingCharacters(in: .whitespaces),
-            sortOrder: maxOrder + 1
-        )
-        modelContext.insert(newCollection)
-        try? modelContext.save()
+        onCreateCollection(newCollectionName)
     }
 }
 
-// MARK: - Horizontal Scroll Hosting View (NSViewRepresentable for scroll wheel)
+// MARK: - Virtualized Card List
 
-/// 包装卡片列表的 NSView，用于拦截鼠标滚轮事件实现横向滚动
-struct HorizontalScrollHostingView: View {
-    let items: [ClipboardItem]
+/// 水平虚拟化卡片列表，只为可见区域附近创建卡片视图。
+struct VirtualizedCardList: NSViewRepresentable {
+    let items: [ClipboardItemSnapshot]
+    let collections: [ClipboardCollectionSnapshot]
     let selectedItemId: UUID?
     let selectedItems: Set<UUID>
     var showSelection: Bool = true
     var showPinOption: Bool = true
     let cardSize: CardSize
-    let onItemTapped: (Int, ClipboardItem) -> Void
-    let onItemDoubleTapped: (ClipboardItem) -> Void
-    let onItemContextRequested: (ClipboardItem) -> Void
+    let onItemTapped: (Int, UUID) -> Void
+    let onItemDoubleTapped: (UUID) -> Void
+    let onCopy: (UUID) -> Void
+    let onTogglePinned: (UUID) -> Void
+    let onToggleFavorite: (UUID) -> Void
+    let onToggleCollection: (UUID, UUID) -> Void
+    let onSaveTitle: (UUID, String?) -> Void
+    let onDelete: (UUID) -> Void
 
-    var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            LazyHStack(spacing: 12) {
-                ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                    ClipCardView(
-                        item: item,
-                        isSelected: showSelection && (selectedItems.contains(item.id) || selectedItemId == item.id),
-                        isMultiSelected: showSelection && selectedItems.contains(item.id) && selectedItems.count > 1,
-                        showPinOption: showPinOption,
-                        cardSize: cardSize
-                    )
-                    .equatable()
-                    .id(item.id)
-                    .onTapGesture {
-                        onItemTapped(index, item)
-                    }
-                    .onTapGesture(count: 2) {
-                        onItemDoubleTapped(item)
-                    }
-                    .contextMenu {
-                        CardContextMenu(item: item, showPinOption: showPinOption)
-                    }
-                }
-            }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 8)
+    private static let itemIdentifier = NSUserInterfaceItemIdentifier("PasteDeckCardCollectionViewItem")
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let layout = NSCollectionViewFlowLayout()
+        layout.scrollDirection = .horizontal
+        layout.minimumInteritemSpacing = 12
+        layout.minimumLineSpacing = 12
+        layout.sectionInset = NSEdgeInsets(top: 8, left: 20, bottom: 8, right: 20)
+        layout.itemSize = itemSize
+
+        let collectionView = NSCollectionView()
+        collectionView.collectionViewLayout = layout
+        collectionView.dataSource = context.coordinator
+        collectionView.delegate = context.coordinator
+        collectionView.backgroundColors = [.clear]
+        collectionView.isSelectable = false
+        collectionView.register(
+            CardCollectionViewItem.self,
+            forItemWithIdentifier: Self.itemIdentifier
+        )
+
+        let scrollView = HorizontalCardScrollView()
+        scrollView.documentView = collectionView
+        scrollView.drawsBackground = false
+        scrollView.hasHorizontalScroller = false
+        scrollView.hasVerticalScroller = false
+        scrollView.autohidesScrollers = true
+
+        context.coordinator.collectionView = collectionView
+        return scrollView
+    }
+
+    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        let oldSelectedID = context.coordinator.parent.selectedItemId
+        context.coordinator.parent = self
+
+        if let layout = context.coordinator.collectionView.collectionViewLayout as? NSCollectionViewFlowLayout {
+            layout.itemSize = itemSize
         }
-        .background(ScrollWheelInterceptor())
-    }
-}
 
-/// 拦截鼠标滚轮事件，将垂直滚动转发为水平滚动
-struct ScrollWheelInterceptor: NSViewRepresentable {
-    func makeNSView(context: Context) -> ScrollWheelNSView {
-        let view = ScrollWheelNSView()
-        return view
+        context.coordinator.collectionView.reloadData()
+
+        if oldSelectedID != selectedItemId {
+            context.coordinator.scrollSelectedIntoViewIfNeeded()
+        }
     }
 
-    func updateNSView(_ nsView: ScrollWheelNSView, context: Context) {}
-}
+    private var itemSize: NSSize {
+        NSSize(width: cardSize.width, height: cardSize.height + 26)
+    }
 
-class ScrollWheelNSView: NSView {
-    override func scrollWheel(with event: NSEvent) {
-        // 将垂直滚轮事件转发为水平滚动
-        if abs(event.scrollingDeltaY) > abs(event.scrollingDeltaX) {
-            // 查找最近的 NSScrollView 祖先并直接水平滚动
-            var view: NSView? = self.superview
-            while view != nil {
-                if let scrollView = view as? NSScrollView {
-                    let clipView = scrollView.contentView
-                    var newOrigin = clipView.bounds.origin
-                    newOrigin.x -= event.scrollingDeltaY
-                    clipView.scroll(to: newOrigin)
-                    scrollView.reflectScrolledClipView(clipView)
-                    return
-                }
-                view = view?.superview
+    final class Coordinator: NSObject, NSCollectionViewDataSource, NSCollectionViewDelegate {
+        var parent: VirtualizedCardList
+        weak var collectionView: NSCollectionView!
+
+        init(_ parent: VirtualizedCardList) {
+            self.parent = parent
+        }
+
+        func collectionView(_ collectionView: NSCollectionView, numberOfItemsInSection section: Int) -> Int {
+            parent.items.count
+        }
+
+        func collectionView(
+            _ collectionView: NSCollectionView,
+            itemForRepresentedObjectAt indexPath: IndexPath
+        ) -> NSCollectionViewItem {
+            let item = collectionView.makeItem(
+                withIdentifier: VirtualizedCardList.itemIdentifier,
+                for: indexPath
+            )
+
+            guard let cardItem = item as? CardCollectionViewItem,
+                  indexPath.item < parent.items.count else {
+                return item
             }
-        } else {
-            super.scrollWheel(with: event)
+
+            let snapshot = parent.items[indexPath.item]
+            let index = indexPath.item
+            let rootView = ClipCardView(
+                item: snapshot,
+                isSelected: parent.showSelection && (parent.selectedItems.contains(snapshot.id) || parent.selectedItemId == snapshot.id),
+                isMultiSelected: parent.showSelection && parent.selectedItems.contains(snapshot.id) && parent.selectedItems.count > 1,
+                showPinOption: parent.showPinOption,
+                cardSize: parent.cardSize,
+                collections: parent.collections,
+                onCopy: { [weak self] in
+                    self?.parent.onCopy(snapshot.id)
+                },
+                onTogglePinned: { [weak self] in
+                    self?.parent.onTogglePinned(snapshot.id)
+                },
+                onToggleFavorite: { [weak self] in
+                    self?.parent.onToggleFavorite(snapshot.id)
+                },
+                onToggleCollection: { [weak self] collectionID in
+                    self?.parent.onToggleCollection(snapshot.id, collectionID)
+                },
+                onSaveTitle: { [weak self] title in
+                    self?.parent.onSaveTitle(snapshot.id, title)
+                },
+                onDelete: { [weak self] in
+                    self?.parent.onDelete(snapshot.id)
+                }
+            )
+            .equatable()
+            .onTapGesture {
+                self.parent.onItemTapped(index, snapshot.id)
+            }
+            .onTapGesture(count: 2) {
+                self.parent.onItemDoubleTapped(snapshot.id)
+            }
+            .frame(width: parent.cardSize.width, height: parent.cardSize.height + 26)
+
+            cardItem.configure(rootView)
+            return cardItem
+        }
+
+        func scrollSelectedIntoViewIfNeeded() {
+            guard let selectedItemId = parent.selectedItemId,
+                  let index = parent.items.firstIndex(where: { $0.id == selectedItemId }) else {
+                return
+            }
+
+            let indexPath = IndexPath(item: index, section: 0)
+            if collectionView.indexPathsForVisibleItems().contains(indexPath) {
+                return
+            }
+
+            collectionView.scrollToItems(
+                at: Set([indexPath]),
+                scrollPosition: .centeredHorizontally
+            )
+        }
+    }
+
+    final class CardCollectionViewItem: NSCollectionViewItem {
+        private var hostingView: NSHostingView<AnyView>?
+
+        override func loadView() {
+            view = NSView()
+            view.wantsLayer = true
+            view.layer?.backgroundColor = NSColor.clear.cgColor
+        }
+
+        func configure<V: View>(_ rootView: V) {
+            let erased = AnyView(rootView)
+            if let hostingView {
+                hostingView.rootView = erased
+            } else {
+                let hostingView = NSHostingView(rootView: erased)
+                hostingView.translatesAutoresizingMaskIntoConstraints = false
+                hostingView.wantsLayer = true
+                hostingView.layer?.backgroundColor = NSColor.clear.cgColor
+                view.addSubview(hostingView)
+                NSLayoutConstraint.activate([
+                    hostingView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+                    hostingView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+                    hostingView.topAnchor.constraint(equalTo: view.topAnchor),
+                    hostingView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+                ])
+                self.hostingView = hostingView
+            }
+        }
+    }
+
+    final class HorizontalCardScrollView: NSScrollView {
+        override func scrollWheel(with event: NSEvent) {
+            if abs(event.scrollingDeltaY) > abs(event.scrollingDeltaX) {
+                var newOrigin = contentView.bounds.origin
+                newOrigin.x -= event.scrollingDeltaY
+                if let documentView {
+                    let maxX = max(0, documentView.bounds.width - contentView.bounds.width)
+                    newOrigin.x = min(max(newOrigin.x, 0), maxX)
+                }
+                contentView.scroll(to: newOrigin)
+                reflectScrolledClipView(contentView)
+            } else {
+                super.scrollWheel(with: event)
+            }
         }
     }
 }
@@ -675,9 +732,9 @@ class ScrollWheelNSView: NSView {
 /// 无论焦点在搜索栏还是卡片区都能响应方向键、Enter 等。
 struct KeyboardEventMonitorView: NSViewRepresentable {
     @Binding var focusZone: FocusZone
-    @Binding var selectedFilter: FilterOption
+    @Binding var selectedFilter: ClipboardFilterOption
     let focusRequest: Int
-    let filterOptions: [FilterOption]
+    let filterOptions: [ClipboardFilterOption]
     var onLeftArrow: ((Bool) -> Void)?
     var onRightArrow: ((Bool) -> Void)?
     var onUpArrow: (() -> Void)?
