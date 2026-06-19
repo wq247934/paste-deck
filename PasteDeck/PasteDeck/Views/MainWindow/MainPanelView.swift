@@ -84,6 +84,10 @@ struct MainPanelView: View {
         // 搜索过滤
         if !searchText.isEmpty {
             result = result.filter { item in
+                if item.displayTitle.localizedCaseInsensitiveContains(searchText) {
+                    return true
+                }
+
                 switch item.contentType {
                 case .text, .link:
                     return (item.textContent ?? "").localizedCaseInsensitiveContains(searchText)

@@ -65,6 +65,8 @@ struct ClipCardView: View, Equatable {
     let cardSize: CardSize
 
     @Environment(\.modelContext) private var modelContext
+    @State private var isEditingTitle = false
+    @State private var titleDraft = ""
 
     /// 仅比较影响卡片外观的输入。item 为引用类型，需显式比较其可变展示属性
     /// （置顶/收藏/收藏夹归属），否则对选中卡就地改这些属性时不会重绘。
@@ -76,6 +78,7 @@ struct ClipCardView: View, Equatable {
             && lhs.cardSize == rhs.cardSize
             && lhs.item.isPinned == rhs.item.isPinned
             && lhs.item.isFavorite == rhs.item.isFavorite
+            && lhs.item.customTitle == rhs.item.customTitle
             && (lhs.item.collections?.map { $0.id } ?? []) == (rhs.item.collections?.map { $0.id } ?? [])
     }
 
@@ -165,8 +168,31 @@ struct ClipCardView: View, Equatable {
         }
         .shadow(color: .black.opacity(0.1), radius: isSelected ? 8 : 2, x: 0, y: isSelected ? 4 : 1)
         .contextMenu {
-            CardContextMenu(item: item, showPinOption: showPinOption)
+            CardContextMenu(
+                item: item,
+                showPinOption: showPinOption,
+                onEditTitle: {
+                    titleDraft = item.customTitle ?? ""
+                    isEditingTitle = true
+                }
+            )
         }
+        .alert("重命名", isPresented: $isEditingTitle) {
+            TextField("别名", text: $titleDraft)
+            Button("取消", role: .cancel) {}
+            Button("保存") {
+                saveTitle()
+            }
+        } message: {
+            Text("原始剪贴板内容不会被修改。")
+        }
+    }
+
+    private func saveTitle() {
+        let trimmed = titleDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        item.customTitle = trimmed.isEmpty ? nil : trimmed
+        try? modelContext.save()
+        NotificationCenter.default.post(name: .clipboardDataChanged, object: nil)
     }
 
     /// 切换默认收藏夹
@@ -297,6 +323,7 @@ struct ClipCardView: View, Equatable {
 struct CardContextMenu: View {
     let item: ClipboardItem
     var showPinOption: Bool = true
+    var onEditTitle: (() -> Void)?
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \FavoriteCollection.sortOrder) private var allCollections: [FavoriteCollection]
 
@@ -310,6 +337,20 @@ struct CardContextMenu: View {
                 item.isPinned.toggle()
                 try? modelContext.save()
                 NotificationCenter.default.post(name: .clipboardDataChanged, object: nil)
+            }
+        }
+
+        if let onEditTitle {
+            Button(item.customTitle == nil ? "重命名" : "修改别名") {
+                onEditTitle()
+            }
+
+            if item.customTitle != nil {
+                Button("清除别名") {
+                    item.customTitle = nil
+                    try? modelContext.save()
+                    NotificationCenter.default.post(name: .clipboardDataChanged, object: nil)
+                }
             }
         }
 

@@ -27,6 +27,7 @@ final class ClipboardItem {
     var sourceApp: String?
     var createdAt: Date
     var isPinned: Bool
+    var customTitle: String?
 
     /// RTF 富文本数据（字体、颜色、样式等）
     var rtfData: Data?
@@ -44,6 +45,14 @@ final class ClipboardItem {
     }
 
     var displayTitle: String {
+        if let customTitle, !customTitle.isEmpty {
+            return customTitle
+        }
+
+        return originalDisplayTitle
+    }
+
+    var originalDisplayTitle: String {
         switch contentType {
         case .text:
             return String((textContent?.prefix(50) ?? "").replacingOccurrences(of: "\n", with: " "))
@@ -119,6 +128,7 @@ final class ClipboardItem {
         self.sourceApp = sourceApp
         self.createdAt = Date()
         self.isPinned = false
+        self.customTitle = nil
         self.rtfData = rtfData
     }
 
