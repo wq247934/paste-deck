@@ -52,3 +52,26 @@
 - `isDeleted` 字段存在但从未被设置（删除用的是 `modelContext.delete` 直接删除）
 - 也没有定期清理已标记项的逻辑
 - **需要**：二选一——用软删除 + 定期清理，或去掉 `isDeleted` 字段
+
+## 10. 打开面板时焦点不稳定
+
+- 打开面板时焦点有时落在搜索栏、有时在卡片区，行为不一致
+- `MainPanelView` 的 `.onAppear`、`.onReceive(.panelDidShow)` 都会设置选中第二项，但 `KeyboardEventMonitorView.makeNSView` 用 `DispatchQueue.main.asyncAfter(+0.15)` 异步 `makeFirstResponder`，与 `isSearchFocused` 的设置存在竞争
+- **期望**：每次打开面板焦点恒定在卡片区，并选中第二个卡片（`filteredItems[1]`，不足两项时选第一个）
+
+## 11. 收藏的单条内容可以改名（加别名）
+
+- 收藏夹（`FavoriteCollection`）已支持改名（设置页 `CollectionRowView`），但单条剪贴板内容无法命名
+- **需要**：给 `ClipboardItem` 增加自定义别名/标题字段，原始内容不变，仅作展示与识别用；提供编辑入口（如卡片右键菜单或预览窗口）
+
+## 12. 卡片底部信息栏遮挡内容、链接预览看不清
+
+- `ClipCardView` 底部的标题信息栏（图标/时间/大小/收藏夹 badge）严重干扰主内容展示，文字看不清
+- 链接类型（`linkPreview`）的地址文字同样难以辨认
+- **需要**：重新设计卡片信息层级与配色/对比度，确保主内容（文本/链接地址）清晰可读，信息栏不喧宾夺主
+
+## 13. 「全部」视图粘贴后选中项位置
+
+- 在「全部」视图选中卡片粘贴后，`PasteService` 写入剪贴板，`ClipboardMonitor` 随即将其作为最新内容记录，因此该项会作为最新项出现在列表第一位
+- **期望确认**：粘贴后被粘贴的卡片回到第一个卡片的位置（符合当前数据流的预期行为，需验证去重逻辑不会导致重复或错位）
+

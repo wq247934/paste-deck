@@ -8,9 +8,29 @@
 import SwiftUI
 import SwiftData
 
+/// 进程内图片缓存，避免卡片滚出再滚回时反复读盘解码
+private final class ImageCache {
+    static let shared = ImageCache()
+    private let cache = NSCache<NSString, NSImage>()
+
+    func image(forPath path: String) -> NSImage? {
+        cache.object(forKey: path as NSString)
+    }
+
+    func set(_ image: NSImage, forPath path: String) {
+        cache.setObject(image, forKey: path as NSString)
+    }
+}
+
 struct AsyncLocalImage: View {
     let path: String
     @State private var image: NSImage?
+
+    init(path: String) {
+        self.path = path
+        // 缓存命中时首帧即显示，避免 .task 异步延迟造成的占位闪烁
+        _image = State(initialValue: ImageCache.shared.image(forPath: path))
+    }
 
     var body: some View {
         Group {
@@ -25,7 +45,10 @@ struct AsyncLocalImage: View {
             }
         }
         .task {
+            // init 已预填缓存命中项，仅处理未命中的后台解码
+            guard image == nil else { return }
             if let loadedImage = await Task.detached(operation: { NSImage(contentsOfFile: path) }).value {
+                ImageCache.shared.set(loadedImage, forPath: path)
                 await MainActor.run {
                     self.image = loadedImage
                 }
@@ -34,7 +57,7 @@ struct AsyncLocalImage: View {
     }
 }
 
-struct ClipCardView: View {
+struct ClipCardView: View, Equatable {
     let item: ClipboardItem
     let isSelected: Bool
     var isMultiSelected: Bool = false
@@ -42,6 +65,19 @@ struct ClipCardView: View {
     let cardSize: CardSize
 
     @Environment(\.modelContext) private var modelContext
+
+    /// 仅比较影响卡片外观的输入。item 为引用类型，需显式比较其可变展示属性
+    /// （置顶/收藏/收藏夹归属），否则对选中卡就地改这些属性时不会重绘。
+    static func == (lhs: ClipCardView, rhs: ClipCardView) -> Bool {
+        lhs.item.id == rhs.item.id
+            && lhs.isSelected == rhs.isSelected
+            && lhs.isMultiSelected == rhs.isMultiSelected
+            && lhs.showPinOption == rhs.showPinOption
+            && lhs.cardSize == rhs.cardSize
+            && lhs.item.isPinned == rhs.item.isPinned
+            && lhs.item.isFavorite == rhs.item.isFavorite
+            && (lhs.item.collections?.map { $0.id } ?? []) == (rhs.item.collections?.map { $0.id } ?? [])
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -153,6 +189,7 @@ struct ClipCardView: View {
             }
         }
         try? modelContext.save()
+        NotificationCenter.default.post(name: .clipboardDataChanged, object: nil)
     }
 
     @ViewBuilder
@@ -272,6 +309,7 @@ struct CardContextMenu: View {
             Button(item.isPinned ? "取消置顶" : "置顶") {
                 item.isPinned.toggle()
                 try? modelContext.save()
+                NotificationCenter.default.post(name: .clipboardDataChanged, object: nil)
             }
         }
 
@@ -310,5 +348,6 @@ struct CardContextMenu: View {
             item.collections?.append(collection)
         }
         try? modelContext.save()
+        NotificationCenter.default.post(name: .clipboardDataChanged, object: nil)
     }
 }
