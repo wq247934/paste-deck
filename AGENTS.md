@@ -18,6 +18,13 @@ open PasteDeck/PasteDeck.xcodeproj
 
 Build and run with ⌘+R in Xcode. Select "Mac (My Mac)" as the run target.
 
+## Development Principles
+
+- Bug fixes must be normal, maintainable fixes: identify the root cause, keep responsibilities separated, and avoid workaround-style code that piles timers, duplicated state changes, or unrelated logic into existing paths.
+- Prefer small semantic helpers over scattered inline patches when a fix touches repeated behavior, especially for SwiftUI/AppKit focus, selection, paste, and lifecycle interactions.
+- Performance is the default priority for all development bugfixes. Avoid unnecessary recomputation, repeated disk I/O, repeated image decoding, broad SwiftData fetches, excessive view invalidation, and avoid animation or async work that can make keyboard navigation, panel opening, search, or paste feel sluggish.
+- Validate fixes with the narrowest useful build or test command, and call out any remaining manual QA needed for macOS UI behavior.
+
 ## Architecture
 
 ### Entry Point

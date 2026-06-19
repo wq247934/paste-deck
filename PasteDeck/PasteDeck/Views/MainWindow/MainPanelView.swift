@@ -16,6 +16,8 @@ extension Notification.Name {
     static let clearSelection = Notification.Name("clearSelection")
     static let panelDidShow = Notification.Name("panelDidShow")
     static let toggleMainPanel = Notification.Name("toggleMainPanel")
+    /// 既有项目的置顶/收藏夹归属被就地修改（不改变 @Query 数组成员），需要刷新过滤缓存
+    static let clipboardDataChanged = Notification.Name("clipboardDataChanged")
 }
 
 // MARK: - Focus Zone Enum
@@ -49,9 +51,11 @@ struct MainPanelView: View {
 
     /// 当前焦点所在区域
     @State private var focusZone: FocusZone = .cards
+    @State private var cardFocusRequest = 0
 
-    /// 键盘移动限流，防止按键重复导致频繁刷新
-    @State private var lastMoveTime: Date = .distantPast
+    /// 缓存的过滤结果，仅在 items/searchText/selectedFilter 变化时重算，
+    /// 避免每次 body 求值都重复 O(n) 过滤整个历史
+    @State private var filteredItems: [ClipboardItem] = []
 
     /// 搜索栏焦点绑定
     @FocusState private var isSearchFocused: Bool
@@ -74,7 +78,7 @@ struct MainPanelView: View {
         return options
     }
 
-    private var filteredItems: [ClipboardItem] {
+    private func computeFilteredItems() -> [ClipboardItem] {
         var result = items
 
         // 搜索过滤
@@ -108,6 +112,34 @@ struct MainPanelView: View {
         return result
     }
 
+    /// 重算过滤缓存，并修正可能越界的选中索引
+    private func refreshFilteredItems() {
+        filteredItems = computeFilteredItems()
+        if selectedIndex >= filteredItems.count {
+            selectedIndex = max(0, filteredItems.count - 1)
+        }
+        selectedItem = filteredItems.isEmpty ? nil : filteredItems[selectedIndex]
+    }
+
+    private func selectDefaultCard() {
+        if filteredItems.count > 1 {
+            selectedIndex = 1
+            selectedItem = filteredItems[1]
+        } else if !filteredItems.isEmpty {
+            selectedIndex = 0
+            selectedItem = filteredItems.first
+        } else {
+            selectedIndex = 0
+            selectedItem = nil
+        }
+    }
+
+    private func focusCards() {
+        isSearchFocused = false
+        focusZone = .cards
+        cardFocusRequest += 1
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             // 顶部搜索和筛选
@@ -121,11 +153,13 @@ struct MainPanelView: View {
                 .onChange(of: focusZone) { _, newZone in
                     if newZone == .search {
                         isSearchFocused = true
+                    } else {
+                        isSearchFocused = false
                     }
                 }
                 .onSubmit {
                     // 搜索框按 Enter → 焦点切到卡片区，选中第一个
-                    focusZone = .cards
+                    focusCards()
                     if !filteredItems.isEmpty {
                         selectedIndex = 0
                         selectedItem = filteredItems.first
@@ -166,30 +200,36 @@ struct MainPanelView: View {
                         }
                     )
                     .padding(.top, 12)
-                    // 当选中项变化时滚动
-                    .onChange(of: selectedIndex) { oldIndex, newIndex in
+                    // 当选中项变化时滚动：键盘导航是离散操作，即时跟随选中项。
+                    // 套动画会在连按时互相打断造成卡顿，且高亮先于滚动到达，
+                    // 视觉上表现为「先选中、卡片才慢慢出现」。
+                    .onChange(of: selectedIndex) { _, newIndex in
                         guard newIndex >= 0, newIndex < filteredItems.count else { return }
-                        proxy.scrollTo(filteredItems[newIndex].id, anchor: .center)
+                        proxy.scrollTo(filteredItems[newIndex].id, anchor: nil)
                     }
                 }
             }
         }
         .frame(width: 800, height: 400)
         .onAppear {
-            if !filteredItems.isEmpty {
-                let idx = filteredItems.count > 1 ? 1 : 0
-                selectedIndex = idx
-                selectedItem = filteredItems[idx]
-            }
+            refreshFilteredItems()
+            selectDefaultCard()
             // 打开面板时焦点默认在卡片区
-            isSearchFocused = false
-            focusZone = .cards
+            focusCards()
         }
-        .onChange(of: filteredItems.count) { _, _ in
-            if selectedIndex >= filteredItems.count {
-                selectedIndex = max(0, filteredItems.count - 1)
-            }
-            selectedItem = filteredItems.isEmpty ? nil : filteredItems[selectedIndex]
+        // 仅在真正的输入变化时重算过滤缓存
+        .onChange(of: items) { _, _ in
+            refreshFilteredItems()
+        }
+        .onChange(of: searchText) { _, _ in
+            refreshFilteredItems()
+        }
+        .onChange(of: selectedFilter) { _, _ in
+            refreshFilteredItems()
+        }
+        // 就地修改置顶/收藏夹归属后刷新缓存（@Query 数组成员未变，onChange(items) 不触发）
+        .onReceive(NotificationCenter.default.publisher(for: .clipboardDataChanged)) { _ in
+            refreshFilteredItems()
         }
         // 监听清空搜索通知
         .onReceive(NotificationCenter.default.publisher(for: .clearSearchText)) { _ in
@@ -206,15 +246,9 @@ struct MainPanelView: View {
         }
         // 面板打开时重置焦点到卡片区，选中第二项
         .onReceive(NotificationCenter.default.publisher(for: .panelDidShow)) { _ in
-            if filteredItems.count > 1 {
-                selectedIndex = 1
-                selectedItem = filteredItems[1]
-            } else if !filteredItems.isEmpty {
-                selectedIndex = 0
-                selectedItem = filteredItems.first
-            }
-            isSearchFocused = false
-            focusZone = .cards
+            refreshFilteredItems()
+            selectDefaultCard()
+            focusCards()
             clearMultiSelection()
         }
         // 使用 NSEvent 监听键盘
@@ -222,6 +256,7 @@ struct MainPanelView: View {
             KeyboardEventMonitorView(
                 focusZone: $focusZone,
                 selectedFilter: $selectedFilter,
+                focusRequest: cardFocusRequest,
                 filterOptions: filterOptions,
                 onLeftArrow: { extend in
                     moveSelection(by: -1, extending: extend)
@@ -238,7 +273,7 @@ struct MainPanelView: View {
                 onEnter: {
                     // Enter 在搜索模式 → 焦点切到卡片区
                     if focusZone == .search {
-                        focusZone = .cards
+                        focusCards()
                         if !filteredItems.isEmpty {
                             selectedIndex = 0
                             selectedItem = filteredItems.first
@@ -320,7 +355,7 @@ struct MainPanelView: View {
             clearMultiSelection()
             anchorIndex = index
         }
-        focusZone = .cards
+        focusCards()
     }
 
     /// 重建 Shift 选区
@@ -350,7 +385,9 @@ struct MainPanelView: View {
         }
 
         closeHandler?()
-        PasteService.shared.batchPaste(itemsToPaste)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            PasteService.shared.batchPaste(itemsToPaste)
+        }
     }
 
     private func pasteItem(_ item: ClipboardItem) {
@@ -397,10 +434,13 @@ struct MainPanelView: View {
         modelContext.delete(item)
         try? modelContext.save()
 
+        // 直接基于删除后的结果重算缓存，避免读到仍含已删项的旧缓存
+        filteredItems = computeFilteredItems()
         if !filteredItems.isEmpty {
             selectedIndex = min(nextIndex, filteredItems.count - 1)
             selectedItem = filteredItems[selectedIndex]
         } else {
+            selectedIndex = 0
             selectedItem = nil
         }
         clearMultiSelection()
@@ -561,6 +601,7 @@ struct HorizontalScrollHostingView: View {
                         showPinOption: showPinOption,
                         cardSize: cardSize
                     )
+                    .equatable()
                     .id(item.id)
                     .onTapGesture {
                         onItemTapped(index, item)
@@ -620,6 +661,7 @@ class ScrollWheelNSView: NSView {
 struct KeyboardEventMonitorView: NSViewRepresentable {
     @Binding var focusZone: FocusZone
     @Binding var selectedFilter: FilterOption
+    let focusRequest: Int
     let filterOptions: [FilterOption]
     var onLeftArrow: ((Bool) -> Void)?
     var onRightArrow: ((Bool) -> Void)?
@@ -636,22 +678,34 @@ struct KeyboardEventMonitorView: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> NSView {
-        let view = NSView()
+        let view = CardFocusNSView()
         context.coordinator.startMonitor()
-        // 初始时让卡片区获得焦点
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-            view.window?.makeFirstResponder(view.window?.contentView)
-        }
+        context.coordinator.lastFocusRequest = focusRequest
+        requestCardFocus(for: view)
         return view
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
         context.coordinator.parent = self
+        guard context.coordinator.lastFocusRequest != focusRequest else { return }
+        context.coordinator.lastFocusRequest = focusRequest
+        requestCardFocus(for: nsView)
+    }
+
+    private func requestCardFocus(for view: NSView) {
+        DispatchQueue.main.async {
+            view.window?.makeFirstResponder(view)
+        }
+    }
+
+    final class CardFocusNSView: NSView {
+        override var acceptsFirstResponder: Bool { true }
     }
 
     class Coordinator {
         var parent: KeyboardEventMonitorView
         private var monitor: Any?
+        var lastFocusRequest = 0
 
         init(_ parent: KeyboardEventMonitorView) {
             self.parent = parent
