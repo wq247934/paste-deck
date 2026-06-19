@@ -388,6 +388,7 @@ struct MainPanelView: View {
             return
         }
 
+        promotePastedItems(itemsToPaste)
         closeHandler?()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             PasteService.shared.batchPaste(itemsToPaste)
@@ -395,11 +396,21 @@ struct MainPanelView: View {
     }
 
     private func pasteItem(_ item: ClipboardItem) {
+        promotePastedItems([item])
         PasteService.shared.preparePaste(item)
         closeHandler?()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             PasteService.shared.performPaste()
         }
+    }
+
+    private func promotePastedItems(_ items: [ClipboardItem]) {
+        let baseDate = Date()
+        for (index, item) in items.enumerated() {
+            item.createdAt = baseDate.addingTimeInterval(Double(-index) * 0.001)
+        }
+        try? modelContext.save()
+        refreshFilteredItems()
     }
 
     /// 上下键翻页：滚动卡片列表一屏
