@@ -10,6 +10,22 @@ BUILD_DIR=".build/release"
 APP_BUNDLE="${BUILD_DIR}/${APP_NAME}.app"
 DMG_NAME="${APP_NAME}-${APP_VERSION}.dmg"
 EXECUTABLE="${BUILD_DIR}/${APP_NAME}"
+ENTITLEMENTS="PasteDeck/PasteDeck/PasteDeck.entitlements"
+CODE_SIGN_IDENTITY="${CODE_SIGN_IDENTITY:-PasteDeck Local Code Signing}"
+
+echo "🔎 Checking code signing identity..."
+if ! security find-identity -v -p codesigning | grep -F "\"${CODE_SIGN_IDENTITY}\"" >/dev/null; then
+    echo "❌ Code signing identity not found: ${CODE_SIGN_IDENTITY}"
+    echo ""
+    echo "Create the local signing certificate once, then rerun this script:"
+    echo "  bash scripts/create-local-codesign-cert.sh"
+    echo ""
+    echo "Or override the identity:"
+    echo "  CODE_SIGN_IDENTITY=\"Your Identity\" bash scripts/build-dmg.sh"
+    exit 1
+fi
+
+echo "✅ Using code signing identity: ${CODE_SIGN_IDENTITY}"
 
 echo "🔨 Building ${APP_NAME} in release mode..."
 # 先clean再build确保最新代码
@@ -128,9 +144,32 @@ else
     echo "⚠️  Warning: AppIcon directory not found at $SRC_DIR"
 fi
 
-echo "✍️ Applying ad-hoc code signature..."
-codesign --force --deep --sign - --timestamp=none "$APP_BUNDLE"
-codesign -v "$APP_BUNDLE"
+echo "✍️ Applying stable local code signature..."
+if [ ! -f "$ENTITLEMENTS" ]; then
+    echo "❌ Entitlements file not found at $ENTITLEMENTS"
+    exit 1
+fi
+
+codesign --force \
+    --sign "$CODE_SIGN_IDENTITY" \
+    --timestamp=none \
+    --entitlements "$ENTITLEMENTS" \
+    "$APP_BUNDLE"
+
+echo "🔐 Code signature details:"
+codesign -dv --verbose=4 "$APP_BUNDLE"
+codesign -dr - "$APP_BUNDLE"
+VERIFY_OUTPUT=$(codesign --verify --strict --verbose=2 "$APP_BUNDLE" 2>&1) || {
+    if echo "$VERIFY_OUTPUT" | grep -F "CSSMERR_TP_NOT_TRUSTED" >/dev/null; then
+        echo "$VERIFY_OUTPUT"
+        echo "⚠️  Signature structure is present, but the local certificate is not trusted for code signing."
+        echo "   Open Keychain Access and set '${CODE_SIGN_IDENTITY}' to Always Trust for Code Signing,"
+        echo "   or recreate the certificate with scripts/create-local-codesign-cert.sh after deleting the old one."
+    else
+        echo "$VERIFY_OUTPUT"
+        exit 1
+    fi
+}
 
 echo "📀 Creating DMG installer..."
 DMG_TEMP=$(mktemp -d)

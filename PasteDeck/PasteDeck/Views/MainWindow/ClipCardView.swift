@@ -225,6 +225,10 @@ struct ClipCardView: View, Equatable {
         switch item.contentType {
         case .text:
             textPreview
+        case .markdown:
+            markdownPreview
+        case .json:
+            codeTextPreview
         case .link:
             linkPreview
         case .image:
@@ -241,6 +245,21 @@ struct ClipCardView: View, Equatable {
             .font(.system(size: 12))
             .foregroundColor(.primary)
             .lineLimit(nil)
+            .padding(10)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var codeTextPreview: some View {
+        Text(item.textContent ?? "")
+            .font(.system(size: 12, design: .monospaced))
+            .foregroundColor(.primary)
+            .lineLimit(nil)
+            .padding(10)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var markdownPreview: some View {
+        MarkdownRenderedText(markdown: item.textContent ?? "", baseFontSize: 12)
             .padding(10)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
@@ -275,20 +294,27 @@ struct ClipCardView: View, Equatable {
     }
 
     private var filePreview: some View {
-        VStack(spacing: 8) {
-            Image(systemName: fileIcon)
-                .font(.system(size: 32))
-                .foregroundColor(.secondary)
+        Group {
+            if let filePath = item.filePath,
+               ImageFilePreview.isSupportedImageFile(path: filePath) {
+                AsyncLocalImage(path: filePath)
+            } else {
+                VStack(spacing: 8) {
+                    Image(systemName: fileIcon)
+                        .font(.system(size: 32))
+                        .foregroundColor(.secondary)
 
-            Text(item.fileName ?? "文件")
-                .font(.system(size: 11))
-                .foregroundColor(.primary)
-                .lineLimit(2)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 8)
+                    Text(item.fileName ?? "文件")
+                        .font(.system(size: 11))
+                        .foregroundColor(.primary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 8)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(8)
+            }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(8)
     }
 
     private var colorPreview: some View {
@@ -341,7 +367,7 @@ struct CardContextMenu: View {
             onCopy()
         }
 
-        if let onPastePlain, item.contentType == .text {
+        if let onPastePlain, item.contentType == .text || item.contentType == .markdown || item.contentType == .json {
             Button("纯文本粘贴") {
                 onPastePlain()
             }

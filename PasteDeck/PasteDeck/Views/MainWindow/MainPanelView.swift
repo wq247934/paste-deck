@@ -352,13 +352,16 @@ struct MainPanelView: View {
 
     /// 批量粘贴所有选中项（若无多选则粘贴当前项）
     private func pasteSelectedItems(plainText: Bool = false) {
+        if selectedItems.count <= 1 {
+            guard let selectedItemID else { return }
+            pasteItem(id: selectedItemID, plainText: plainText)
+            return
+        }
+
         let idsToPaste: [UUID]
-        if selectedItems.count > 1 {
-            // 按显示顺序（newest first）排列
-            idsToPaste = historyStore.filteredItems.map(\.id).filter { selectedItems.contains($0) }
-        } else if let selectedItemID {
-            idsToPaste = [selectedItemID]
-        } else {
+        // 按显示顺序（newest first）排列
+        idsToPaste = historyStore.filteredItems.map(\.id).filter { selectedItems.contains($0) }
+        guard !idsToPaste.isEmpty else {
             return
         }
 

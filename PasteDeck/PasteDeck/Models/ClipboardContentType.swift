@@ -12,6 +12,8 @@ import SwiftUI
 enum ClipboardContentType: String, Codable, CaseIterable {
     case text = "text"
     case link = "link"
+    case markdown = "markdown"
+    case json = "json"
     case image = "image"
     case file = "file"
     case color = "color"
@@ -21,6 +23,8 @@ enum ClipboardContentType: String, Codable, CaseIterable {
         switch self {
         case .text: return "doc.text"
         case .link: return "link"
+        case .markdown: return "doc.richtext"
+        case .json: return "curlybraces"
         case .image: return "photo"
         case .file: return "doc"
         case .color: return "paintpalette"
@@ -32,6 +36,8 @@ enum ClipboardContentType: String, Codable, CaseIterable {
         switch self {
         case .text: return "文本"
         case .link: return "链接"
+        case .markdown: return "Markdown"
+        case .json: return "JSON"
         case .image: return "图片"
         case .file: return "文件"
         case .color: return "颜色"

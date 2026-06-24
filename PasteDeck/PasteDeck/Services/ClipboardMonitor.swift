@@ -102,7 +102,7 @@ class ClipboardMonitor {
 
         // 比较内容
         switch item.contentType {
-        case .text, .link:
+        case .text, .link, .markdown, .json:
             return recent.textContent == item.textContent
         case .image:
             // 图片比较大小和尺寸
@@ -202,13 +202,23 @@ class ClipboardMonitor {
         // 尝试读取 RTF 富文本数据
         let rtfData = pasteboard.data(forType: .rtf)
 
+        let contentType: ClipboardContentType
+        if isJSONText(text) {
+            contentType = .json
+        } else if isMarkdownText(text, pasteboard: pasteboard) {
+            contentType = .markdown
+        } else {
+            contentType = .text
+        }
+
         return ClipboardItem(
-            contentType: .text,
+            contentType: contentType,
             textContent: text,
             sourceApp: sourceApp,
             rtfData: rtfData
         )
     }
+
     private func parseColor(_ pasteboard: NSPasteboard, sourceApp: String?) -> ClipboardItem? {
         guard let color = pasteboard.readObjects(forClasses: [NSColor.self], options: nil)?.first as? NSColor else {
             return nil
@@ -236,6 +246,65 @@ class ClipboardMonitor {
         }
 
         return nil
+    }
+
+    private func isJSONText(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let first = trimmed.first, let last = trimmed.last,
+              (first == "{" && last == "}") || (first == "[" && last == "]"),
+              let data = trimmed.data(using: .utf8) else {
+            return false
+        }
+
+        return (try? JSONSerialization.jsonObject(with: data)) != nil
+    }
+
+    private func isMarkdownText(_ text: String, pasteboard: NSPasteboard) -> Bool {
+        if pasteboard.types?.contains(NSPasteboard.PasteboardType("public.markdown")) == true ||
+            pasteboard.types?.contains(NSPasteboard.PasteboardType("net.daringfireball.markdown")) == true {
+            return true
+        }
+
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+
+        let lines = trimmed.components(separatedBy: .newlines)
+        let nonEmptyLines = lines.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+
+        if trimmed.contains("```") {
+            return true
+        }
+
+        if nonEmptyLines.contains(where: { line in
+            let line = line.trimmingCharacters(in: .whitespaces)
+            return line.range(of: #"^#{1,6}\s+\S"#, options: .regularExpression) != nil ||
+                line.range(of: #"^>\s+\S"#, options: .regularExpression) != nil ||
+                line.range(of: #"^[-*+]\s+\S"#, options: .regularExpression) != nil ||
+                line.range(of: #"^\d+\.\s+\S"#, options: .regularExpression) != nil
+        }) {
+            return true
+        }
+
+        if nonEmptyLines.count >= 2,
+           nonEmptyLines.contains(where: { line in
+               line.range(of: #"^\s*\|?.+\|.+\|?\s*$"#, options: .regularExpression) != nil
+           }),
+           nonEmptyLines.contains(where: { line in
+               line.range(of: #"^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$"#, options: .regularExpression) != nil
+           }) {
+            return true
+        }
+
+        let inlinePatterns = [
+            #"!\[[^\]]+\]\([^)]+\)"#,
+            #"\[[^\]]+\]\([^)]+\)"#,
+            #"(^|\s)(\*\*|__)\S.+\S\2(\s|$)"#,
+            #"(^|\s)`[^`\n]+`(\s|$)"#
+        ]
+
+        return inlinePatterns.contains { pattern in
+            trimmed.range(of: pattern, options: .regularExpression) != nil
+        }
     }
 
     private func colorToHex(_ color: NSColor) -> String {

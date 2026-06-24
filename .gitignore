@@ -67,6 +67,7 @@ build/
 
 # Claude Code
 .claude/
+.mimocode/
 
 # macOS
 .DS_Store

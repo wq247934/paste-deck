@@ -54,7 +54,7 @@ final class ClipboardItem {
 
     var originalDisplayTitle: String {
         switch contentType {
-        case .text:
+        case .text, .markdown, .json:
             return String((textContent?.prefix(50) ?? "").replacingOccurrences(of: "\n", with: " "))
         case .link:
             return textContent ?? ""
@@ -75,7 +75,7 @@ final class ClipboardItem {
 
     var displaySize: String {
         switch contentType {
-        case .text, .link:
+        case .text, .link, .markdown, .json:
             let count = textContent?.count ?? 0
             return "\(count) 字符"
         case .image, .file:

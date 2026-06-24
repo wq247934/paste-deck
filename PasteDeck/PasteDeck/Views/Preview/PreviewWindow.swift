@@ -32,6 +32,8 @@ class MainWindowReference {
     static var window: NSWindow?
 }
 
+private let previewWindowIdentifier = NSUserInterfaceItemIdentifier("PasteDeckPreviewWindow")
+
 struct PreviewWindow: View {
     let item: ClipboardItem
     var onClose: (() -> Void)?
@@ -41,6 +43,7 @@ struct PreviewWindow: View {
     @State private var previewMode: PreviewMode = .none
     @State private var isTruncated = false
     @State private var loadError: String?
+    @State private var imageFilePreview: NSImage?
 
     // 翻译状态
     @State private var translateSegments: [TranslateSegment] = []
@@ -48,6 +51,14 @@ struct PreviewWindow: View {
     @State private var translateError: String?
     @State private var targetLanguage: String = "zh"
     @State private var showTranslation = false
+
+    private var translatableText: String? {
+        guard item.contentType == .text else {
+            return nil
+        }
+        let trimmed = item.textContent?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -123,8 +134,7 @@ struct PreviewWindow: View {
 
                 Spacer()
 
-                // 翻译按钮（仅文本/链接类型可用）
-                if item.contentType == .text || item.contentType == .link {
+                if translatableText != nil {
                     Button(action: {
                         if showTranslation {
                             showTranslation = false
@@ -132,9 +142,12 @@ struct PreviewWindow: View {
                             startTranslate()
                         }
                     }) {
-                        HStack(spacing: 4) {
+                        HStack(spacing: 6) {
                             Image(systemName: showTranslation ? "xmark.circle.fill" : "character.book.closed")
                             Text(showTranslation ? "关闭翻译" : "翻译")
+                            if !showTranslation {
+                                KeycapLabel("T")
+                            }
                         }
                     }
                     .buttonStyle(.bordered)
@@ -147,8 +160,7 @@ struct PreviewWindow: View {
                 .buttonStyle(.bordered)
 
                 Button("粘贴") {
-                    PasteService.shared.paste(item)
-                    closeWindow()
+                    pasteAndClose()
                 }
                 .buttonStyle(.borderedProminent)
             }
@@ -160,6 +172,16 @@ struct PreviewWindow: View {
         .onAppear {
             loadFileContentIfNeeded()
         }
+        .background(
+            PreviewKeyboardMonitorView(
+                onTranslate: {
+                    triggerTranslateShortcut()
+                },
+                onPaste: {
+                    pasteAndClose()
+                }
+            )
+        )
     }
 
     // MARK: - Translate Result View
@@ -238,15 +260,9 @@ struct PreviewWindow: View {
     // MARK: - Translate Logic
 
     private func startTranslate() {
-        let text: String
-        switch item.contentType {
-        case .text, .link:
-            text = item.textContent ?? ""
-        default:
+        guard let text = translatableText else {
             return
         }
-
-        guard !text.isEmpty else { return }
 
         // 检查缓存
         if let cached = TranslateCache.shared.get(for: item.id) {
@@ -293,6 +309,16 @@ struct PreviewWindow: View {
             // 普通版：串行
             translateSerial(service: service)
         }
+    }
+
+    private func triggerTranslateShortcut() {
+        guard !isTranslating, !showTranslation else { return }
+        startTranslate()
+    }
+
+    private func pasteAndClose() {
+        PasteService.shared.paste(item)
+        closeWindow()
     }
 
     private func translateSerial(service: TranslateService) {
@@ -376,6 +402,12 @@ struct PreviewWindow: View {
             // 文本预览改用 NSScrollView，确保上下键可以滚动
             TextPreviewNSView(text: item.textContent ?? "", rtfData: item.rtfData)
 
+        case .markdown:
+            MarkdownPreviewNSView(markdown: item.textContent ?? "")
+
+        case .json:
+            CodeHighlightView(code: item.textContent ?? "", language: "json", showLineNumbers: true)
+
         case .link:
             VStack(spacing: 16) {
                 Image(systemName: "link.circle")
@@ -429,7 +461,19 @@ struct PreviewWindow: View {
 
     @ViewBuilder
     private var fileContentPreview: some View {
-        if let error = loadError {
+        if let imageFilePreview {
+            VStack(spacing: 12) {
+                Image(nsImage: imageFilePreview)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                Text(item.fileName ?? "图片文件")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+            }
+        } else if let error = loadError {
             VStack(spacing: 12) {
                 Image(systemName: "exclamationmark.triangle")
                     .font(.system(size: 32))
@@ -482,6 +526,18 @@ struct PreviewWindow: View {
 
     private func loadFileContentIfNeeded() {
         guard item.contentType == .file else { return }
+
+        if let filePath = item.filePath,
+           ImageFilePreview.isSupportedImageFile(path: filePath) {
+            previewMode = .none
+            DispatchQueue.global(qos: .userInitiated).async {
+                let image = ImageFilePreview.loadImageIfSupported(path: filePath)
+                DispatchQueue.main.async {
+                    self.imageFilePreview = image
+                }
+            }
+            return
+        }
 
         let mode = PreviewConfigManager.shared.shouldPreviewContent(fileName: item.fileName)
         previewMode = mode
@@ -672,6 +728,180 @@ struct TextPreviewNSView: NSViewRepresentable {
     }
 }
 
+/// Markdown 预览使用 NSScrollView 包裹 SwiftUI 渲染内容，保持与普通文本预览一致的上下键滚动体验
+struct MarkdownPreviewNSView: NSViewRepresentable {
+    let markdown: String
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let scrollView = KeyboardScrollableMarkdownScrollView()
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = false
+        scrollView.autohidesScrollers = true
+        scrollView.borderType = .noBorder
+        scrollView.drawsBackground = true
+        scrollView.backgroundColor = .textBackgroundColor
+
+        let hostingView = NSHostingView(rootView: markdownContent)
+        hostingView.translatesAutoresizingMaskIntoConstraints = false
+
+        let container = FlippedHostingContainer()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(hostingView)
+        scrollView.documentView = container
+
+        NSLayoutConstraint.activate([
+            hostingView.topAnchor.constraint(equalTo: container.topAnchor),
+            hostingView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            hostingView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            hostingView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            hostingView.widthAnchor.constraint(equalTo: scrollView.contentView.widthAnchor)
+        ])
+
+        // 打开后自动成为 firstResponder，使上下键可以滚动
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            scrollView.window?.makeFirstResponder(scrollView)
+        }
+
+        return scrollView
+    }
+
+    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        guard let container = scrollView.documentView as? FlippedHostingContainer,
+              let hostingView = container.subviews.first as? NSHostingView<AnyView> else {
+            return
+        }
+        hostingView.rootView = AnyView(markdownContent)
+    }
+
+    private var markdownContent: AnyView {
+        AnyView(
+            MarkdownRenderedText(markdown: markdown, baseFontSize: 14)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .padding(.vertical, 4)
+                .padding(.horizontal, 2)
+        )
+    }
+}
+
+private final class FlippedHostingContainer: NSView {
+    override var isFlipped: Bool { true }
+    override var acceptsFirstResponder: Bool { true }
+}
+
+private final class KeyboardScrollableMarkdownScrollView: NSScrollView {
+    override var acceptsFirstResponder: Bool { true }
+
+    override func keyDown(with event: NSEvent) {
+        switch event.keyCode {
+        case 126: // Up arrow
+            scrollVertically(by: -40)
+        case 125: // Down arrow
+            scrollVertically(by: 40)
+        case 116: // Page Up
+            scrollVertically(by: -contentView.bounds.height * 0.9)
+        case 121: // Page Down
+            scrollVertically(by: contentView.bounds.height * 0.9)
+        default:
+            super.keyDown(with: event)
+        }
+    }
+
+    private func scrollVertically(by delta: CGFloat) {
+        guard let documentView else { return }
+        let maxY = max(0, documentView.bounds.height - contentView.bounds.height)
+        let currentY = contentView.bounds.origin.y
+        let nextY = min(max(currentY + delta, 0), maxY)
+        contentView.scroll(to: NSPoint(x: 0, y: nextY))
+        reflectScrolledClipView(contentView)
+    }
+}
+
+private struct KeycapLabel: View {
+    let text: String
+
+    init(_ text: String) {
+        self.text = text
+    }
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+            .foregroundColor(.secondary)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 2)
+            .background(
+                RoundedRectangle(cornerRadius: 4)
+                    .stroke(Color.secondary.opacity(0.35), lineWidth: 1)
+            )
+            .accessibilityHidden(true)
+    }
+}
+
+private struct PreviewKeyboardMonitorView: NSViewRepresentable {
+    let onTranslate: () -> Void
+    let onPaste: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
+    }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        context.coordinator.startMonitor()
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.parent = self
+    }
+
+    final class Coordinator {
+        var parent: PreviewKeyboardMonitorView
+        private var monitor: Any?
+
+        init(parent: PreviewKeyboardMonitorView) {
+            self.parent = parent
+        }
+
+        deinit {
+            if let monitor {
+                NSEvent.removeMonitor(monitor)
+            }
+        }
+
+        func startMonitor() {
+            guard monitor == nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                self?.handleKey(event) ?? event
+            }
+        }
+
+        private func handleKey(_ event: NSEvent) -> NSEvent? {
+            guard NSApp.keyWindow?.identifier == previewWindowIdentifier else {
+                return event
+            }
+
+            let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            let nonShiftModifiers = modifiers.subtracting(.shift)
+            guard nonShiftModifiers.isEmpty else {
+                return event
+            }
+
+            switch event.keyCode {
+            case 36, 76: // Return / keypad Enter
+                parent.onPaste()
+                return nil
+            case 17: // T
+                parent.onTranslate()
+                return nil
+            default:
+                return event
+            }
+        }
+    }
+}
+
 // MARK: - Preview Window Controller
 
 class PreviewWindowController: NSObject, NSWindowDelegate {
@@ -695,6 +925,7 @@ class PreviewWindowController: NSObject, NSWindowDelegate {
         let hostingController = NSHostingController(rootView: previewView)
 
         let window = NSWindow(contentViewController: hostingController)
+        window.identifier = previewWindowIdentifier
         window.styleMask = [.titled, .closable, .fullSizeContentView]
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden

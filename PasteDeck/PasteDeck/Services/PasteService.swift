@@ -80,11 +80,11 @@ class PasteService {
         pasteboard.clearContents()
 
         switch item.contentType {
-        case .text:
+        case .text, .markdown, .json:
             if let text = item.textContent {
                 pasteboard.setString(text, forType: .string)
                 // 带格式粘贴：同时写入 RTF 数据
-                if !plainText, let rtfData = item.rtfData {
+                if item.contentType == .text, !plainText, let rtfData = item.rtfData {
                     pasteboard.setData(rtfData, forType: .rtf)
                 }
             }
