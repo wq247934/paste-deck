@@ -156,13 +156,14 @@ class ClipboardMonitor {
         guard let imagePath = cacheManager.saveImage(image) else {
             return nil
         }
+        let pixelSize = NSImage(contentsOfFile: imagePath)?.pixelSize ?? image.pixelSize
 
         return ClipboardItem(
             contentType: .image,
             imagePath: imagePath,
             fileSize: cacheManager.getFileSize(at: imagePath),
-            imageWidth: Int(image.size.width),
-            imageHeight: Int(image.size.height),
+            imageWidth: Int(pixelSize.width),
+            imageHeight: Int(pixelSize.height),
             sourceApp: sourceApp
         )
     }
@@ -376,5 +377,14 @@ class ClipboardMonitor {
             try? modelContext.save()
             NSLog("[PasteDeck] Auto cleanup: removed \(deletedCount) items")
         }
+    }
+}
+
+private extension NSImage {
+    var pixelSize: CGSize {
+        if let cgImage = cgImage(forProposedRect: nil, context: nil, hints: nil) {
+            return CGSize(width: cgImage.width, height: cgImage.height)
+        }
+        return size
     }
 }

@@ -34,8 +34,84 @@ class MainWindowReference {
 
 private let previewWindowIdentifier = NSUserInterfaceItemIdentifier("PasteDeckPreviewWindow")
 
+private enum PreviewWindowLayout {
+    static let defaultWindowSize = CGSize(width: 600, height: 500)
+    static let minimumWindowSize = CGSize(width: 360, height: 260)
+    static let horizontalPadding: CGFloat = 40
+    static let verticalChrome: CGFloat = 190
+
+    static func windowSize(for item: ClipboardItem, on screen: NSScreen?) -> CGSize {
+        guard let imageSize = imagePixelSize(for: item) else {
+            return defaultWindowSize
+        }
+
+        let visibleFrame = screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? .zero
+        let maxWindowSize = CGSize(
+            width: max(minimumWindowSize.width, visibleFrame.width * 0.92),
+            height: max(minimumWindowSize.height, visibleFrame.height * 0.88)
+        )
+        let desiredSize = CGSize(
+            width: imageSize.width + horizontalPadding,
+            height: imageSize.height + verticalChrome
+        )
+
+        return CGSize(
+            width: min(max(desiredSize.width, minimumWindowSize.width), maxWindowSize.width),
+            height: min(max(desiredSize.height, minimumWindowSize.height), maxWindowSize.height)
+        )
+    }
+
+    static func imageViewportSize(for windowSize: CGSize) -> CGSize {
+        CGSize(
+            width: max(1, windowSize.width - horizontalPadding),
+            height: max(1, windowSize.height - verticalChrome)
+        )
+    }
+
+    static func centeredFrame(size: CGSize, on screen: NSScreen?) -> NSRect {
+        let visibleFrame = screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? .zero
+        return NSRect(
+            x: visibleFrame.midX - size.width / 2,
+            y: visibleFrame.midY - size.height / 2,
+            width: size.width,
+            height: size.height
+        )
+    }
+
+    static func imagePixelSize(for item: ClipboardItem) -> CGSize? {
+        switch item.contentType {
+        case .image:
+            if let imagePath = item.imagePath,
+               let image = NSImage(contentsOfFile: imagePath) {
+                return image.pixelSize
+            }
+            let storedSize = CGSize(width: CGFloat(item.imageWidth), height: CGFloat(item.imageHeight))
+            return storedSize.width > 0 && storedSize.height > 0 ? storedSize : nil
+        case .file:
+            guard let filePath = item.filePath,
+                  ImageFilePreview.isSupportedImageFile(path: filePath),
+                  let image = NSImage(contentsOfFile: filePath) else {
+                return nil
+            }
+            return image.pixelSize
+        default:
+            return nil
+        }
+    }
+}
+
+private extension NSImage {
+    var pixelSize: CGSize {
+        if let cgImage = cgImage(forProposedRect: nil, context: nil, hints: nil) {
+            return CGSize(width: cgImage.width, height: cgImage.height)
+        }
+        return size
+    }
+}
+
 struct PreviewWindow: View {
     let item: ClipboardItem
+    let windowSize: CGSize
     var onClose: (() -> Void)?
 
     // 文件内容预览状态
@@ -102,6 +178,7 @@ struct PreviewWindow: View {
             // 预览内容
             previewContent
                 .padding(20)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             // 截断提示
             if isTruncated {
@@ -166,7 +243,7 @@ struct PreviewWindow: View {
             }
             .padding(16)
         }
-        .frame(width: 600, height: 500)
+        .frame(width: windowSize.width, height: windowSize.height)
         .background(.regularMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .onAppear {
@@ -429,10 +506,7 @@ struct PreviewWindow: View {
             VStack(spacing: 12) {
                 if let imagePath = item.imagePath,
                    let nsImage = NSImage(contentsOfFile: imagePath) {
-                    Image(nsImage: nsImage)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(maxWidth: .infinity)
+                    actualSizeImage(nsImage, displaySize: clipboardImageDisplaySize(for: nsImage))
                 }
 
                 Text("\(item.imageWidth) x \(item.imageHeight)")
@@ -463,10 +537,7 @@ struct PreviewWindow: View {
     private var fileContentPreview: some View {
         if let imageFilePreview {
             VStack(spacing: 12) {
-                Image(nsImage: imageFilePreview)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                actualSizeImage(imageFilePreview, displaySize: imageFilePreview.pixelSize)
 
                 Text(item.fileName ?? "图片文件")
                     .font(.system(size: 12))
@@ -520,6 +591,29 @@ struct PreviewWindow: View {
             ProgressView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+    }
+
+    private func actualSizeImage(_ image: NSImage, displaySize: CGSize) -> some View {
+        let viewportSize = PreviewWindowLayout.imageViewportSize(for: windowSize)
+
+        return ScrollView([.horizontal, .vertical]) {
+            Image(nsImage: image)
+                .resizable()
+                .interpolation(.none)
+                .frame(width: displaySize.width, height: displaySize.height)
+        }
+        .frame(width: viewportSize.width, height: viewportSize.height)
+        .background(Color.primary.opacity(0.04))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func clipboardImageDisplaySize(for image: NSImage) -> CGSize {
+        let storedSize = CGSize(width: CGFloat(item.imageWidth), height: CGFloat(item.imageHeight))
+        let pixelSize = image.pixelSize
+        if pixelSize.width > 0, pixelSize.height > 0 {
+            return pixelSize
+        }
+        return storedSize.width > 0 && storedSize.height > 0 ? storedSize : image.size
     }
 
     // MARK: - File Content Loading
@@ -919,7 +1013,9 @@ class PreviewWindowController: NSObject, NSWindowDelegate {
         onCloseCallback = onClose
         didCloseAndRestore = false
 
-        let previewView = PreviewWindow(item: item, onClose: { [weak self] in
+        let screen = MainWindowReference.window?.screen
+        let windowSize = PreviewWindowLayout.windowSize(for: item, on: screen)
+        let previewView = PreviewWindow(item: item, windowSize: windowSize, onClose: { [weak self] in
             self?.performClose()
         })
         let hostingController = NSHostingController(rootView: previewView)
@@ -931,7 +1027,8 @@ class PreviewWindowController: NSObject, NSWindowDelegate {
         window.titleVisibility = .hidden
         // 使用与主面板相同的层级，确保预览窗口显示在主面板前面
         window.level = .popUpMenu
-        window.center()
+        window.setContentSize(windowSize)
+        window.setFrame(PreviewWindowLayout.centeredFrame(size: windowSize, on: screen), display: false)
         window.isReleasedWhenClosed = false
         window.makeKeyAndOrderFront(nil)
         window.hidesOnDeactivate = false
