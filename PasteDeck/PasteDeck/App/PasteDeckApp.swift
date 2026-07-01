@@ -108,9 +108,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Guard: don't start twice
         guard clipboardMonitor == nil else { return }
 
-        // 注入测试数据（仅当数据库为空时执行一次）
-        injectTestDataIfNeeded()
-
         // Start clipboard monitoring
         let modelContext = ModelContext(AppModelContainer.container)
         clipboardMonitor = ClipboardMonitor(modelContext: modelContext)
@@ -178,63 +175,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func quitApp() {
         NSApp.terminate(nil)
-    }
-
-    // MARK: - Test Data Injection
-
-    /// 仅当数据库为空时注入测试数据（一次性，方便验证历史记录清理功能）
-    private func injectTestDataIfNeeded() {
-        let context = ModelContext(AppModelContainer.container)
-        let descriptor = FetchDescriptor<ClipboardItem>()
-        let count = (try? context.fetchCount(descriptor)) ?? 0
-        guard count == 0 else { return }
-
-        let now = Date()
-        let calendar = Calendar.current
-
-        let sampleTexts = [
-            "今天复制的内容", "会议记录：讨论Q3产品路线图", "代码片段：func hello() { print(\"hi\") }",
-            "记得买牛奶", "https://developer.apple.com", "提交季度报告",
-            "SwiftUI 学习笔记", "项目启动会", "// TODO: fix this later",
-            "尊敬的客户，感谢您的来信", "健身房会员到期", "周末约了朋友吃饭",
-            "航班信息：CA1234 北京-上海", "密码：Abc@123456", "生日提醒：妈妈 3月15日",
-            "git commit -m 'fix: resolve merge conflict'", "外卖地址：朝阳区xxx路xx号",
-            "银行卡尾号 8888", "快递单号：SF1234567890", "WiFi密码：MyWiFi2024",
-            "docker run -d -p 8080:80 nginx", "npm install -g typescript",
-            "pip install requests", "curl -X GET https://api.example.com",
-            "SELECT * FROM users WHERE active = true", "ssh user@192.168.1.100",
-            "TODO: 完成PPT", "明天下午3点客户电话会议", "采购清单：键盘、鼠标、显示器",
-            "汇率：1 USD = 7.24 CNY", "python3 -m venv .venv", "kubectl get pods -n default",
-        ]
-
-        let totalCount = 2000
-        for i in 0..<totalCount {
-            let text = sampleTexts[i % sampleTexts.count] + " #\(i + 1)"
-            // 时间分布：50%在最近7天，30%在8-30天，15%在1-3个月，5%在4-6个月
-            let random = Int.random(in: 0..<100)
-            let daysAgo: Int
-            if random < 50 {
-                daysAgo = -Int.random(in: 0...7)
-            } else if random < 80 {
-                daysAgo = -Int.random(in: 8...30)
-            } else if random < 95 {
-                daysAgo = -Int.random(in: 31...90)
-            } else {
-                daysAgo = -Int.random(in: 91...180)
-            }
-
-            let date = calendar.date(byAdding: .day, value: daysAgo, to: now)!
-            let item = ClipboardItem(
-                contentType: .text,
-                textContent: text,
-                sourceApp: "测试数据"
-            )
-            item.createdAt = date
-            context.insert(item)
-        }
-
-        try? context.save()
-        NSLog("[PasteDeck] Injected \(totalCount) test data items")
     }
 
     @objc private func toggleMainPanel() {
