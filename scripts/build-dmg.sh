@@ -172,20 +172,163 @@ VERIFY_OUTPUT=$(codesign --verify --strict --verbose=2 "$APP_BUNDLE" 2>&1) || {
 }
 
 echo "📀 Creating DMG installer..."
+echo "   Detaching existing ${APP_NAME} volumes..."
+for mounted_volume in /Volumes/${APP_NAME}*; do
+    if [ -e "$mounted_volume" ]; then
+        hdiutil detach "$mounted_volume" >/dev/null 2>&1 ||
+            hdiutil detach "$mounted_volume" -force >/dev/null 2>&1 ||
+            true
+    fi
+done
+
 DMG_TEMP=$(mktemp -d)
-cp -R "$APP_BUNDLE" "$DMG_TEMP/"
-ln -s /Applications "$DMG_TEMP/Applications"
+DMG_STAGING="$DMG_TEMP/staging"
+DMG_MOUNT="$DMG_TEMP/mount"
+DMG_RW="${BUILD_DIR}/${APP_NAME}-rw.dmg"
+mkdir -p "$DMG_STAGING" "$DMG_MOUNT"
+
+cp -R "$APP_BUNDLE" "$DMG_STAGING/"
+ln -s /Applications "$DMG_STAGING/Applications"
+mkdir -p "$DMG_STAGING/.background"
+
+BACKGROUND_PNG="$DMG_STAGING/.background/install-arrow.png"
+BACKGROUND_SWIFT="$DMG_TEMP/generate-dmg-background.swift"
+cat > "$BACKGROUND_SWIFT" << 'EOF'
+import AppKit
+import Foundation
+
+let outputURL = URL(fileURLWithPath: CommandLine.arguments[1])
+let size = NSSize(width: 600, height: 340)
+let image = NSImage(size: size)
+
+func drawCentered(_ text: String, y: CGFloat, font: NSFont, color: NSColor) {
+    let paragraph = NSMutableParagraphStyle()
+    paragraph.alignment = .center
+    let attributes: [NSAttributedString.Key: Any] = [
+        .font: font,
+        .foregroundColor: color,
+        .paragraphStyle: paragraph
+    ]
+    NSString(string: text).draw(in: NSRect(x: 0, y: y, width: size.width, height: 28), withAttributes: attributes)
+}
+
+image.lockFocus()
+NSGraphicsContext.current?.imageInterpolation = .high
+
+NSGradient(
+    starting: NSColor(calibratedRed: 0.97, green: 0.98, blue: 0.99, alpha: 1),
+    ending: NSColor(calibratedRed: 0.88, green: 0.90, blue: 0.93, alpha: 1)
+)?.draw(in: NSRect(origin: .zero, size: size), angle: -90)
+
+let guideColor = NSColor(calibratedRed: 0.00, green: 0.48, blue: 1.00, alpha: 1)
+let shadow = NSShadow()
+shadow.shadowColor = NSColor.black.withAlphaComponent(0.18)
+shadow.shadowBlurRadius = 8
+shadow.shadowOffset = NSSize(width: 0, height: -2)
+NSGraphicsContext.saveGraphicsState()
+shadow.set()
+
+let shaft = NSBezierPath(roundedRect: NSRect(x: 242, y: 158, width: 118, height: 26), xRadius: 13, yRadius: 13)
+guideColor.setFill()
+shaft.fill()
+
+let head = NSBezierPath()
+head.move(to: NSPoint(x: 352, y: 139))
+head.line(to: NSPoint(x: 410, y: 171))
+head.line(to: NSPoint(x: 352, y: 203))
+head.close()
+guideColor.setFill()
+head.fill()
+
+NSGraphicsContext.restoreGraphicsState()
+
+drawCentered(
+    "拖到 Applications 安装",
+    y: 260,
+    font: .systemFont(ofSize: 21, weight: .semibold),
+    color: NSColor(calibratedWhite: 0.18, alpha: 1)
+)
+drawCentered(
+    "Drag PasteDeck to Applications",
+    y: 233,
+    font: .systemFont(ofSize: 13, weight: .regular),
+    color: NSColor(calibratedWhite: 0.42, alpha: 1)
+)
+
+image.unlockFocus()
+
+guard let tiffData = image.tiffRepresentation,
+      let bitmap = NSBitmapImageRep(data: tiffData),
+      let pngData = bitmap.representation(using: .png, properties: [:]) else {
+    fatalError("Could not render DMG background")
+}
+
+try pngData.write(to: outputURL)
+EOF
+
+if swift "$BACKGROUND_SWIFT" "$BACKGROUND_PNG" >/dev/null 2>&1; then
+    rm -f "$BACKGROUND_SWIFT"
+else
+    echo "❌ Could not generate DMG arrow background."
+    rm -f "$BACKGROUND_SWIFT" "$BACKGROUND_PNG"
+    exit 1
+fi
 
 echo "   Creating disk image..."
-rm -f "${BUILD_DIR}/${DMG_NAME}" "./${DMG_NAME}"
+rm -f "${BUILD_DIR}/${DMG_NAME}" "$DMG_RW" "./${DMG_NAME}"
 hdiutil create -volname "$APP_NAME" \
-    -srcfolder "$DMG_TEMP" \
+    -srcfolder "$DMG_STAGING" \
+    -ov \
+    -format UDRW \
+    -fs HFS+ \
+    "$DMG_RW"
+
+echo "   Applying Finder install layout..."
+hdiutil attach "$DMG_RW" -mountpoint "$DMG_MOUNT" -nobrowse -quiet
+
+LAYOUT_STATUS=0
+if osascript << EOF
+tell application "Finder"
+    set dmgFolder to POSIX file "$DMG_MOUNT" as alias
+    set backgroundImage to POSIX file "$DMG_MOUNT/.background/install-arrow.png" as alias
+    open dmgFolder
+    delay 1
+    set current view of container window of dmgFolder to icon view
+    set the bounds of container window of dmgFolder to {100, 100, 700, 440}
+    set viewOptions to the icon view options of container window of dmgFolder
+    set arrangement of viewOptions to not arranged
+    set icon size of viewOptions to 96
+    set background picture of viewOptions to backgroundImage
+    set position of item "$APP_NAME.app" of dmgFolder to {145, 155}
+    set position of item "Applications" of dmgFolder to {505, 155}
+    update dmgFolder without registering applications
+    delay 1
+end tell
+EOF
+then
+    echo "   Finder layout applied."
+else
+    echo "❌ Could not apply Finder layout."
+    LAYOUT_STATUS=1
+fi
+
+sync
+hdiutil detach "$DMG_MOUNT" -quiet
+
+if [ "$LAYOUT_STATUS" -ne 0 ]; then
+    rm -rf "$DMG_TEMP"
+    rm -f "$DMG_RW"
+    exit 1
+fi
+
+hdiutil convert "$DMG_RW" \
     -ov \
     -format UDZO \
     -imagekey zlib-level=9 \
-    "${BUILD_DIR}/${DMG_NAME}"
+    -o "${BUILD_DIR}/${DMG_NAME}"
 
 rm -rf "$DMG_TEMP"
+rm -f "$DMG_RW"
 
 cp "${BUILD_DIR}/${DMG_NAME}" "./${DMG_NAME}"
 
