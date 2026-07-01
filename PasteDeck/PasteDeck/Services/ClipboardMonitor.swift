@@ -18,6 +18,7 @@ class ClipboardMonitor {
     private var modelContext: ModelContext
     private var changeCount: Int
     private var timer: Timer?
+    private var cleanupTimer: Timer?
     private var cacheManager: CacheManager
     private var isPaused = false
 
@@ -37,12 +38,18 @@ class ClipboardMonitor {
         timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             self?.checkForChanges()
         }
+
+        cleanupTimer = Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { [weak self] _ in
+            self?.autoCleanup()
+        }
     }
 
     /// Stops clipboard monitoring
     func stopMonitoring() {
         timer?.invalidate()
         timer = nil
+        cleanupTimer?.invalidate()
+        cleanupTimer = nil
     }
 
     /// Temporarily pauses monitoring (used during paste operations)

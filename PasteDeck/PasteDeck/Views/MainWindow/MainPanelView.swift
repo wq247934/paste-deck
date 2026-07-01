@@ -35,6 +35,8 @@ enum ScrollDirection {
 }
 
 struct MainPanelView: View {
+    @Query private var settings: [AppSettings]
+
     @StateObject private var historyStore = ClipboardHistoryStore(
         modelContext: ModelContext(AppModelContainer.container)
     )
@@ -61,9 +63,27 @@ struct MainPanelView: View {
 
     var closeHandler: (() -> Void)?
 
-    private let cardSize: CardSize = .medium
-
     // MARK: - Filtered & Sorted Items
+
+    private var appSettings: AppSettings? {
+        settings.first
+    }
+
+    private var cardSize: CardSize {
+        appSettings
+            .flatMap { CardSize(rawValue: $0.cardSize) } ?? .medium
+    }
+
+    private var preferredColorScheme: ColorScheme? {
+        switch appSettings.flatMap({ AppTheme(rawValue: $0.themeMode) }) ?? .system {
+        case .system:
+            return nil
+        case .light:
+            return .light
+        case .dark:
+            return .dark
+        }
+    }
 
     /// 当前筛选标签索引（用于 Tab 循环）
     private var filterOptions: [ClipboardFilterOption] {
@@ -188,6 +208,7 @@ struct MainPanelView: View {
             }
         }
         .frame(width: 800, height: 400)
+        .preferredColorScheme(preferredColorScheme)
         .onAppear {
             reconcileSelection()
             selectDefaultCard()

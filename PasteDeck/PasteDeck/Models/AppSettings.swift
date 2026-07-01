@@ -13,7 +13,6 @@ import SwiftData
 @Model
 final class AppSettings {
     var launchAtLogin: Bool
-    var showMenuBarIcon: Bool
     var hotkeyKeyCode: Int
     var hotkeyModifiers: Int
     var hotkeyDisplay: String
@@ -32,7 +31,6 @@ final class AppSettings {
 
     init() {
         self.launchAtLogin = true
-        self.showMenuBarIcon = true
         self.hotkeyKeyCode = 9
         self.hotkeyModifiers = Int(NSEvent.ModifierFlags.command.rawValue | NSEvent.ModifierFlags.shift.rawValue)
         self.hotkeyDisplay = "V"
