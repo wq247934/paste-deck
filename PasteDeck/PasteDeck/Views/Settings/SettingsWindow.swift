@@ -94,13 +94,6 @@ struct GeneralSettingsView: View {
                 ))
             }
 
-            Section("菜单栏") {
-                Toggle("显示菜单栏图标", isOn: Binding(
-                    get: { appSettings.showMenuBarIcon },
-                    set: { appSettings.showMenuBarIcon = $0; try? modelContext.save() }
-                ))
-            }
-
             Section("权限") {
                 HStack {
                     Text("辅助功能")
