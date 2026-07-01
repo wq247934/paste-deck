@@ -26,6 +26,7 @@ struct ClipboardItemSnapshot: Identifiable, Equatable {
     let fileSize: Int
     let imageWidth: Int
     let imageHeight: Int
+    let ocrText: String?
     let colorHex: String?
     let sourceApp: String?
     let createdAt: Date
@@ -56,6 +57,7 @@ struct ClipboardItemSnapshot: Identifiable, Equatable {
         fileSize = item.fileSize
         imageWidth = item.imageWidth
         imageHeight = item.imageHeight
+        ocrText = item.ocrText
         colorHex = item.colorHex
         sourceApp = item.sourceApp
         createdAt = item.createdAt
@@ -87,6 +89,7 @@ struct ClipboardItemSnapshot: Identifiable, Equatable {
             item.textContent,
             item.fileName,
             item.filePath,
+            item.ocrText,
             item.colorHex,
             item.sourceApp,
             collections.map(\.name).joined(separator: " ")

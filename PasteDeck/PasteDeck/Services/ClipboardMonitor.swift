@@ -34,6 +34,7 @@ class ClipboardMonitor {
     func startMonitoring() {
         // 启动时执行一次自动清理
         autoCleanup()
+        schedulePendingImageOCR()
 
         timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             self?.checkForChanges()
@@ -337,6 +338,56 @@ class ClipboardMonitor {
 
     private func saveItem(_ item: ClipboardItem) {
         modelContext.insert(item)
+        try? modelContext.save()
+        NotificationCenter.default.post(name: .clipboardDataChanged, object: nil)
+        scheduleOCRIfNeeded(for: item)
+    }
+
+    // MARK: - Image OCR
+
+    private func scheduleOCRIfNeeded(for item: ClipboardItem) {
+        guard item.contentType == .image,
+              item.ocrProcessedAt == nil,
+              let imagePath = item.imagePath else {
+            return
+        }
+
+        let itemID = item.id
+        ImageOCRService.shared.recognizeText(inImageAt: imagePath) { [weak self] recognizedText in
+            self?.saveOCRText(recognizedText, for: itemID)
+        }
+    }
+
+    private func schedulePendingImageOCR(limit: Int = 20) {
+        var descriptor = FetchDescriptor<ClipboardItem>(
+            predicate: #Predicate { item in
+                item.imagePath != nil && item.ocrProcessedAt == nil
+            },
+            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+        )
+        descriptor.fetchLimit = limit
+
+        guard let items = try? modelContext.fetch(descriptor) else { return }
+        for item in items {
+            scheduleOCRIfNeeded(for: item)
+        }
+    }
+
+    private func saveOCRText(_ text: String?, for itemID: UUID) {
+        let descriptor = FetchDescriptor<ClipboardItem>(
+            predicate: #Predicate { item in
+                item.id == itemID
+            }
+        )
+
+        guard let item = try? modelContext.fetch(descriptor).first,
+              item.ocrProcessedAt == nil else {
+            return
+        }
+
+        let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        item.ocrText = trimmed.isEmpty ? nil : trimmed
+        item.ocrProcessedAt = Date()
         try? modelContext.save()
         NotificationCenter.default.post(name: .clipboardDataChanged, object: nil)
     }
