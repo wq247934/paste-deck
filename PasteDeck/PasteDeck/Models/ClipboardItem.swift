@@ -23,6 +23,8 @@ final class ClipboardItem {
     var fileSize: Int
     var imageWidth: Int
     var imageHeight: Int
+    var ocrText: String?
+    var ocrProcessedAt: Date?
     var colorHex: String?
     var sourceApp: String?
     var createdAt: Date
@@ -128,6 +130,8 @@ final class ClipboardItem {
         self.fileSize = fileSize
         self.imageWidth = imageWidth
         self.imageHeight = imageHeight
+        self.ocrText = nil
+        self.ocrProcessedAt = nil
         self.colorHex = colorHex
         self.sourceApp = sourceApp
         self.createdAt = Date()
