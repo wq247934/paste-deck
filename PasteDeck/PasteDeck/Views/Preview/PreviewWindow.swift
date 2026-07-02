@@ -127,6 +127,10 @@ struct PreviewWindow: View {
     @State private var translateError: String?
     @State private var targetLanguage: String = "zh"
     @State private var showTranslation = false
+    @State private var editableTextContent = ""
+    @State private var editableColorHex = ""
+    @State private var colorEditError: String?
+    @State private var didInitializeEditableFields = false
 
     private var translatableText: String? {
         guard item.contentType == .text else {
@@ -134,6 +138,14 @@ struct PreviewWindow: View {
         }
         let trimmed = item.textContent?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private var currentTextContent: String {
+        didInitializeEditableFields ? editableTextContent : (item.textContent ?? "")
+    }
+
+    private var currentColorHex: String {
+        didInitializeEditableFields ? editableColorHex : (item.colorHex ?? "")
     }
 
     var body: some View {
@@ -247,6 +259,7 @@ struct PreviewWindow: View {
         .background(.regularMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .onAppear {
+            initializeEditableFieldsIfNeeded()
             loadFileContentIfNeeded()
         }
         .background(
@@ -472,35 +485,91 @@ struct PreviewWindow: View {
         onClose?()
     }
 
+    private func initializeEditableFieldsIfNeeded() {
+        guard !didInitializeEditableFields else { return }
+        editableTextContent = item.textContent ?? ""
+        editableColorHex = item.colorHex ?? ""
+        didInitializeEditableFields = true
+    }
+
+    private func saveTextContent(_ text: String) {
+        editableTextContent = text
+        item.textContent = text
+        item.rtfData = nil
+        try? item.modelContext?.save()
+        NotificationCenter.default.post(name: .clipboardDataChanged, object: nil)
+    }
+
+    private func saveColorHex(_ hex: String) -> Bool {
+        let normalized = normalizeColorHex(hex)
+        guard NSColor(hex: normalized) != nil else {
+            colorEditError = "请输入 #RRGGBB 或 #RRGGBBAA"
+            return false
+        }
+
+        colorEditError = nil
+        editableColorHex = normalized
+        item.colorHex = normalized
+        item.textContent = normalized
+        try? item.modelContext?.save()
+        NotificationCenter.default.post(name: .clipboardDataChanged, object: nil)
+        return true
+    }
+
+    private func normalizeColorHex(_ value: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let withoutHash = trimmed.replacingOccurrences(of: "#", with: "")
+        return "#\(withoutHash.uppercased())"
+    }
+
     @ViewBuilder
     private var previewContent: some View {
         switch item.contentType {
         case .text:
-            // 文本预览改用 NSScrollView，确保上下键可以滚动
-            TextPreviewNSView(text: item.textContent ?? "", rtfData: item.rtfData)
+            if let codePreview = CodeSnippetPreviewDetector.detect(currentTextContent) {
+                CodeEditorPreviewView(
+                    code: currentTextContent,
+                    language: codePreview.language,
+                    title: codePreview.title,
+                    showLineNumbers: true,
+                    theme: .light,
+                    onSave: saveTextContent
+                )
+            } else {
+                EditablePlainTextPreview(
+                    text: currentTextContent,
+                    title: "文本",
+                    onSave: saveTextContent
+                )
+            }
 
         case .markdown:
-            MarkdownPreviewNSView(markdown: item.textContent ?? "")
+            CodeEditorPreviewView(
+                code: currentTextContent,
+                language: "markdown",
+                title: "Markdown",
+                showLineNumbers: true,
+                theme: .light,
+                onSave: saveTextContent
+            )
 
         case .json:
-            CodeHighlightView(code: item.textContent ?? "", language: "json", showLineNumbers: true)
+            CodeEditorPreviewView(
+                code: currentTextContent,
+                language: "json",
+                title: "JSON",
+                showLineNumbers: true,
+                onSave: saveTextContent
+            )
 
         case .link:
-            VStack(spacing: 16) {
-                Image(systemName: "link.circle")
-                    .font(.system(size: 48))
-                    .foregroundColor(.accentColor)
-
-                if let url = URL(string: item.textContent ?? "") {
-                    Link(destination: url) {
-                        Text(item.textContent ?? "")
-                            .font(.system(size: 14))
-                            .foregroundColor(.accentColor)
-                            .underline()
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity)
+            EditablePlainTextPreview(
+                text: currentTextContent,
+                title: "链接",
+                systemImage: "link",
+                singleLine: true,
+                onSave: saveTextContent
+            )
 
         case .image:
             VStack(spacing: 12) {
@@ -518,18 +587,11 @@ struct PreviewWindow: View {
             fileContentPreview
 
         case .color:
-            VStack(spacing: 16) {
-                if let hex = item.colorHex {
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(Color(hex: hex) ?? .clear)
-                        .frame(height: 200)
-
-                    Text(hex)
-                        .font(.system(size: 16, weight: .medium, design: .monospaced))
-                        .textSelection(.enabled)
-                }
-            }
-            .frame(maxWidth: .infinity)
+            EditableColorPreview(
+                hex: currentColorHex,
+                error: colorEditError,
+                onSave: saveColorHex
+            )
         }
     }
 
@@ -556,13 +618,21 @@ struct PreviewWindow: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if previewMode == .highlight, let content = fileContent {
-            CodeHighlightView(
+            CodeEditorPreviewView(
                 code: content,
                 language: PreviewConfigManager.shared.highlightLanguage(for: item.fileName),
-                showLineNumbers: true
+                title: item.fileName ?? "代码预览",
+                showLineNumbers: true,
+                allowEditing: false
             )
         } else if previewMode == .plain, let content = fileContent {
-            PlainTextView(text: content)
+            CodeEditorPreviewView(
+                code: content,
+                language: "text",
+                title: item.fileName ?? "文本预览",
+                showLineNumbers: true,
+                allowEditing: false
+            )
         } else if previewMode == .none {
             VStack(spacing: 12) {
                 Image(systemName: fileIcon)
@@ -764,6 +834,318 @@ struct PreviewWindow: View {
     }
 }
 
+
+private struct CodeSnippetPreview {
+    let language: String?
+    let title: String
+}
+
+private enum CodeSnippetPreviewDetector {
+    static func detect(_ text: String) -> CodeSnippetPreview? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 24 else { return nil }
+
+        if isLikelyJSON(trimmed) {
+            return CodeSnippetPreview(language: "json", title: "JSON")
+        }
+
+        let lines = trimmed
+            .components(separatedBy: .newlines)
+            .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        guard lines.count >= 2 else { return nil }
+
+        if looksLikeGo(trimmed, lines: lines) {
+            return CodeSnippetPreview(language: "go", title: "代码片段")
+        }
+
+        if looksLikeCode(trimmed, lines: lines) {
+            return CodeSnippetPreview(language: nil, title: "代码片段")
+        }
+
+        return nil
+    }
+
+    private static func isLikelyJSON(_ text: String) -> Bool {
+        guard let first = text.first, let last = text.last,
+              (first == "{" && last == "}") || (first == "[" && last == "]"),
+              let data = text.data(using: .utf8) else {
+            return false
+        }
+        return (try? JSONSerialization.jsonObject(with: data)) != nil
+    }
+
+    private static func looksLikeGo(_ text: String, lines: [String]) -> Bool {
+        let markers = [
+            ":=", "map[", "func ", "package ", "struct {", "interface {",
+            "nil", "context.", "error)", "go "
+        ]
+        let score = markers.reduce(0) { total, marker in
+            text.contains(marker) ? total + 1 : total
+        }
+        return score >= 2 || lines.contains { $0.trimmingCharacters(in: .whitespaces).hasPrefix("return ") }
+    }
+
+    private static func looksLikeCode(_ text: String, lines: [String]) -> Bool {
+        var score = 0
+
+        let structuralCharacters = ["{", "}", "(", ")", "[", "]", ";", "=>", "==", "!=", ":=", "->"]
+        score += structuralCharacters.reduce(0) { total, marker in
+            text.contains(marker) ? total + 1 : total
+        }
+
+        let indentedLines = lines.filter { line in
+            line.hasPrefix("    ") || line.hasPrefix("\t")
+        }.count
+        if indentedLines >= 2 {
+            score += 2
+        }
+
+        let assignmentLines = lines.filter { line in
+            line.contains("=") || line.contains(":")
+        }.count
+        if assignmentLines >= max(2, lines.count / 3) {
+            score += 2
+        }
+
+        let averageLineLength = lines.reduce(0) { $0 + $1.count } / max(lines.count, 1)
+        if averageLineLength > 20 {
+            score += 1
+        }
+
+        return score >= 5
+    }
+}
+
+private struct EditablePlainTextPreview: View {
+    let text: String
+    let title: String
+    var systemImage: String = "text.alignleft"
+    var singleLine: Bool = false
+    let onSave: (String) -> Void
+
+    @State private var isEditing = false
+    @State private var draft = ""
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.secondary)
+
+                Text(title)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.primary)
+
+                Spacer()
+
+                if isEditing && draft != text {
+                    Button(action: { draft = text }) {
+                        Image(systemName: "arrow.counterclockwise")
+                            .font(.system(size: 12, weight: .semibold))
+                            .frame(width: 24, height: 24)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundColor(.secondary)
+                    .help("恢复原始内容")
+                }
+
+                Button(action: toggleEditing) {
+                    Image(systemName: isEditing ? "checkmark" : "pencil")
+                        .font(.system(size: 12, weight: .semibold))
+                        .frame(width: 24, height: 24)
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(isEditing ? .accentColor : .secondary)
+                .help(isEditing ? "保存编辑" : "编辑内容")
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(Color.primary.opacity(0.035))
+
+            if isEditing {
+                if singleLine {
+                    TextField("", text: $draft)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 14, design: .monospaced))
+                        .textSelection(.enabled)
+                        .padding(14)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                } else {
+                    EditableTextView(text: $draft)
+                }
+            } else {
+                TextPreviewNSView(text: text, rtfData: nil)
+            }
+        }
+        .background(Color.white.opacity(0.92))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.black.opacity(0.08), lineWidth: 1)
+        )
+    }
+
+    private func toggleEditing() {
+        if !isEditing {
+            draft = text
+            isEditing = true
+            return
+        }
+
+        if draft != text {
+            onSave(draft)
+        }
+        isEditing = false
+    }
+}
+
+private struct EditableColorPreview: View {
+    let hex: String
+    let error: String?
+    let onSave: (String) -> Bool
+
+    @State private var isEditing = false
+    @State private var draft = ""
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                Image(systemName: "paintpalette")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.secondary)
+
+                Text("颜色")
+                    .font(.system(size: 12, weight: .medium))
+
+                Spacer()
+
+                Button(action: toggleEditing) {
+                    Image(systemName: isEditing ? "checkmark" : "pencil")
+                        .font(.system(size: 12, weight: .semibold))
+                        .frame(width: 24, height: 24)
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(isEditing ? .accentColor : .secondary)
+                .help(isEditing ? "保存颜色" : "编辑颜色")
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(Color.primary.opacity(0.035))
+
+            VStack(spacing: 16) {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color(hex: isEditing ? draft : hex) ?? Color.clear)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color.black.opacity(0.08), lineWidth: 1)
+                    )
+                    .frame(height: 200)
+
+                if isEditing {
+                    TextField("#RRGGBB", text: $draft)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 15, weight: .medium, design: .monospaced))
+                        .frame(width: 180)
+                } else {
+                    Text(hex)
+                        .font(.system(size: 16, weight: .medium, design: .monospaced))
+                        .textSelection(.enabled)
+                }
+
+                if let error {
+                    Text(error)
+                        .font(.system(size: 12))
+                        .foregroundColor(.red)
+                }
+            }
+            .padding(20)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .background(Color.white.opacity(0.92))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.black.opacity(0.08), lineWidth: 1)
+        )
+    }
+
+    private func toggleEditing() {
+        if !isEditing {
+            draft = hex
+            isEditing = true
+            return
+        }
+
+        if draft != hex {
+            if onSave(draft) {
+                isEditing = false
+            }
+            return
+        }
+        isEditing = false
+    }
+}
+
+private struct EditableTextView: NSViewRepresentable {
+    @Binding var text: String
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: $text)
+    }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let scrollView = NSTextView.scrollableTextView()
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.borderType = .noBorder
+        scrollView.drawsBackground = true
+        scrollView.backgroundColor = .textBackgroundColor
+
+        guard let textView = scrollView.documentView as? NSTextView else {
+            return scrollView
+        }
+
+        textView.delegate = context.coordinator
+        textView.isEditable = true
+        textView.isSelectable = true
+        textView.isRichText = false
+        textView.allowsUndo = true
+        textView.isAutomaticQuoteSubstitutionEnabled = false
+        textView.isAutomaticDashSubstitutionEnabled = false
+        textView.isAutomaticTextReplacementEnabled = false
+        textView.font = NSFont.monospacedSystemFont(ofSize: 14, weight: .regular)
+        textView.string = text
+
+        DispatchQueue.main.async {
+            scrollView.window?.makeFirstResponder(textView)
+        }
+
+        return scrollView
+    }
+
+    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        guard let textView = scrollView.documentView as? NSTextView else { return }
+        context.coordinator.text = $text
+        if textView.string != text {
+            textView.string = text
+        }
+    }
+
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        var text: Binding<String>
+
+        init(text: Binding<String>) {
+            self.text = text
+        }
+
+        func textDidChange(_ notification: Notification) {
+            guard let textView = notification.object as? NSTextView else { return }
+            text.wrappedValue = textView.string
+        }
+    }
+}
 
 // MARK: - Text Preview (NSScrollView based, 支持上下键滚动)
 
@@ -979,6 +1361,11 @@ private struct PreviewKeyboardMonitorView: NSViewRepresentable {
             let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
             let nonShiftModifiers = modifiers.subtracting(.shift)
             guard nonShiftModifiers.isEmpty else {
+                return event
+            }
+
+            if let textView = NSApp.keyWindow?.firstResponder as? NSTextView,
+               textView.isEditable {
                 return event
             }
 
