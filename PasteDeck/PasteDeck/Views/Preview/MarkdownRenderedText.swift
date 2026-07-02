@@ -71,14 +71,16 @@ struct MarkdownRenderedText: View {
                     .lineSpacing(3)
             }
 
-        case .code(let text):
-            Text(text)
-                .font(.system(size: max(baseFontSize - 1, 11), design: .monospaced))
-                .textSelection(.enabled)
-                .padding(8)
-                .frame(maxWidth: .infinity, alignment: .topLeading)
-                .background(Color.primary.opacity(0.06))
-                .clipShape(RoundedRectangle(cornerRadius: 6))
+        case .code(let language, let text):
+            CodeEditorPreviewView(
+                code: text,
+                language: language,
+                title: language?.uppercased() ?? "代码块",
+                showLineNumbers: lineCount(for: text) > 1,
+                allowEditing: true,
+                compact: true
+            )
+            .frame(height: codeBlockHeight(for: text))
 
         case .table(let lines):
             Text(lines.joined(separator: "\n"))
@@ -103,6 +105,18 @@ struct MarkdownRenderedText: View {
         default: return baseFontSize + 2
         }
     }
+
+    private func codeBlockHeight(for code: String) -> CGFloat {
+        let lineCount = lineCount(for: code)
+        let contentHeight = CGFloat(lineCount) * 19 + 54
+        return min(max(contentHeight, 104), 320)
+    }
+
+    private func lineCount(for text: String) -> Int {
+        text.reduce(1) { count, character in
+            character == "\n" ? count + 1 : count
+        }
+    }
 }
 
 private enum MarkdownBlock {
@@ -111,7 +125,7 @@ private enum MarkdownBlock {
     case unorderedList([String])
     case orderedList([String])
     case quote(String)
-    case code(String)
+    case code(language: String?, text: String)
     case table([String])
 }
 
@@ -145,6 +159,7 @@ private enum MarkdownBlockParser {
 
             if line.hasPrefix("```") {
                 flushParagraph()
+                let language = parseFenceLanguage(line)
                 index += 1
                 var codeLines: [String] = []
                 while index < lines.count {
@@ -156,7 +171,7 @@ private enum MarkdownBlockParser {
                     codeLines.append(codeLine)
                     index += 1
                 }
-                blocks.append(.code(codeLines.joined(separator: "\n")))
+                blocks.append(.code(language: language, text: codeLines.joined(separator: "\n")))
                 continue
             }
 
@@ -233,6 +248,16 @@ private enum MarkdownBlockParser {
         let level = matched.prefix { $0 == "#" }.count
         let text = matched.dropFirst(level).trimmingCharacters(in: .whitespaces)
         return (level, text)
+    }
+
+    private static func parseFenceLanguage(_ line: String) -> String? {
+        let language = line
+            .dropFirst(3)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .split(separator: " ")
+            .first
+            .map(String.init)
+        return language?.isEmpty == false ? language : nil
     }
 
     private static func parseUnorderedItem(_ line: String) -> String? {
