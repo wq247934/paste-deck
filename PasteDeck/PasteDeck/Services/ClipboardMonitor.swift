@@ -19,8 +19,14 @@ class ClipboardMonitor {
     private var changeCount: Int
     private var timer: Timer?
     private var cleanupTimer: Timer?
+    private var startupMaintenanceWorkItem: DispatchWorkItem?
     private var cacheManager: CacheManager
     private var isPaused = false
+
+    private struct PendingImageOCRJob: Sendable {
+        let itemID: UUID
+        let imagePath: String
+    }
 
     init(modelContext: ModelContext) {
         self.modelContext = modelContext
@@ -32,16 +38,14 @@ class ClipboardMonitor {
 
     /// Starts monitoring clipboard changes at regular intervals
     func startMonitoring() {
-        // 启动时执行一次自动清理
-        autoCleanup()
-        schedulePendingImageOCR()
+        scheduleStartupMaintenance()
 
         timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             self?.checkForChanges()
         }
 
         cleanupTimer = Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { [weak self] _ in
-            self?.autoCleanup()
+            self?.runAutoCleanupInBackground()
         }
     }
 
@@ -51,6 +55,8 @@ class ClipboardMonitor {
         timer = nil
         cleanupTimer?.invalidate()
         cleanupTimer = nil
+        startupMaintenanceWorkItem?.cancel()
+        startupMaintenanceWorkItem = nil
     }
 
     /// Temporarily pauses monitoring (used during paste operations)
@@ -99,9 +105,10 @@ class ClipboardMonitor {
 
     /// Checks if the item is a duplicate of the most recent entry
     private func isDuplicate(_ item: ClipboardItem) -> Bool {
-        let descriptor = FetchDescriptor<ClipboardItem>(
+        var descriptor = FetchDescriptor<ClipboardItem>(
             sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
         )
+        descriptor.fetchLimit = 1
 
         guard let recentItems = try? modelContext.fetch(descriptor),
               let recent = recentItems.first else {
@@ -339,8 +346,24 @@ class ClipboardMonitor {
     private func saveItem(_ item: ClipboardItem) {
         modelContext.insert(item)
         try? modelContext.save()
-        NotificationCenter.default.post(name: .clipboardDataChanged, object: nil)
+        postClipboardDataChanged(itemID: item.id, kind: .inserted)
         scheduleOCRIfNeeded(for: item)
+    }
+
+    private func postClipboardDataChanged(itemID: UUID? = nil, kind: ClipboardDataChangeKind? = nil) {
+        var userInfo: [AnyHashable: Any] = [:]
+        if let itemID {
+            userInfo[ClipboardDataChangeNotification.itemIDKey] = itemID
+        }
+        if let kind {
+            userInfo[ClipboardDataChangeNotification.changeKindKey] = kind.rawValue
+        }
+
+        NotificationCenter.default.post(
+            name: .clipboardDataChanged,
+            object: nil,
+            userInfo: userInfo.isEmpty ? nil : userInfo
+        )
     }
 
     // MARK: - Image OCR
@@ -352,13 +375,17 @@ class ClipboardMonitor {
             return
         }
 
-        let itemID = item.id
+        scheduleOCR(itemID: item.id, imagePath: imagePath)
+    }
+
+    private func scheduleOCR(itemID: UUID, imagePath: String) {
         ImageOCRService.shared.recognizeText(inImageAt: imagePath) { [weak self] recognizedText in
             self?.saveOCRText(recognizedText, for: itemID)
         }
     }
 
-    private func schedulePendingImageOCR(limit: Int = 20) {
+    private static func pendingImageOCRJobs(limit: Int) -> [PendingImageOCRJob] {
+        let context = ModelContext(AppModelContainer.container)
         var descriptor = FetchDescriptor<ClipboardItem>(
             predicate: #Predicate { item in
                 item.imagePath != nil && item.ocrProcessedAt == nil
@@ -367,9 +394,10 @@ class ClipboardMonitor {
         )
         descriptor.fetchLimit = limit
 
-        guard let items = try? modelContext.fetch(descriptor) else { return }
-        for item in items {
-            scheduleOCRIfNeeded(for: item)
+        guard let items = try? context.fetch(descriptor) else { return [] }
+        return items.compactMap { item in
+            guard let imagePath = item.imagePath else { return nil }
+            return PendingImageOCRJob(itemID: item.id, imagePath: imagePath)
         }
     }
 
@@ -389,15 +417,51 @@ class ClipboardMonitor {
         item.ocrText = trimmed.isEmpty ? nil : trimmed
         item.ocrProcessedAt = Date()
         try? modelContext.save()
-        NotificationCenter.default.post(name: .clipboardDataChanged, object: nil)
+        postClipboardDataChanged(itemID: itemID, kind: .updated)
     }
 
     // MARK: - Auto Cleanup
 
+    private func scheduleStartupMaintenance() {
+        startupMaintenanceWorkItem?.cancel()
+
+        let workItem = DispatchWorkItem { [weak self] in
+            let deletedCount = Self.performAutoCleanup()
+            let ocrJobs = Self.pendingImageOCRJobs(limit: 20)
+
+            DispatchQueue.main.async {
+                guard let self else { return }
+                if deletedCount > 0 {
+                    self.postClipboardDataChanged()
+                    NSLog("[PasteDeck] Auto cleanup: removed \(deletedCount) items")
+                }
+                for job in ocrJobs {
+                    self.scheduleOCR(itemID: job.itemID, imagePath: job.imagePath)
+                }
+            }
+        }
+
+        startupMaintenanceWorkItem = workItem
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 3, execute: workItem)
+    }
+
+    private func runAutoCleanupInBackground() {
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let deletedCount = Self.performAutoCleanup()
+            guard deletedCount > 0 else { return }
+
+            DispatchQueue.main.async {
+                self?.postClipboardDataChanged()
+                NSLog("[PasteDeck] Auto cleanup: removed \(deletedCount) items")
+            }
+        }
+    }
+
     /// 根据 AppSettings 的限制自动清理过期或超量的记录
-    private func autoCleanup() {
+    private static func performAutoCleanup() -> Int {
+        let context = ModelContext(AppModelContainer.container)
         let descriptor = FetchDescriptor<AppSettings>()
-        guard let appSettings = try? modelContext.fetch(descriptor).first else { return }
+        guard let appSettings = try? context.fetch(descriptor).first else { return 0 }
 
         var deletedCount = 0
 
@@ -407,9 +471,9 @@ class ClipboardMonitor {
             let oldDescriptor = FetchDescriptor<ClipboardItem>(
                 predicate: #Predicate { $0.createdAt < cutoff }
             )
-            if let oldItems = try? modelContext.fetch(oldDescriptor) {
+            if let oldItems = try? context.fetch(oldDescriptor) {
                 for item in oldItems where item.isCleanupEligible {
-                    modelContext.delete(item)
+                    context.delete(item)
                     deletedCount += 1
                 }
             }
@@ -419,22 +483,23 @@ class ClipboardMonitor {
         if appSettings.historyCountLimit > 0 {
             var allDescriptor = FetchDescriptor<ClipboardItem>()
             allDescriptor.sortBy = [SortDescriptor(\ClipboardItem.createdAt, order: .reverse)]
-            if let allItems: [ClipboardItem] = try? modelContext.fetch(allDescriptor), allItems.count > appSettings.historyCountLimit {
+            if let allItems: [ClipboardItem] = try? context.fetch(allDescriptor), allItems.count > appSettings.historyCountLimit {
                 let protectedCount = allItems.filter { !$0.isCleanupEligible }.count
                 let deletableLimit = max(0, appSettings.historyCountLimit - protectedCount)
                 let cleanupCandidates = allItems.filter(\.isCleanupEligible)
                 let toDelete = cleanupCandidates.dropFirst(deletableLimit)
                 for item in toDelete {
-                    modelContext.delete(item)
+                    context.delete(item)
                     deletedCount += 1
                 }
             }
         }
 
         if deletedCount > 0 {
-            try? modelContext.save()
-            NSLog("[PasteDeck] Auto cleanup: removed \(deletedCount) items")
+            try? context.save()
         }
+
+        return deletedCount
     }
 }
 

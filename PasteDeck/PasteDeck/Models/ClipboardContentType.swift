@@ -9,7 +9,7 @@ import Foundation
 import SwiftUI
 
 /// 剪切板内容类型枚举
-enum ClipboardContentType: String, Codable, CaseIterable {
+enum ClipboardContentType: String, Codable, CaseIterable, Sendable {
     case text = "text"
     case link = "link"
     case markdown = "markdown"

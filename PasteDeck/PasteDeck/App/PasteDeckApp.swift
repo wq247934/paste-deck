@@ -139,14 +139,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil
         )
 
-        // Initialize main panel controller
-        mainPanelController = MainPanelController()
+        // Main panel is created lazily on first use so app launch does not
+        // pay the SwiftUI/SwiftData history-loading cost.
     }
 
     // MARK: - Menu Actions
 
     @objc private func openMainPanel() {
-        mainPanelController?.showPanel()
+        mainPanelControllerForUse().showPanel()
     }
 
     @objc private func openSettings() {
@@ -178,7 +178,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func toggleMainPanel() {
-        mainPanelController?.togglePanel()
+        mainPanelControllerForUse().togglePanel()
+    }
+
+    private func mainPanelControllerForUse() -> MainPanelController {
+        if let mainPanelController {
+            return mainPanelController
+        }
+        let controller = MainPanelController()
+        mainPanelController = controller
+        return controller
     }
 
     // MARK: - Window Menu
