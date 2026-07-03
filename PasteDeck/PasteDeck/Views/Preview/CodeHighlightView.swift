@@ -63,7 +63,11 @@ struct CodeEditorPreviewView: View {
             header
 
             if isEditing {
-                EditableCodeWithLineNumbersView(text: $draftCode, theme: theme)
+                EditableCodeWithLineNumbersView(
+                    text: $draftCode,
+                    theme: theme,
+                    onCommandSave: saveEditing
+                )
                     .transition(.opacity)
             } else {
                 CodeHighlightView(
@@ -112,7 +116,7 @@ struct CodeEditorPreviewView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 5))
 
             if allowEditing {
-                Button(action: toggleEditing) {
+                Button(action: isEditing ? saveEditing : startEditing) {
                     Image(systemName: isEditing ? "checkmark" : "pencil")
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundColor(isEditing ? theme.accent : theme.secondaryText)
@@ -140,13 +144,12 @@ struct CodeEditorPreviewView: View {
         .background(theme.header)
     }
 
-    private func toggleEditing() {
-        if !isEditing {
-            draftCode = code
-            isEditing = true
-            return
-        }
+    private func startEditing() {
+        draftCode = code
+        isEditing = true
+    }
 
+    private func saveEditing() {
         if draftCode != code {
             onSave?(draftCode)
         }
@@ -323,10 +326,12 @@ struct CodeHighlightView: NSViewRepresentable {
 struct EditableCodeWithLineNumbersView: NSViewRepresentable {
     @Binding var text: String
     let theme: CodePreviewTheme
+    let onCommandSave: () -> Void
 
-    init(text: Binding<String>, theme: CodePreviewTheme = .dark) {
+    init(text: Binding<String>, theme: CodePreviewTheme = .dark, onCommandSave: @escaping () -> Void) {
         _text = text
         self.theme = theme
+        self.onCommandSave = onCommandSave
     }
 
     func makeCoordinator() -> Coordinator {
@@ -334,7 +339,7 @@ struct EditableCodeWithLineNumbersView: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> CodeEditingContainerView {
-        let container = CodeEditingContainerView(theme: theme)
+        let container = CodeEditingContainerView(theme: theme, onCommandSave: onCommandSave)
         let textView = container.textView
         textView.delegate = context.coordinator
         textView.string = text
@@ -350,6 +355,7 @@ struct EditableCodeWithLineNumbersView: NSViewRepresentable {
     func updateNSView(_ container: CodeEditingContainerView, context: Context) {
         let textView = container.textView
         context.coordinator.text = $text
+        container.onCommandSave = onCommandSave
         if textView.string != text {
             textView.string = text
             container.updateLineNumbers()
@@ -371,18 +377,40 @@ struct EditableCodeWithLineNumbersView: NSViewRepresentable {
     }
 }
 
+final class CommandSavingTextView: NSTextView {
+    var onCommandSave: (() -> Void)?
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if modifiers == .command,
+           event.charactersIgnoringModifiers?.lowercased() == "s" {
+            onCommandSave?()
+            return true
+        }
+
+        return super.performKeyEquivalent(with: event)
+    }
+}
+
 final class CodeEditingContainerView: NSView {
-    let textView: NSTextView
+    let textView: CommandSavingTextView
+    var onCommandSave: () -> Void {
+        didSet {
+            textView.onCommandSave = onCommandSave
+        }
+    }
 
     private let theme: CodePreviewTheme
     private let lineNumberView = NSTextField(labelWithString: "")
     private let scrollView = NSScrollView()
     private var lineNumberWidthConstraint: NSLayoutConstraint?
 
-    init(theme: CodePreviewTheme) {
+    init(theme: CodePreviewTheme, onCommandSave: @escaping () -> Void) {
         self.theme = theme
-        self.textView = NSTextView()
+        self.onCommandSave = onCommandSave
+        self.textView = CommandSavingTextView()
         super.init(frame: .zero)
+        self.textView.onCommandSave = onCommandSave
         setupViews()
     }
 

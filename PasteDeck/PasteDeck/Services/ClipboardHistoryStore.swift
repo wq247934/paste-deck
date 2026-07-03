@@ -9,14 +9,24 @@ import Foundation
 import Combine
 import SwiftData
 
-struct ClipboardCollectionSnapshot: Identifiable, Equatable, Hashable {
+enum ClipboardDataChangeNotification {
+    static let itemIDKey = "itemID"
+    static let changeKindKey = "changeKind"
+}
+
+enum ClipboardDataChangeKind: String, Sendable {
+    case inserted
+    case updated
+}
+
+struct ClipboardCollectionSnapshot: Identifiable, Equatable, Hashable, Sendable {
     let id: UUID
     let name: String
     let sortOrder: Int
     let isDefault: Bool
 }
 
-struct ClipboardItemSnapshot: Identifiable, Equatable {
+struct ClipboardItemSnapshot: Identifiable, Equatable, Sendable {
     let id: UUID
     let contentType: ClipboardContentType
     let textContent: String?
@@ -167,7 +177,7 @@ struct ClipboardItemSnapshot: Identifiable, Equatable {
     }
 }
 
-enum ClipboardFilterOption: Equatable, Hashable {
+enum ClipboardFilterOption: Equatable, Hashable, Sendable {
     case all
     case collection(UUID)
 
@@ -188,33 +198,70 @@ final class ClipboardHistoryStore: ObservableObject {
     @Published private(set) var allItems: [ClipboardItemSnapshot] = []
     @Published private(set) var filteredItems: [ClipboardItemSnapshot] = []
     @Published private(set) var collections: [ClipboardCollectionSnapshot] = []
+    @Published private(set) var isLoading = false
 
     private let modelContext: ModelContext
     private var searchText = ""
     private var selectedFilter: ClipboardFilterOption = .all
     private var filterTask: Task<Void, Never>?
+    private var reloadTask: Task<Void, Never>?
+    private var hasLoaded = false
+
+    private struct HistoryLoadResult: Sendable {
+        let items: [ClipboardItemSnapshot]
+        let collections: [ClipboardCollectionSnapshot]
+    }
 
     init(modelContext: ModelContext) {
         self.modelContext = modelContext
-        reloadFromDatabase()
     }
 
     deinit {
         filterTask?.cancel()
+        reloadTask?.cancel()
+    }
+
+    func loadIfNeeded() {
+        guard !hasLoaded else { return }
+        reloadFromDatabase()
     }
 
     func reloadFromDatabase() {
+        reloadTask?.cancel()
+        isLoading = true
+        let limit = Self.historyLimit
+
+        reloadTask = Task { [weak self] in
+            let result = await Task.detached(priority: .userInitiated) {
+                Self.fetchHistorySnapshot(limit: limit)
+            }.value
+
+            guard !Task.isCancelled else { return }
+            guard let self else { return }
+
+            allItems = result.items
+            collections = result.collections
+            hasLoaded = true
+            isLoading = false
+            applyFilterNow()
+        }
+    }
+
+    private nonisolated static func fetchHistorySnapshot(limit: Int) -> HistoryLoadResult {
+        let context = ModelContext(AppModelContainer.container)
+
         var itemDescriptor = FetchDescriptor<ClipboardItem>(
             sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
         )
-        itemDescriptor.fetchLimit = Self.historyLimit
+        itemDescriptor.fetchLimit = limit
 
-        allItems = ((try? modelContext.fetch(itemDescriptor)) ?? []).map(ClipboardItemSnapshot.init)
+        let items = ((try? context.fetch(itemDescriptor)) ?? [])
+            .map(ClipboardItemSnapshot.init)
 
         let collectionDescriptor = FetchDescriptor<FavoriteCollection>(
             sortBy: [SortDescriptor(\.sortOrder)]
         )
-        collections = ((try? modelContext.fetch(collectionDescriptor)) ?? [])
+        let collections = ((try? context.fetch(collectionDescriptor)) ?? [])
             .map {
                 ClipboardCollectionSnapshot(
                     id: $0.id,
@@ -224,7 +271,7 @@ final class ClipboardHistoryStore: ObservableObject {
                 )
             }
 
-        applyFilterNow()
+        return HistoryLoadResult(items: items, collections: collections)
     }
 
     func setSearchText(_ text: String) {
@@ -237,11 +284,14 @@ final class ClipboardHistoryStore: ObservableObject {
         applyFilterNow()
     }
 
-    func refreshItem(id: UUID) {
+    func refreshItem(id: UUID, insertIfMissing: Bool = false) {
         guard let item = fetchItem(id: id) else {
             removeSnapshots(ids: [id])
             return
         }
+
+        let snapshotExists = allItems.contains { $0.id == id }
+        guard snapshotExists || insertIfMissing else { return }
         upsertSnapshot(ClipboardItemSnapshot(item: item))
     }
 
@@ -415,6 +465,9 @@ final class ClipboardHistoryStore: ObservableObject {
             allItems[index] = snapshot
         } else {
             allItems.insert(snapshot, at: 0)
+        }
+        if allItems.count > Self.historyLimit {
+            allItems = Array(allItems.prefix(Self.historyLimit))
         }
 
         if applyImmediately {

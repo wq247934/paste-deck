@@ -164,7 +164,11 @@ struct MainPanelView: View {
             .padding(.top, 16)
 
             // 卡片列表
-            if historyStore.filteredItems.isEmpty {
+            if historyStore.isLoading && historyStore.filteredItems.isEmpty {
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if historyStore.filteredItems.isEmpty {
                 EmptyStateView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -210,6 +214,7 @@ struct MainPanelView: View {
         .frame(width: 800, height: 400)
         .preferredColorScheme(preferredColorScheme)
         .onAppear {
+            historyStore.loadIfNeeded()
             reconcileSelection()
             selectDefaultCard()
             // 打开面板时焦点默认在卡片区
@@ -221,12 +226,24 @@ struct MainPanelView: View {
         .onChange(of: selectedFilter) { _, _ in
             historyStore.setFilter(selectedFilter)
         }
-        .onReceive(historyStore.$filteredItems) { _ in
-            reconcileSelection()
+        .onReceive(historyStore.$filteredItems) { items in
+            if selectedItemID == nil && !items.isEmpty {
+                selectDefaultCard()
+            } else {
+                reconcileSelection()
+            }
         }
         // 剪贴板监听或设置页清理会通过通知更新轻量缓存
-        .onReceive(NotificationCenter.default.publisher(for: .clipboardDataChanged)) { _ in
-            historyStore.reloadFromDatabase()
+        .onReceive(NotificationCenter.default.publisher(for: .clipboardDataChanged)) { notification in
+            if let itemID = notification.userInfo?[ClipboardDataChangeNotification.itemIDKey] as? UUID {
+                let kind = notification.userInfo?[ClipboardDataChangeNotification.changeKindKey] as? String
+                historyStore.refreshItem(
+                    id: itemID,
+                    insertIfMissing: kind == ClipboardDataChangeKind.inserted.rawValue
+                )
+            } else {
+                historyStore.reloadFromDatabase()
+            }
             reconcileSelection()
         }
         // 监听清空搜索通知
@@ -240,6 +257,7 @@ struct MainPanelView: View {
         }
         // 面板打开时重置焦点到卡片区，选中第二项
         .onReceive(NotificationCenter.default.publisher(for: .panelDidShow)) { _ in
+            historyStore.loadIfNeeded()
             selectDefaultCard()
             focusCards()
             clearMultiSelection()

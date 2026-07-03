@@ -40,6 +40,18 @@ private enum PreviewWindowLayout {
     static let horizontalPadding: CGFloat = 40
     static let verticalChrome: CGFloat = 190
 
+    static func allowsWindowResizing(for item: ClipboardItem) -> Bool {
+        switch item.contentType {
+        case .image:
+            return false
+        case .file:
+            guard let filePath = item.filePath else { return true }
+            return !ImageFilePreview.isSupportedImageFile(path: filePath)
+        default:
+            return true
+        }
+    }
+
     static func windowSize(for item: ClipboardItem, on screen: NSScreen?) -> CGSize {
         guard let imageSize = imagePixelSize(for: item) else {
             return defaultWindowSize
@@ -112,6 +124,7 @@ private extension NSImage {
 struct PreviewWindow: View {
     let item: ClipboardItem
     let windowSize: CGSize
+    let allowsResizing: Bool
     var onClose: (() -> Void)?
 
     // 文件内容预览状态
@@ -255,7 +268,14 @@ struct PreviewWindow: View {
             }
             .padding(16)
         }
-        .frame(width: windowSize.width, height: windowSize.height)
+        .frame(
+            minWidth: allowsResizing ? PreviewWindowLayout.minimumWindowSize.width : windowSize.width,
+            idealWidth: windowSize.width,
+            maxWidth: allowsResizing ? .infinity : windowSize.width,
+            minHeight: allowsResizing ? PreviewWindowLayout.minimumWindowSize.height : windowSize.height,
+            idealHeight: windowSize.height,
+            maxHeight: allowsResizing ? .infinity : windowSize.height
+        )
         .background(.regularMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .onAppear {
@@ -950,7 +970,7 @@ private struct EditablePlainTextPreview: View {
                     .help("恢复原始内容")
                 }
 
-                Button(action: toggleEditing) {
+                Button(action: isEditing ? saveEditing : startEditing) {
                     Image(systemName: isEditing ? "checkmark" : "pencil")
                         .font(.system(size: 12, weight: .semibold))
                         .frame(width: 24, height: 24)
@@ -972,7 +992,7 @@ private struct EditablePlainTextPreview: View {
                         .padding(14)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 } else {
-                    EditableTextView(text: $draft)
+                    EditableTextView(text: $draft, onCommandSave: saveEditing)
                 }
             } else {
                 TextPreviewNSView(text: text, rtfData: nil)
@@ -984,15 +1004,25 @@ private struct EditablePlainTextPreview: View {
             RoundedRectangle(cornerRadius: 12)
                 .stroke(Color.black.opacity(0.08), lineWidth: 1)
         )
+        .background(commandSaveShortcut)
     }
 
-    private func toggleEditing() {
-        if !isEditing {
-            draft = text
-            isEditing = true
-            return
+    private var commandSaveShortcut: some View {
+        Button(action: saveEditing) {
+            EmptyView()
         }
+        .keyboardShortcut("s", modifiers: .command)
+        .disabled(!isEditing)
+        .opacity(0)
+        .frame(width: 0, height: 0)
+    }
 
+    private func startEditing() {
+        draft = text
+        isEditing = true
+    }
+
+    private func saveEditing() {
         if draft != text {
             onSave(draft)
         }
@@ -1020,7 +1050,7 @@ private struct EditableColorPreview: View {
 
                 Spacer()
 
-                Button(action: toggleEditing) {
+                Button(action: isEditing ? saveEditing : startEditing) {
                     Image(systemName: isEditing ? "checkmark" : "pencil")
                         .font(.system(size: 12, weight: .semibold))
                         .frame(width: 24, height: 24)
@@ -1068,15 +1098,25 @@ private struct EditableColorPreview: View {
             RoundedRectangle(cornerRadius: 12)
                 .stroke(Color.black.opacity(0.08), lineWidth: 1)
         )
+        .background(commandSaveShortcut)
     }
 
-    private func toggleEditing() {
-        if !isEditing {
-            draft = hex
-            isEditing = true
-            return
+    private var commandSaveShortcut: some View {
+        Button(action: saveEditing) {
+            EmptyView()
         }
+        .keyboardShortcut("s", modifiers: .command)
+        .disabled(!isEditing)
+        .opacity(0)
+        .frame(width: 0, height: 0)
+    }
 
+    private func startEditing() {
+        draft = hex
+        isEditing = true
+    }
+
+    private func saveEditing() {
         if draft != hex {
             if onSave(draft) {
                 isEditing = false
@@ -1089,13 +1129,14 @@ private struct EditableColorPreview: View {
 
 private struct EditableTextView: NSViewRepresentable {
     @Binding var text: String
+    let onCommandSave: () -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(text: $text)
     }
 
     func makeNSView(context: Context) -> NSScrollView {
-        let scrollView = NSTextView.scrollableTextView()
+        let scrollView = NSScrollView()
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = true
         scrollView.autohidesScrollers = true
@@ -1103,10 +1144,8 @@ private struct EditableTextView: NSViewRepresentable {
         scrollView.drawsBackground = true
         scrollView.backgroundColor = .textBackgroundColor
 
-        guard let textView = scrollView.documentView as? NSTextView else {
-            return scrollView
-        }
-
+        let textView = CommandSavingTextView()
+        textView.onCommandSave = onCommandSave
         textView.delegate = context.coordinator
         textView.isEditable = true
         textView.isSelectable = true
@@ -1116,7 +1155,14 @@ private struct EditableTextView: NSViewRepresentable {
         textView.isAutomaticDashSubstitutionEnabled = false
         textView.isAutomaticTextReplacementEnabled = false
         textView.font = NSFont.monospacedSystemFont(ofSize: 14, weight: .regular)
+        textView.minSize = NSSize(width: 0, height: 0)
+        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = true
+        textView.textContainerInset = NSSize(width: 12, height: 12)
+        textView.textContainer?.lineFragmentPadding = 0
         textView.string = text
+        scrollView.documentView = textView
 
         DispatchQueue.main.async {
             scrollView.window?.makeFirstResponder(textView)
@@ -1128,6 +1174,7 @@ private struct EditableTextView: NSViewRepresentable {
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let textView = scrollView.documentView as? NSTextView else { return }
         context.coordinator.text = $text
+        (textView as? CommandSavingTextView)?.onCommandSave = onCommandSave
         if textView.string != text {
             textView.string = text
         }
@@ -1402,14 +1449,23 @@ class PreviewWindowController: NSObject, NSWindowDelegate {
 
         let screen = MainWindowReference.window?.screen
         let windowSize = PreviewWindowLayout.windowSize(for: item, on: screen)
-        let previewView = PreviewWindow(item: item, windowSize: windowSize, onClose: { [weak self] in
+        let allowsResizing = PreviewWindowLayout.allowsWindowResizing(for: item)
+        let previewView = PreviewWindow(item: item, windowSize: windowSize, allowsResizing: allowsResizing, onClose: { [weak self] in
             self?.performClose()
         })
         let hostingController = NSHostingController(rootView: previewView)
 
         let window = NSWindow(contentViewController: hostingController)
         window.identifier = previewWindowIdentifier
-        window.styleMask = [.titled, .closable, .fullSizeContentView]
+        var styleMask: NSWindow.StyleMask = [.titled, .closable, .fullSizeContentView]
+        if allowsResizing {
+            styleMask.insert(.resizable)
+            window.minSize = NSSize(
+                width: PreviewWindowLayout.minimumWindowSize.width,
+                height: PreviewWindowLayout.minimumWindowSize.height
+            )
+        }
+        window.styleMask = styleMask
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         // 使用与主面板相同的层级，确保预览窗口显示在主面板前面
