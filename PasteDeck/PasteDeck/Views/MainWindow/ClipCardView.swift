@@ -83,6 +83,12 @@ struct ClipCardView: View, Equatable {
             && lhs.isMultiSelected == rhs.isMultiSelected
             && lhs.showPinOption == rhs.showPinOption
             && lhs.cardSize == rhs.cardSize
+            && lhs.item.contentType == rhs.item.contentType
+            && lhs.item.textContent == rhs.item.textContent
+            && lhs.item.linkWebsiteName == rhs.item.linkWebsiteName
+            && lhs.item.fileName == rhs.item.fileName
+            && lhs.item.imagePath == rhs.item.imagePath
+            && lhs.item.colorHex == rhs.item.colorHex
             && lhs.item.isPinned == rhs.item.isPinned
             && lhs.item.isFavorite == rhs.item.isFavorite
             && lhs.item.customTitle == rhs.item.customTitle
@@ -270,10 +276,18 @@ struct ClipCardView: View, Equatable {
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundColor(.accentColor)
 
+            if let websiteName = item.linkWebsiteName {
+                Text(websiteName)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(.primary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+            }
+
             Text(item.textContent ?? "")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundColor(.primary)
-                .lineLimit(5)
+                .font(.system(size: item.linkWebsiteName == nil ? 12 : 11, weight: item.linkWebsiteName == nil ? .medium : .regular))
+                .foregroundColor(item.linkWebsiteName == nil ? .primary : .secondary)
+                .lineLimit(item.linkWebsiteName == nil ? 5 : 4)
                 .multilineTextAlignment(.leading)
         }
         .padding(.horizontal, 10)

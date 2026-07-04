@@ -59,7 +59,7 @@ final class ClipboardItem {
         case .text, .markdown, .json:
             return String((textContent?.prefix(50) ?? "").replacingOccurrences(of: "\n", with: " "))
         case .link:
-            return textContent ?? ""
+            return linkWebsiteName ?? textContent ?? ""
         case .image:
             return "图片 \(imageWidth)x\(imageHeight)"
         case .file:
@@ -104,6 +104,32 @@ final class ClipboardItem {
 
     var isCleanupEligible: Bool {
         !isPinned && (collections?.isEmpty ?? true)
+    }
+
+    var linkWebsiteName: String? {
+        guard contentType == .link else { return nil }
+        return Self.makeLinkWebsiteName(from: textContent)
+    }
+
+    static func makeLinkWebsiteName(from textContent: String?) -> String? {
+        guard let host = normalizedLinkHost(from: textContent) else { return nil }
+        guard let label = primaryDomainLabel(from: host) else { return host }
+        return prettifyWebsiteName(label)
+    }
+
+    static func makeLinkSearchText(from textContent: String?) -> String? {
+        guard let host = normalizedLinkHost(from: textContent) else { return nil }
+        let label = primaryDomainLabel(from: host)
+        let parts = [
+            label.map { prettifyWebsiteName($0) },
+            label,
+            host,
+            host.replacingOccurrences(of: ".", with: " ")
+        ]
+            .compactMap { $0 }
+            .filter { !$0.isEmpty }
+
+        return parts.isEmpty ? nil : parts.joined(separator: " ")
     }
 
     // MARK: - Initialization
@@ -151,6 +177,93 @@ final class ClipboardItem {
         guard let hex = colorHex else { return nil }
         return Color(hex: hex)
     }
+
+    private static func normalizedLinkHost(from textContent: String?) -> String? {
+        guard let rawText = textContent?.trimmingCharacters(in: .whitespacesAndNewlines), !rawText.isEmpty else {
+            return nil
+        }
+
+        let candidate = rawText.contains("://") ? rawText : "https://\(rawText)"
+        guard let rawHost = URLComponents(string: candidate)?.host ?? URL(string: candidate)?.host else {
+            return nil
+        }
+
+        let trimmedHost = rawHost
+            .lowercased()
+            .trimmingCharacters(in: CharacterSet(charactersIn: "."))
+
+        guard !trimmedHost.isEmpty else { return nil }
+
+        if trimmedHost.hasPrefix("www.") {
+            return String(trimmedHost.dropFirst(4))
+        }
+
+        return trimmedHost
+    }
+
+    private static func primaryDomainLabel(from host: String) -> String? {
+        let labels = host
+            .split(separator: ".")
+            .map(String.init)
+
+        guard labels.count >= 2 else {
+            return host.isEmpty ? nil : host
+        }
+
+        let suffix = labels.suffix(2).joined(separator: ".")
+        if labels.count >= 3, compoundPublicSuffixes.contains(suffix) {
+            return labels[labels.count - 3]
+        }
+
+        return labels[labels.count - 2]
+    }
+
+    private static func prettifyWebsiteName(_ label: String) -> String {
+        let normalizedLabel = label.lowercased()
+        if let override = websiteNameOverrides[normalizedLabel] {
+            return override
+        }
+
+        return label
+            .split { $0 == "-" || $0 == "_" }
+            .map { $0.capitalized }
+            .joined(separator: " ")
+    }
+
+    private static let compoundPublicSuffixes: Set<String> = [
+        "co.jp",
+        "co.kr",
+        "co.uk",
+        "com.au",
+        "com.br",
+        "com.cn",
+        "com.hk",
+        "com.sg",
+        "com.tw",
+        "github.io",
+        "gov.cn",
+        "net.cn",
+        "org.cn"
+    ]
+
+    private static let websiteNameOverrides: [String: String] = [
+        "apple": "Apple",
+        "baidu": "Baidu",
+        "bilibili": "Bilibili",
+        "figma": "Figma",
+        "github": "GitHub",
+        "google": "Google",
+        "linkedin": "LinkedIn",
+        "medium": "Medium",
+        "notion": "Notion",
+        "openai": "OpenAI",
+        "reddit": "Reddit",
+        "stackoverflow": "Stack Overflow",
+        "twitter": "Twitter",
+        "x": "X",
+        "youtube": "YouTube",
+        "zhihu": "Zhihu"
+    ]
 }
 
 // MARK: - Color Extension for Hex

@@ -39,6 +39,7 @@ struct ClipboardItemSnapshot: Identifiable, Equatable, Sendable {
     let ocrText: String?
     let colorHex: String?
     let sourceApp: String?
+    let linkWebsiteName: String?
     let createdAt: Date
     let isPinned: Bool
     let customTitle: String?
@@ -70,6 +71,7 @@ struct ClipboardItemSnapshot: Identifiable, Equatable, Sendable {
         ocrText = item.ocrText
         colorHex = item.colorHex
         sourceApp = item.sourceApp
+        linkWebsiteName = item.linkWebsiteName
         createdAt = item.createdAt
         isPinned = item.isPinned
         customTitle = item.customTitle
@@ -84,6 +86,7 @@ struct ClipboardItemSnapshot: Identifiable, Equatable, Sendable {
             }
             .sorted { $0.sortOrder < $1.sortOrder }
 
+        let linkSearchText = item.contentType == .link ? ClipboardItem.makeLinkSearchText(from: item.textContent) : nil
         let title = ClipboardItemSnapshot.makeDisplayTitle(
             contentType: item.contentType,
             textContent: item.textContent,
@@ -91,11 +94,14 @@ struct ClipboardItemSnapshot: Identifiable, Equatable, Sendable {
             imageWidth: item.imageWidth,
             imageHeight: item.imageHeight,
             colorHex: item.colorHex,
+            linkWebsiteName: linkWebsiteName,
             customTitle: item.customTitle
         )
 
         searchBlob = [
             title,
+            linkWebsiteName,
+            linkSearchText,
             item.textContent,
             item.fileName,
             item.filePath,
@@ -125,6 +131,7 @@ struct ClipboardItemSnapshot: Identifiable, Equatable, Sendable {
             imageWidth: imageWidth,
             imageHeight: imageHeight,
             colorHex: colorHex,
+            linkWebsiteName: linkWebsiteName,
             customTitle: customTitle
         )
     }
@@ -156,6 +163,7 @@ struct ClipboardItemSnapshot: Identifiable, Equatable, Sendable {
         imageWidth: Int,
         imageHeight: Int,
         colorHex: String?,
+        linkWebsiteName: String?,
         customTitle: String?
     ) -> String {
         if let customTitle, !customTitle.isEmpty {
@@ -166,7 +174,7 @@ struct ClipboardItemSnapshot: Identifiable, Equatable, Sendable {
         case .text, .markdown, .json:
             return String((textContent?.prefix(50) ?? "").replacingOccurrences(of: "\n", with: " "))
         case .link:
-            return textContent ?? ""
+            return linkWebsiteName ?? textContent ?? ""
         case .image:
             return "图片 \(imageWidth)x\(imageHeight)"
         case .file:

@@ -1001,7 +1001,7 @@ struct AdvancedSettingsView: View {
                 HStack {
                     Text("版本")
                     Spacer()
-                    Text("1.1.9")
+                    Text("1.2.0")
                         .foregroundColor(.secondary)
                 }
             }

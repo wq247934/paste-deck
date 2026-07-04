@@ -5,7 +5,7 @@
 set -e
 
 APP_NAME="PasteDeck"
-APP_VERSION="1.1.9"
+APP_VERSION="1.2.0"
 BUILD_DIR=".build/release"
 APP_BUNDLE="${BUILD_DIR}/${APP_NAME}.app"
 DMG_NAME="${APP_NAME}-${APP_VERSION}.dmg"
@@ -72,9 +72,9 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << 'EOF'
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.1.9</string>
+    <string>1.2.0</string>
     <key>CFBundleVersion</key>
-    <string>119</string>
+    <string>120</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
     <key>LSUIElement</key>

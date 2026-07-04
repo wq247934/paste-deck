@@ -7,6 +7,7 @@ PasteDeck is a native macOS clipboard manager for quickly searching, previewing,
 ## Highlights
 
 - Records clipboard history for text, rich text, links, Markdown, JSON, images, files, and colors.
+- Shows website names for link cards and lets link history be searched by site name.
 - Opens from the menu bar or the global shortcut `Command + Shift + V`.
 - Provides fast keyboard navigation, favorite filters, custom collections, pinning, deletion, and batch paste.
 - Preserves RTF data for rich text paste and supports plain-text paste with `Shift + Enter`.
@@ -20,7 +21,7 @@ PasteDeck is a native macOS clipboard manager for quickly searching, previewing,
 
 ### Download
 
-1. Download `PasteDeck-1.1.9.dmg` from [Releases](https://github.com/wq247934/paste-deck/releases).
+1. Download `PasteDeck-1.2.0.dmg` from [Releases](https://github.com/wq247934/paste-deck/releases).
 2. Open the DMG.
 3. Drag `PasteDeck.app` into Applications.
 4. Launch PasteDeck from Applications.
@@ -124,6 +125,7 @@ PasteDeck 是一个原生 macOS 剪贴板管理器，用浮动面板快速搜索
 ## 功能亮点
 
 - 记录文本、富文本、链接、Markdown、JSON、图片、文件和颜色。
+- 链接卡片会显示网站名称，并支持按网站名搜索链接历史。
 - 支持菜单栏打开，也支持全局快捷键 `Command + Shift + V`。
 - 支持键盘导航、收藏筛选、自定义收藏夹、置顶、删除和批量粘贴。
 - 保留 RTF 富文本数据，并支持 `Shift + Enter` 纯文本粘贴。
@@ -135,7 +137,7 @@ PasteDeck 是一个原生 macOS 剪贴板管理器，用浮动面板快速搜索
 
 ## 安装
 
-1. 从 [Releases](https://github.com/wq247934/paste-deck/releases) 下载 `PasteDeck-1.1.9.dmg`。
+1. 从 [Releases](https://github.com/wq247934/paste-deck/releases) 下载 `PasteDeck-1.2.0.dmg`。
 2. 打开 DMG。
 3. 将 `PasteDeck.app` 拖入“应用程序”。
 4. 从“应用程序”启动 PasteDeck。
