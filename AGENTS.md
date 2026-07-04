@@ -19,7 +19,7 @@ This repository is Swift Package Manager based; there is no checked-in `.xcodepr
 
 - Do not run `scripts/build-dmg.sh`, `hdiutil attach`, or `open *.dmg` during routine investigation, validation, or bugfix work.
 - The DMG build script uses Finder/AppleScript to apply installer window layout, so it intentionally opens the mounted DMG folder and can leave temporary disk images mounted if interrupted.
-- Only run DMG packaging when the user explicitly asks for a release installer, and verify afterward that no PasteDeck DMG images remain mounted.
+- Only run DMG packaging when the user explicitly asks for a release installer. Use `PASTEDECK_ALLOW_DMG_BUILD=1 scripts/build-dmg.sh`, then verify afterward that no PasteDeck DMG images remain mounted.
 
 ## Development Principles
 

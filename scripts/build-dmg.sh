@@ -13,6 +13,11 @@ EXECUTABLE="${BUILD_DIR}/${APP_NAME}"
 ENTITLEMENTS="PasteDeck/PasteDeck/PasteDeck.entitlements"
 CODE_SIGN_IDENTITY="${CODE_SIGN_IDENTITY:-PasteDeck Local Code Signing}"
 
+if [ "${PASTEDECK_ALLOW_DMG_BUILD:-}" != "1" ]; then
+    echo "⏭️  Skipping DMG build. Set PASTEDECK_ALLOW_DMG_BUILD=1 to create a release installer."
+    exit 0
+fi
+
 echo "🔎 Checking code signing identity..."
 if ! security find-identity -v -p codesigning | grep -F "\"${CODE_SIGN_IDENTITY}\"" >/dev/null; then
     echo "❌ Code signing identity not found: ${CODE_SIGN_IDENTITY}"
