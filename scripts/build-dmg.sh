@@ -5,13 +5,18 @@
 set -e
 
 APP_NAME="PasteDeck"
-APP_VERSION="1.0"
+APP_VERSION="1.1.9"
 BUILD_DIR=".build/release"
 APP_BUNDLE="${BUILD_DIR}/${APP_NAME}.app"
 DMG_NAME="${APP_NAME}-${APP_VERSION}.dmg"
 EXECUTABLE="${BUILD_DIR}/${APP_NAME}"
 ENTITLEMENTS="PasteDeck/PasteDeck/PasteDeck.entitlements"
 CODE_SIGN_IDENTITY="${CODE_SIGN_IDENTITY:-PasteDeck Local Code Signing}"
+
+if [ "${PASTEDECK_ALLOW_DMG_BUILD:-}" != "1" ]; then
+    echo "⏭️  Skipping DMG build. Set PASTEDECK_ALLOW_DMG_BUILD=1 to create a release installer."
+    exit 0
+fi
 
 echo "🔎 Checking code signing identity..."
 if ! security find-identity -v -p codesigning | grep -F "\"${CODE_SIGN_IDENTITY}\"" >/dev/null; then
@@ -67,9 +72,9 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << 'EOF'
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0</string>
+    <string>1.1.9</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>119</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
     <key>LSUIElement</key>
