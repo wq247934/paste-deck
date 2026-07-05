@@ -8,6 +8,7 @@
 import SwiftUI
 import SwiftData
 import ServiceManagement
+import UniformTypeIdentifiers
 
 struct SettingsWindow: View {
     @State private var selectedPane: SettingsPane = .general
@@ -155,11 +156,11 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
 
 private enum PasteDeckVersion {
     static var short: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.3.1"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.4.0"
     }
 
     static var build: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "131"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "140"
     }
 
     static var display: String {
@@ -1647,8 +1648,6 @@ private struct CleanupPreviewKeyboardMonitor: NSViewRepresentable {
 struct FilterSettingsView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var settings: [AppSettings]
-    @State private var newBlacklistApp = ""
-    @State private var showRunningApps = false
 
     private var appSettings: AppSettings {
         if let existing = settings.first {
@@ -1660,33 +1659,42 @@ struct FilterSettingsView: View {
         return new
     }
 
+    /// 已加入黑名单的应用。`blacklistedApps` 继续复用现有 SwiftData 字段，但业务语义改为只保存 bundle identifier。
+    private var blacklistedApplications: [ApplicationBlacklistInfo] {
+        appSettings.blacklistedApps.map { bundleIdentifier in
+            Self.applicationInfo(bundleIdentifier: bundleIdentifier)
+        }
+    }
+
     /// 当前运行中的应用（排除自身和系统 UI 进程）
-    private var runningApps: [RunningAppInfo] {
-        let blacklisted = Set(appSettings.blacklistedApps)
+    private var runningApplications: [ApplicationBlacklistInfo] {
+        let blacklistedBundleIdentifiers = Set(appSettings.blacklistedApps)
+        let selfBundleIdentifier = Bundle.main.bundleIdentifier
+        var seenBundleIdentifiers = Set<String>()
+
         return NSWorkspace.shared.runningApplications
-            .filter { app in
-                guard let name = app.localizedName, !name.isEmpty else { return false }
-                // 排除自身
-                if app.bundleIdentifier == "com.pastedeck.app" { return false }
-                // 只显示有 Dock 图标的常规应用（排除系统后台进程）
-                return app.activationPolicy == .regular
-            }
-            .compactMap { app in
-                guard let name = app.localizedName else { return nil }
-                return RunningAppInfo(
+            .compactMap { application in
+                guard application.activationPolicy == .regular else { return nil }
+                guard let bundleIdentifier = application.bundleIdentifier, !bundleIdentifier.isEmpty else { return nil }
+                guard bundleIdentifier != selfBundleIdentifier else { return nil }
+                guard !blacklistedBundleIdentifiers.contains(bundleIdentifier) else { return nil }
+                guard !seenBundleIdentifiers.contains(bundleIdentifier) else { return nil }
+                guard let name = application.localizedName, !name.isEmpty else { return nil }
+
+                seenBundleIdentifiers.insert(bundleIdentifier)
+                return ApplicationBlacklistInfo(
                     name: name,
-                    bundleID: app.bundleIdentifier ?? "",
-                    icon: app.icon
+                    bundleIdentifier: bundleIdentifier,
+                    icon: application.icon
                 )
             }
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-            .filter { !blacklisted.contains($0.name) }
     }
 
     var body: some View {
         SettingsContentStack {
             SettingsCard(title: "应用黑名单", icon: "nosign") {
-                if appSettings.blacklistedApps.isEmpty {
+                if blacklistedApplications.isEmpty {
                     Text("暂无黑名单应用")
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
@@ -1694,16 +1702,25 @@ struct FilterSettingsView: View {
                         .padding(.vertical, 4)
                 } else {
                     LazyVStack(spacing: 8) {
-                        ForEach(appSettings.blacklistedApps, id: \.self) { app in
+                        ForEach(blacklistedApplications) { application in
                             HStack(spacing: 8) {
-                                Image(systemName: "app.dashed")
-                                    .font(.system(size: 12))
-                                    .foregroundColor(.secondary)
-                                Text(app)
-                                    .font(.system(size: 13, weight: .medium))
+                                applicationIcon(application)
+
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(application.name)
+                                        .font(.system(size: 13, weight: .medium))
+
+                                    Text(application.bundleIdentifier)
+                                        .font(.system(size: 10, design: .monospaced))
+                                        .foregroundColor(.secondary)
+                                        .lineLimit(1)
+                                        .truncationMode(.tail)
+                                }
+
                                 Spacer()
+
                                 Button(action: {
-                                    appSettings.blacklistedApps.removeAll { $0 == app }
+                                    appSettings.blacklistedApps.removeAll { $0 == application.bundleIdentifier }
                                     try? modelContext.save()
                                 }) {
                                     Image(systemName: "minus.circle.fill")
@@ -1720,33 +1737,16 @@ struct FilterSettingsView: View {
 
                 SettingsDivider()
 
-                HStack(spacing: 8) {
-                    Image(systemName: "plus")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(.secondary)
-                    TextField("添加应用名称", text: $newBlacklistApp)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 13))
-                    Button {
-                        let trimmed = newBlacklistApp.trimmingCharacters(in: .whitespacesAndNewlines)
-                        if !trimmed.isEmpty && !appSettings.blacklistedApps.contains(trimmed) {
-                            appSettings.blacklistedApps.append(trimmed)
-                            newBlacklistApp = ""
-                            try? modelContext.save()
-                        }
-                    } label: {
-                        Label("添加", systemImage: "plus.circle")
-                    }
-                    .buttonStyle(SettingsActionButtonStyle(tone: .primary))
-                    .disabled(newBlacklistApp.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                Button {
+                    selectApplicationBundle()
+                } label: {
+                    Label("选择应用...", systemImage: "folder.badge.plus")
                 }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
-                .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.045)))
+                .buttonStyle(SettingsActionButtonStyle(tone: .primary))
             }
 
             SettingsCard(title: "运行中的应用", icon: "macwindow") {
-                if runningApps.isEmpty {
+                if runningApplications.isEmpty {
                     Text("暂无可添加的运行中应用")
                         .foregroundColor(.secondary)
                         .font(.system(size: 12))
@@ -1754,36 +1754,23 @@ struct FilterSettingsView: View {
                 } else {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 6) {
-                            ForEach(runningApps) { appInfo in
+                            ForEach(runningApplications) { application in
                                 Button(action: {
-                                    if !appSettings.blacklistedApps.contains(appInfo.name) {
-                                        appSettings.blacklistedApps.append(appInfo.name)
-                                        try? modelContext.save()
-                                    }
+                                    addBlacklistedApplication(bundleIdentifier: application.bundleIdentifier)
                                 }) {
                                     HStack(spacing: 9) {
-                                        if let icon = appInfo.icon {
-                                            Image(nsImage: icon)
-                                                .resizable()
-                                                .frame(width: 22, height: 22)
-                                        } else {
-                                            Image(systemName: "app")
-                                                .font(.system(size: 15))
-                                                .foregroundColor(.secondary)
-                                                .frame(width: 22, height: 22)
-                                        }
+                                        applicationIcon(application)
 
                                         VStack(alignment: .leading, spacing: 1) {
-                                            Text(appInfo.name)
+                                            Text(application.name)
                                                 .font(.system(size: 13, weight: .medium))
                                                 .foregroundColor(.primary)
-                                            if !appInfo.bundleID.isEmpty {
-                                                Text(appInfo.bundleID)
-                                                    .font(.system(size: 10, design: .monospaced))
-                                                    .foregroundColor(.secondary)
-                                                    .lineLimit(1)
-                                                    .truncationMode(.tail)
-                                            }
+
+                                            Text(application.bundleIdentifier)
+                                                .font(.system(size: 10, design: .monospaced))
+                                                .foregroundColor(.secondary)
+                                                .lineLimit(1)
+                                                .truncationMode(.tail)
                                         }
 
                                         Spacer()
@@ -1805,15 +1792,95 @@ struct FilterSettingsView: View {
             }
         }
     }
+
+    @ViewBuilder
+    private func applicationIcon(_ application: ApplicationBlacklistInfo) -> some View {
+        if let icon = application.icon {
+            Image(nsImage: icon)
+                .resizable()
+                .frame(width: 22, height: 22)
+        } else {
+            Image(systemName: "app")
+                .font(.system(size: 15))
+                .foregroundColor(.secondary)
+                .frame(width: 22, height: 22)
+        }
+    }
+
+    private func addBlacklistedApplication(bundleIdentifier: String) {
+        guard !bundleIdentifier.isEmpty else { return }
+        guard !appSettings.blacklistedApps.contains(bundleIdentifier) else { return }
+
+        appSettings.blacklistedApps.append(bundleIdentifier)
+        try? modelContext.save()
+    }
+
+    private func selectApplicationBundle() {
+        let panel = NSOpenPanel()
+        panel.title = "选择要加入黑名单的应用"
+        panel.prompt = "添加"
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowedContentTypes = [.applicationBundle]
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+
+        guard panel.runModal() == .OK,
+              let applicationURL = panel.url,
+              let bundleIdentifier = Bundle(url: applicationURL)?.bundleIdentifier else {
+            return
+        }
+
+        addBlacklistedApplication(bundleIdentifier: bundleIdentifier)
+    }
+
+    private static func applicationInfo(bundleIdentifier: String) -> ApplicationBlacklistInfo {
+        if let runningApplication = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == bundleIdentifier }) {
+            return ApplicationBlacklistInfo(
+                name: runningApplication.localizedName ?? bundleIdentifier,
+                bundleIdentifier: bundleIdentifier,
+                icon: runningApplication.icon
+            )
+        }
+
+        if let applicationURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier) {
+            return ApplicationBlacklistInfo(
+                name: applicationDisplayName(for: applicationURL, fallbackBundleIdentifier: bundleIdentifier),
+                bundleIdentifier: bundleIdentifier,
+                icon: NSWorkspace.shared.icon(forFile: applicationURL.path)
+            )
+        }
+
+        return ApplicationBlacklistInfo(
+            name: bundleIdentifier,
+            bundleIdentifier: bundleIdentifier,
+            icon: nil
+        )
+    }
+
+    private static func applicationDisplayName(for applicationURL: URL, fallbackBundleIdentifier: String) -> String {
+        let bundle = Bundle(url: applicationURL)
+        let displayName = bundle?.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
+        let bundleName = bundle?.object(forInfoDictionaryKey: "CFBundleName") as? String
+        let fileName = applicationURL.deletingPathExtension().lastPathComponent
+
+        return displayName ?? bundleName ?? (fileName.isEmpty ? fallbackBundleIdentifier : fileName)
+    }
 }
 
-/// 运行中应用信息
-struct RunningAppInfo: Identifiable {
+/// 可加入黑名单的 macOS 应用展示信息。
+struct ApplicationBlacklistInfo: Identifiable {
+    /// 应用名称，仅用于设置页展示；过滤判断不依赖该值，避免本地化名称或重名应用导致误判。
     let name: String
-    let bundleID: String
+
+    /// 应用的 bundle identifier，是黑名单持久化和运行时匹配使用的唯一依据。
+    let bundleIdentifier: String
+
+    /// 应用图标，仅用于帮助用户确认所选应用。
     let icon: NSImage?
 
-    var id: String { bundleID.isEmpty ? name : bundleID }
+    /// SwiftUI 列表身份，直接使用稳定的 bundle identifier。
+    var id: String { bundleIdentifier }
 }
 
 // MARK: - Favorites Settings

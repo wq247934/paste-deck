@@ -28,6 +28,14 @@ class ClipboardMonitor {
         let imagePath: String
     }
 
+    private struct FrontmostApplicationInfo {
+        /// 应用展示名，用于写入剪贴板历史的来源字段，方便用户识别内容来自哪里。
+        let name: String
+
+        /// 应用的 bundle identifier，用于黑名单匹配，避免展示名本地化或重名应用导致误判。
+        let bundleIdentifier: String?
+    }
+
     init(modelContext: ModelContext) {
         self.modelContext = modelContext
         self.changeCount = NSPasteboard.general.changeCount
@@ -85,17 +93,18 @@ class ClipboardMonitor {
         changeCount = currentChangeCount
 
         // Ignore copies from PasteDeck itself
-        let sourceApp = getFrontmostAppName()
-        if sourceApp == "PasteDeck" {
+        let sourceApplication = getFrontmostApplication()
+        if sourceApplication?.bundleIdentifier == Bundle.main.bundleIdentifier || sourceApplication?.name == "PasteDeck" {
             return
         }
 
         // Skip blacklisted apps
-        if let app = sourceApp, isBlacklisted(app) {
+        if let bundleIdentifier = sourceApplication?.bundleIdentifier,
+           isBlacklisted(bundleIdentifier: bundleIdentifier) {
             return
         }
 
-        let parsedItems = parsePasteboard(pasteboard, sourceApp: sourceApp)
+        let parsedItems = parsePasteboard(pasteboard, sourceApp: sourceApplication?.name)
         for item in parsedItems {
             if !isDuplicate(item) {
                 saveItem(item)
@@ -331,16 +340,24 @@ class ClipboardMonitor {
         return String(format: "#%02X%02X%02X", r, g, b)
     }
 
-    private func getFrontmostAppName() -> String? {
-        return NSWorkspace.shared.frontmostApplication?.localizedName
+    private func getFrontmostApplication() -> FrontmostApplicationInfo? {
+        guard let application = NSWorkspace.shared.frontmostApplication,
+              let name = application.localizedName else {
+            return nil
+        }
+
+        return FrontmostApplicationInfo(
+            name: name,
+            bundleIdentifier: application.bundleIdentifier
+        )
     }
 
-    private func isBlacklisted(_ appName: String) -> Bool {
+    private func isBlacklisted(bundleIdentifier: String) -> Bool {
         let descriptor = FetchDescriptor<AppSettings>()
         guard let settings = try? modelContext.fetch(descriptor).first else {
             return false
         }
-        return settings.blacklistedApps.contains(appName)
+        return settings.blacklistedApps.contains(bundleIdentifier)
     }
 
     private func saveItem(_ item: ClipboardItem) {

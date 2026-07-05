@@ -19,6 +19,7 @@ final class AppSettings {
     var historyCountLimit: Int
     var historyDaysLimit: Int
     var cacheSizeLimit: Int
+    /// 应用黑名单的 bundle identifier 列表，用于跳过指定来源应用的剪贴板记录。
     var blacklistedApps: [String]
     var themeMode: Int
     var cardSize: Int

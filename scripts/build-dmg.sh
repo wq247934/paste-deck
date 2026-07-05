@@ -5,7 +5,9 @@
 set -e
 
 APP_NAME="PasteDeck"
-APP_VERSION="1.3.1"
+INFO_PLIST="PasteDeck/PasteDeck/Info.plist"
+APP_VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$INFO_PLIST")
+APP_BUILD=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$INFO_PLIST")
 BUILD_DIR=".build/release"
 APP_BUNDLE="${BUILD_DIR}/${APP_NAME}.app"
 DMG_NAME="${APP_NAME}-${APP_VERSION}.dmg"
@@ -31,6 +33,7 @@ if ! security find-identity -v -p codesigning | grep -F "\"${CODE_SIGN_IDENTITY}
 fi
 
 echo "✅ Using code signing identity: ${CODE_SIGN_IDENTITY}"
+echo "🏷️ Building ${APP_NAME} ${APP_VERSION} (${APP_BUILD})"
 
 echo "🔨 Building ${APP_NAME} in release mode..."
 # 先clean再build确保最新代码
@@ -50,9 +53,9 @@ mkdir -p "$APP_BUNDLE/Contents/Resources"
 # Copy executable
 cp "${EXECUTABLE}" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
 
-# Generate Info.plist with hardcoded values
+# Generate Info.plist with resolved values
 # (Source Info.plist uses Xcode build variables that won't resolve with swift build)
-cat > "$APP_BUNDLE/Contents/Info.plist" << 'EOF'
+cat > "$APP_BUNDLE/Contents/Info.plist" << EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -72,9 +75,9 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << 'EOF'
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.3.1</string>
+    <string>${APP_VERSION}</string>
     <key>CFBundleVersion</key>
-    <string>131</string>
+    <string>${APP_BUILD}</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
     <key>LSUIElement</key>
