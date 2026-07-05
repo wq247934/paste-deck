@@ -155,10 +155,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // pay the SwiftUI/SwiftData history-loading cost.
     }
 
-    func applicationDidResignActive(_ notification: Notification) {
-        hideSettingsWindowAfterFocusChange()
-    }
-
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
     }
@@ -185,6 +181,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.styleMask = [.titled, .closable, .miniaturizable]
         window.delegate = self
         window.isReleasedWhenClosed = false
+        window.hidesOnDeactivate = false
         window.setContentSize(NSSize(width: 760, height: 520))
         if let settingsWindowFrame {
             window.setFrame(settingsWindowFrame, display: false)
@@ -251,35 +248,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
 
-    func windowDidResignKey(_ notification: Notification) {
-        guard notification.object as? NSWindow === settingsWindow else { return }
-        hideSettingsWindowAfterFocusChange()
-    }
-
     func windowWillClose(_ notification: Notification) {
         guard let closingWindow = notification.object as? NSWindow,
               closingWindow === settingsWindow else { return }
         releaseSettingsWindow(closingWindow)
-    }
-
-    private func hideSettingsWindowAfterFocusChange() {
-        DispatchQueue.main.async { [weak self] in
-            guard let self, let settingsWindow, settingsWindow.isVisible else { return }
-            if settingsWindow.isKeyWindow {
-                return
-            }
-
-            if settingsWindow.attachedSheet?.isKeyWindow == true {
-                return
-            }
-
-            // 点击桌面/其它窗口会让 LSUIElement 应用失活，但普通 NSWindow 仍保持 visible。
-            // 下次全局快捷键激活应用时，visible 的设置窗口会被系统一起带到前台；
-            // 因此在失焦后隐藏并释放 SwiftUI 内容，避免后台 @Query 继续参与历史数据刷新。
-            settingsWindowFrame = settingsWindow.frame
-            settingsWindow.orderOut(nil)
-            releaseSettingsWindow(settingsWindow)
-        }
     }
 
     private func releaseSettingsWindow(_ window: NSWindow) {
