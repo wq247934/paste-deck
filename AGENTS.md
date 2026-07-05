@@ -36,6 +36,20 @@ This repository is Swift Package Manager based; there is no checked-in `.xcodepr
 - Increment `CFBundleVersion` monotonically for every version bump, even when only `CFBundleShortVersionString` changes.
 - Do not create a Git tag or GitHub release unless the user explicitly asks for a release.
 
+## Release Publishing
+
+Only perform these steps when the user explicitly asks to publish a release.
+
+1. Confirm the working tree contains only the intended release changes with `git status -sb` and inspect the diff before staging.
+2. Validate the app with the narrowest useful command, usually `swift build`.
+3. Commit the release code and push the current branch to GitHub.
+4. Create an annotated SemVer tag after the release commit, for example `git tag -a v1.4.0 -m "PasteDeck 1.4.0"`, then push that tag.
+5. Build the installer with `PASTEDECK_ALLOW_DMG_BUILD=1 scripts/build-dmg.sh`. The script reads `CFBundleShortVersionString` and `CFBundleVersion` from `PasteDeck/PasteDeck/Info.plist`, so do not hardcode release versions in the script.
+6. After packaging, verify there are no leftover PasteDeck mounted volumes under `/Volumes`, and confirm the built app bundle reports the expected version.
+7. Create the GitHub release with `gh release create <tag> PasteDeck-<version>.dmg --title "PasteDeck <version>" --notes "<release notes>"`.
+8. Verify the release with `gh release view <tag> --json url,assets,isDraft,isPrerelease`.
+9. If release process documentation changes are requested after publishing, commit and push them separately after the tag and release are complete. Do not move the published tag unless the user explicitly asks to replace the release.
+
 ## Architecture
 
 ### Entry Point
