@@ -66,6 +66,8 @@ class MainPanelController: NSObject, NSWindowDelegate {
         // Embed SwiftUI view
         let hostingView = NSHostingView(rootView: MainPanelView(closeHandler: { [weak self] in
             self?.hidePanel()
+        }, openSettingsHandler: { [weak self] in
+            self?.openSettingsFromPanel()
         })
         .modelContainer(AppModelContainer.container))
 
@@ -105,7 +107,7 @@ class MainPanelController: NSObject, NSWindowDelegate {
         }
     }
 
-    func hidePanel() {
+    func hidePanel(shouldHideApp: Bool = true) {
         canCloseOnResignKey = false
         panel?.orderOut(nil)
         isVisible = false
@@ -118,7 +120,9 @@ class MainPanelController: NSObject, NSWindowDelegate {
 
         // 隐藏 app 自身，让之前的 app 重新获得焦点
         // 这对后续 simulatePaste(Cmd+V) 至关重要
-        NSApp.hide(nil)
+        if shouldHideApp {
+            NSApp.hide(nil)
+        }
     }
 
     func togglePanel() {
@@ -133,6 +137,11 @@ class MainPanelController: NSObject, NSWindowDelegate {
         } else {
             showPanel()
         }
+    }
+
+    private func openSettingsFromPanel() {
+        hidePanel(shouldHideApp: false)
+        NotificationCenter.default.post(name: .openSettingsWindow, object: nil)
     }
 
     // MARK: - Private Methods

@@ -16,6 +16,7 @@ extension Notification.Name {
     static let clearSelection = Notification.Name("clearSelection")
     static let panelDidShow = Notification.Name("panelDidShow")
     static let toggleMainPanel = Notification.Name("toggleMainPanel")
+    static let openSettingsWindow = Notification.Name("openSettingsWindow")
     /// 既有项目的置顶/收藏夹归属被就地修改（不改变 @Query 数组成员），需要刷新过滤缓存
     static let clipboardDataChanged = Notification.Name("clipboardDataChanged")
 }
@@ -62,6 +63,7 @@ struct MainPanelView: View {
     @State private var previewController: PreviewWindowController?
 
     var closeHandler: (() -> Void)?
+    var openSettingsHandler: (() -> Void)?
 
     // MARK: - Filtered & Sorted Items
 
@@ -128,26 +130,32 @@ struct MainPanelView: View {
         VStack(spacing: 0) {
             // 顶部搜索和筛选
             VStack(spacing: 12) {
-                SearchBarView(text: $searchText, isFocused: $isSearchFocused)
-                .onChange(of: isSearchFocused) { _, newValue in
-                    if newValue {
-                        focusZone = .search
-                    }
-                }
-                .onChange(of: focusZone) { _, newZone in
-                    if newZone == .search {
-                        isSearchFocused = true
-                    } else {
-                        isSearchFocused = false
-                    }
-                }
-                .onSubmit {
-                    // 搜索框按 Enter → 焦点切到卡片区，选中第一个
-                    focusCards()
-                    if !historyStore.filteredItems.isEmpty {
-                        selectedIndex = 0
-                        selectedItemID = historyStore.filteredItems.first?.id
-                        clearMultiSelection()
+                HStack(spacing: 10) {
+                    SearchBarView(text: $searchText, isFocused: $isSearchFocused)
+                        .onChange(of: isSearchFocused) { _, newValue in
+                            if newValue {
+                                focusZone = .search
+                            }
+                        }
+                        .onChange(of: focusZone) { _, newZone in
+                            if newZone == .search {
+                                isSearchFocused = true
+                            } else {
+                                isSearchFocused = false
+                            }
+                        }
+                        .onSubmit {
+                            // 搜索框按 Enter → 焦点切到卡片区，选中第一个
+                            focusCards()
+                            if !historyStore.filteredItems.isEmpty {
+                                selectedIndex = 0
+                                selectedItemID = historyStore.filteredItems.first?.id
+                                clearMultiSelection()
+                            }
+                        }
+
+                    MainPanelSettingsButton {
+                        openSettingsHandler?()
                     }
                 }
 
@@ -474,6 +482,36 @@ struct MainPanelView: View {
 }
 
 // MARK: - Filter Option
+
+// MARK: - Settings Entry
+
+struct MainPanelSettingsButton: View {
+    let action: () -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "gearshape")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundColor(isHovering ? .primary : .secondary)
+                .frame(width: 34, height: 34)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.primary.opacity(isHovering ? 0.09 : 0.045))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color.primary.opacity(isHovering ? 0.1 : 0.05), lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
+        .help("打开设置")
+        .onHover { hovering in
+            isHovering = hovering
+        }
+    }
+}
 
 // MARK: - Favorite Filter Tabs
 

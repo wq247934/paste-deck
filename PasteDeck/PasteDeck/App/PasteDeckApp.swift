@@ -139,6 +139,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil
         )
 
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(openSettings),
+            name: .openSettingsWindow,
+            object: nil
+        )
+
         // Main panel is created lazily on first use so app launch does not
         // pay the SwiftUI/SwiftData history-loading cost.
     }

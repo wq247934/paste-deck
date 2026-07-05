@@ -21,7 +21,7 @@ PasteDeck is a native macOS clipboard manager for quickly searching, previewing,
 
 ### Download
 
-1. Download `PasteDeck-1.2.0.dmg` from [Releases](https://github.com/wq247934/paste-deck/releases).
+1. Download `PasteDeck-1.2.5.dmg` from [Releases](https://github.com/wq247934/paste-deck/releases).
 2. Open the DMG.
 3. Drag `PasteDeck.app` into Applications.
 4. Launch PasteDeck from Applications.
@@ -137,7 +137,7 @@ PasteDeck 是一个原生 macOS 剪贴板管理器，用浮动面板快速搜索
 
 ## 安装
 
-1. 从 [Releases](https://github.com/wq247934/paste-deck/releases) 下载 `PasteDeck-1.2.0.dmg`。
+1. 从 [Releases](https://github.com/wq247934/paste-deck/releases) 下载 `PasteDeck-1.2.5.dmg`。
 2. 打开 DMG。
 3. 将 `PasteDeck.app` 拖入“应用程序”。
 4. 从“应用程序”启动 PasteDeck。

@@ -10,45 +10,474 @@ import SwiftData
 import ServiceManagement
 
 struct SettingsWindow: View {
+    @State private var selectedPane: SettingsPane = .general
+
     var body: some View {
-        TabView {
-            GeneralSettingsView()
-                .tabItem {
-                    Label("通用", systemImage: "gear")
-                }
+        HStack(spacing: 0) {
+            settingsSidebar
 
-            HotkeySettingsView()
-                .tabItem {
-                    Label("快捷键", systemImage: "keyboard")
-                }
+            Rectangle()
+                .fill(Color.primary.opacity(0.07))
+                .frame(width: 1)
 
-            HistorySettingsView()
-                .tabItem {
-                    Label("历史记录", systemImage: "clock")
-                }
+            VStack(alignment: .leading, spacing: 0) {
+                SettingsPaneHeader(pane: selectedPane)
 
-            FilterSettingsView()
-                .tabItem {
-                    Label("过滤", systemImage: "line.3.horizontal.decrease")
+                ScrollView {
+                    selectedPaneContent
+                        .padding(.horizontal, 22)
+                        .padding(.bottom, 22)
                 }
-
-            FavoritesSettingsView()
-                .tabItem {
-                    Label("收藏夹", systemImage: "star")
-                }
-
-            AppearanceSettingsView()
-                .tabItem {
-                    Label("外观", systemImage: "paintpalette")
-                }
-
-            AdvancedSettingsView()
-                .tabItem {
-                    Label("高级", systemImage: "wrench.and.screwdriver")
-                }
+                .scrollIndicators(.hidden)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color.primary.opacity(0.018))
         }
-        .frame(width: 500, height: 400)
-        .padding(20)
+        .frame(width: 760, height: 520)
+        .background(.thinMaterial)
+    }
+
+    private var settingsSidebar: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 10) {
+                Image(systemName: "rectangle.stack.badge.play")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(width: 34, height: 34)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.accentColor))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("PasteDeck")
+                        .font(.system(size: 15, weight: .semibold))
+                    Text("设置")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                }
+            }
+            .padding(.top, 18)
+            .padding(.horizontal, 16)
+
+            VStack(spacing: 4) {
+                ForEach(SettingsPane.allCases) { pane in
+                    SettingsNavigationButton(
+                        pane: pane,
+                        isSelected: selectedPane == pane
+                    ) {
+                        selectedPane = pane
+                    }
+                }
+            }
+            .padding(.horizontal, 10)
+
+            Spacer(minLength: 12)
+
+            Text(PasteDeckVersion.short)
+                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(Capsule().fill(Color.primary.opacity(0.06)))
+                .padding(.horizontal, 16)
+                .padding(.bottom, 16)
+        }
+        .frame(width: 176)
+        .background(Color.primary.opacity(0.035))
+    }
+
+    @ViewBuilder
+    private var selectedPaneContent: some View {
+        switch selectedPane {
+        case .general:
+            GeneralSettingsView()
+        case .hotkey:
+            HotkeySettingsView()
+        case .history:
+            HistorySettingsView()
+        case .filter:
+            FilterSettingsView()
+        case .favorites:
+            FavoritesSettingsView()
+        case .appearance:
+            AppearanceSettingsView()
+        case .advanced:
+            AdvancedSettingsView()
+        }
+    }
+}
+
+private enum SettingsPane: String, CaseIterable, Identifiable {
+    case general
+    case hotkey
+    case history
+    case filter
+    case favorites
+    case appearance
+    case advanced
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .general: return "通用"
+        case .hotkey: return "快捷键"
+        case .history: return "历史记录"
+        case .filter: return "过滤"
+        case .favorites: return "收藏夹"
+        case .appearance: return "外观"
+        case .advanced: return "高级"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .general: return "启动和系统权限"
+        case .hotkey: return "唤起主面板的键盘入口"
+        case .history: return "容量、保留和清理策略"
+        case .filter: return "不记录指定来源"
+        case .favorites: return "管理收藏夹名称和顺序"
+        case .appearance: return "主题和卡片展示密度"
+        case .advanced: return "预览、翻译和数据维护"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .general: return "gearshape"
+        case .hotkey: return "keyboard"
+        case .history: return "clock.arrow.circlepath"
+        case .filter: return "line.3.horizontal.decrease"
+        case .favorites: return "star"
+        case .appearance: return "paintpalette"
+        case .advanced: return "slider.horizontal.3"
+        }
+    }
+}
+
+private enum PasteDeckVersion {
+    static var short: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.2.5"
+    }
+
+    static var build: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "125"
+    }
+
+    static var display: String {
+        "\(short) (\(build))"
+    }
+}
+
+private struct SettingsNavigationButton: View {
+    let pane: SettingsPane
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: pane.icon)
+                    .font(.system(size: 13, weight: .medium))
+                    .frame(width: 18)
+                Text(pane.title)
+                    .font(.system(size: 13, weight: .medium))
+                Spacer()
+            }
+            .foregroundColor(isSelected ? .white : .primary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isSelected ? Color.accentColor : Color.clear)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct SettingsPaneHeader: View {
+    let pane: SettingsPane
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: pane.icon)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(.accentColor)
+                .frame(width: 34, height: 34)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color.accentColor.opacity(0.12)))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(pane.title)
+                    .font(.system(size: 20, weight: .semibold))
+                Text(pane.subtitle)
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer()
+        }
+        .padding(.horizontal, 22)
+        .padding(.top, 20)
+        .padding(.bottom, 14)
+    }
+}
+
+private struct SettingsContentStack<Content: View>: View {
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            content()
+        }
+    }
+}
+
+private struct SettingsCard<Content: View>: View {
+    let title: String
+    var icon: String? = nil
+    var footer: String? = nil
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                if let icon {
+                    Image(systemName: icon)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.secondary)
+                        .frame(width: 16)
+                }
+
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.secondary)
+
+                Spacer()
+            }
+
+            VStack(spacing: 0) {
+                content()
+            }
+            .padding(12)
+            .background(Color.primary.opacity(0.035))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color.primary.opacity(0.06), lineWidth: 1)
+            )
+
+            if let footer {
+                Text(footer)
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 4)
+            }
+        }
+    }
+}
+
+private struct SettingsRow<Trailing: View>: View {
+    let title: String
+    var subtitle: String? = nil
+    @ViewBuilder let trailing: () -> Trailing
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 14) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.system(size: 13, weight: .medium))
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
+                }
+            }
+
+            Spacer(minLength: 12)
+
+            trailing()
+        }
+        .frame(minHeight: 32)
+        .padding(.vertical, 5)
+    }
+}
+
+private struct SettingsDivider: View {
+    var body: some View {
+        Rectangle()
+            .fill(Color.primary.opacity(0.06))
+            .frame(height: 1)
+            .padding(.vertical, 8)
+    }
+}
+
+private struct SettingsStatusPill: View {
+    let text: String
+    let color: Color
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundColor(color)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(Capsule().fill(color.opacity(0.12)))
+    }
+}
+
+private struct SettingsNotice: View {
+    let text: String
+    let systemImage: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: systemImage)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(.orange)
+                .padding(.top, 1)
+            Text(text)
+                .font(.system(size: 12))
+                .foregroundColor(.secondary)
+            Spacer()
+        }
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.08)))
+    }
+}
+
+private struct SettingsTag<Content: View>: View {
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        HStack(spacing: 5) {
+            content()
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Color.secondary.opacity(0.1))
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+    }
+}
+
+private enum SettingsButtonTone {
+    case primary
+    case secondary
+    case destructive
+}
+
+private struct SettingsActionButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    var tone: SettingsButtonTone = .secondary
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundColor(foregroundColor)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 7)
+                    .fill(backgroundColor(configuration: configuration))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 7)
+                    .stroke(borderColor, lineWidth: 1)
+            )
+            .opacity(isEnabled ? 1 : 0.45)
+            .scaleEffect(configuration.isPressed ? 0.98 : 1)
+    }
+
+    private var foregroundColor: Color {
+        guard isEnabled else { return .secondary }
+        switch tone {
+        case .primary:
+            return .accentColor
+        case .secondary:
+            return .primary
+        case .destructive:
+            return .red
+        }
+    }
+
+    private func backgroundColor(configuration: Configuration) -> Color {
+        let pressedBoost = configuration.isPressed ? 0.06 : 0
+        switch tone {
+        case .primary:
+            return Color.accentColor.opacity(0.12 + pressedBoost)
+        case .secondary:
+            return Color.primary.opacity(0.055 + pressedBoost)
+        case .destructive:
+            return Color.red.opacity(0.105 + pressedBoost)
+        }
+    }
+
+    private var borderColor: Color {
+        switch tone {
+        case .primary:
+            return Color.accentColor.opacity(0.16)
+        case .secondary:
+            return Color.primary.opacity(0.06)
+        case .destructive:
+            return Color.red.opacity(0.16)
+        }
+    }
+}
+
+private struct SettingsMenuOption: Identifiable {
+    let value: Int
+    let title: String
+
+    var id: Int { value }
+}
+
+private struct SettingsMenuPicker: View {
+    @Binding var selection: Int
+    let options: [SettingsMenuOption]
+
+    private var selectedTitle: String {
+        options.first(where: { $0.value == selection })?.title ?? "未设置"
+    }
+
+    var body: some View {
+        Menu {
+            ForEach(options) { option in
+                Button {
+                    selection = option.value
+                } label: {
+                    HStack {
+                        Text(option.title)
+                        if option.value == selection {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Text(selectedTitle)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundColor(.secondary)
+            }
+            .frame(minWidth: 96, alignment: .center)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 7)
+                    .fill(Color.primary.opacity(0.055))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 7)
+                    .stroke(Color.primary.opacity(0.06), lineWidth: 1)
+            )
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
     }
 }
 
@@ -72,57 +501,64 @@ struct GeneralSettingsView: View {
     }
 
     var body: some View {
-        Form {
-            Section("启动") {
-                Toggle("开机启动", isOn: Binding(
-                    get: {
-                        SMAppService.mainApp.status == .enabled
-                    },
-                    set: { enabled in
-                        do {
-                            if enabled {
-                                try SMAppService.mainApp.register()
-                            } else {
-                                try SMAppService.mainApp.unregister()
+        SettingsContentStack {
+            SettingsCard(title: "启动", icon: "power") {
+                SettingsRow(title: "开机启动", subtitle: "登录 macOS 后自动常驻菜单栏") {
+                    Toggle("", isOn: Binding(
+                        get: {
+                            SMAppService.mainApp.status == .enabled
+                        },
+                        set: { enabled in
+                            do {
+                                if enabled {
+                                    try SMAppService.mainApp.register()
+                                } else {
+                                    try SMAppService.mainApp.unregister()
+                                }
+                                appSettings.launchAtLogin = enabled
+                                try? modelContext.save()
+                            } catch {
+                                NSLog("[PasteDeck] Failed to toggle launch at login: \(error)")
                             }
-                            appSettings.launchAtLogin = enabled
-                            try? modelContext.save()
-                        } catch {
-                            NSLog("[PasteDeck] Failed to toggle launch at login: \(error)")
                         }
-                    }
-                ))
+                    ))
+                    .toggleStyle(.switch)
+                    .labelsHidden()
+                }
             }
 
-            Section("权限") {
-                HStack {
-                    Text("辅助功能")
-                    Spacer()
-                    Text(accessibilityGranted ? "已开启" : "未开启")
-                        .foregroundColor(accessibilityGranted ? .green : .orange)
-                        .font(.system(size: 13, weight: .medium))
-                    Toggle("", isOn: .constant(accessibilityGranted))
-                        .toggleStyle(.switch)
-                        .disabled(true)
-                        .labelsHidden()
+            SettingsCard(title: "权限", icon: "lock.shield") {
+                SettingsRow(title: "辅助功能", subtitle: "用于全局快捷键和模拟粘贴") {
+                    HStack(spacing: 8) {
+                        SettingsStatusPill(
+                            text: accessibilityGranted ? "已开启" : "未开启",
+                            color: accessibilityGranted ? .green : .orange
+                        )
+                        Toggle("", isOn: .constant(accessibilityGranted))
+                            .toggleStyle(.switch)
+                            .disabled(true)
+                            .labelsHidden()
+                    }
                 }
 
                 if !accessibilityGranted {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("部分功能受限：全局快捷键和模拟粘贴将无法使用")
-                            .font(.system(size: 12))
-                            .foregroundColor(.secondary)
+                    SettingsDivider()
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        SettingsNotice(
+                            text: "未授权时，全局快捷键和自动粘贴会受限。",
+                            systemImage: "exclamationmark.triangle.fill"
+                        )
                         Button(action: {
                             NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
                         }) {
-                            Text("打开系统设置授权")
-                                .font(.system(size: 12))
+                            Label("打开系统设置授权", systemImage: "arrow.up.forward.app")
                         }
+                        .buttonStyle(SettingsActionButtonStyle(tone: .primary))
                     }
                 }
             }
         }
-        .formStyle(.grouped)
         .onReceive(timer) { _ in
             accessibilityGranted = AXIsProcessTrusted()
         }
@@ -153,56 +589,68 @@ struct HotkeySettingsView: View {
     }
 
     var body: some View {
-        Form {
-            Section("快捷键设置") {
-                HStack {
-                    Text("弹出窗口")
-                    Spacer()
-                    if isRecording {
-                        Text("按下新的快捷键...")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundColor(.accentColor)
+        SettingsContentStack {
+            SettingsCard(title: "主面板", icon: "keyboard") {
+                SettingsRow(title: "弹出窗口", subtitle: "用于快速打开剪贴板历史") {
+                    HStack(spacing: 8) {
+                        Text(isRecording ? "按下新的快捷键..." : shortcutDisplay)
+                            .font(.system(size: 13, weight: .semibold, design: .rounded))
+                            .foregroundColor(isRecording ? .accentColor : .primary)
                             .padding(.horizontal, 12)
-                            .padding(.vertical, 4)
-                            .background(Color.accentColor.opacity(0.1))
-                            .cornerRadius(4)
-                    } else {
-                        Text(shortcutDisplay)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 4)
-                            .background(Color.primary.opacity(0.1))
-                            .cornerRadius(4)
+                            .padding(.vertical, 5)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .fill(isRecording ? Color.accentColor.opacity(0.12) : Color.primary.opacity(0.08))
+                        )
+                        Button {
+                            if isRecording {
+                                isRecording = false
+                                reregisterHotkey()
+                            } else {
+                                HotKeyManager.shared.unregister()
+                                isRecording = true
+                            }
+                        } label: {
+                            Label(isRecording ? "取消" : "修改", systemImage: isRecording ? "xmark" : "pencil")
+                        }
+                        .buttonStyle(SettingsActionButtonStyle(tone: isRecording ? .secondary : .primary))
                     }
-                    Button(isRecording ? "取消" : "修改") {
-                        isRecording.toggle()
-                    }
-                    .buttonStyle(.bordered)
                 }
             }
 
-            Section {
-                Button("恢复默认 (⌘ + Shift + V)") {
+            SettingsCard(title: "默认值", icon: "arrow.counterclockwise") {
+                Button {
+                    isRecording = false
                     appSettings.hotkeyKeyCode = 9
                     appSettings.hotkeyModifiers = Int(NSEvent.ModifierFlags.command.rawValue | NSEvent.ModifierFlags.shift.rawValue)
                     appSettings.hotkeyDisplay = "V"
                     try? modelContext.save()
                     reregisterHotkey()
+                } label: {
+                    Label("恢复默认 (⌘ + Shift + V)", systemImage: "arrow.counterclockwise")
                 }
+                .buttonStyle(SettingsActionButtonStyle())
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .formStyle(.grouped)
-        .overlay {
+        .background {
+            HotkeyRecorderView(isRecording: isRecording) { keyCode, modifiers, displayChar in
+                appSettings.hotkeyKeyCode = Int(keyCode)
+                appSettings.hotkeyModifiers = modifiers
+                appSettings.hotkeyDisplay = displayChar
+                try? modelContext.save()
+                reregisterHotkey()
+                isRecording = false
+            } onCancel: {
+                isRecording = false
+                reregisterHotkey()
+            }
+            .frame(width: 0, height: 0)
+        }
+        .onDisappear {
             if isRecording {
-                HotkeyRecorderView { keyCode, modifiers, displayChar in
-                    appSettings.hotkeyKeyCode = Int(keyCode)
-                    appSettings.hotkeyModifiers = modifiers
-                    appSettings.hotkeyDisplay = displayChar
-                    try? modelContext.save()
-                    reregisterHotkey()
-                    isRecording = false
-                } onCancel: {
-                    isRecording = false
-                }
+                isRecording = false
+                reregisterHotkey()
             }
         }
     }
@@ -231,53 +679,111 @@ struct HotkeySettingsView: View {
     }
 }
 
-/// 快捷键录制视图，拦截键盘事件
+/// 快捷键录制视图，使用本地键盘事件监听，避免透明录制层遮挡设置页按钮。
 struct HotkeyRecorderView: NSViewRepresentable {
+    let isRecording: Bool
     let onRecorded: (UInt32, Int, String) -> Void
     let onCancel: () -> Void
 
-    func makeNSView(context: Context) -> NSView {
-        let view = HotkeyRecorderNSView()
-        view.onRecorded = onRecorded
-        view.onCancel = onCancel
-        DispatchQueue.main.async {
-            view.window?.makeFirstResponder(view)
-        }
-        return view
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onRecorded: onRecorded, onCancel: onCancel)
     }
 
-    func updateNSView(_ nsView: NSView, context: Context) {}
+    func makeNSView(context: Context) -> NSView {
+        NSView(frame: .zero)
+    }
 
-    class HotkeyRecorderNSView: NSView {
-        var onRecorded: ((UInt32, Int, String) -> Void)?
-        var onCancel: (() -> Void)?
+    func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.onRecorded = onRecorded
+        context.coordinator.onCancel = onCancel
+        context.coordinator.setRecording(isRecording)
+    }
 
-        override var acceptsFirstResponder: Bool { true }
+    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
+        coordinator.stopRecording()
+    }
 
-        override func keyDown(with event: NSEvent) {
-            let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-            // 必须至少一个修饰键
-            guard !modifiers.isEmpty else { return }
-            // 不允许单独的修饰键组合（没有实际字母）
-            let modifierOnly = [.shift, .command, .control, .option,
-                                 NSEvent.ModifierFlags(arrayLiteral: .command, .shift),
-                                 NSEvent.ModifierFlags(arrayLiteral: .command, .option),
-                                 NSEvent.ModifierFlags(arrayLiteral: .command, .control),
-                                 NSEvent.ModifierFlags(arrayLiteral: .control, .shift),
-                                 NSEvent.ModifierFlags(arrayLiteral: .control, .option),
-                                 NSEvent.ModifierFlags(arrayLiteral: .option, .shift)]
-            guard !modifierOnly.contains(modifiers) || event.charactersIgnoringModifiers != nil else { return }
+    final class Coordinator {
+        var onRecorded: (UInt32, Int, String) -> Void
+        var onCancel: () -> Void
 
-            let modifierInt = Int(modifiers.rawValue)
-            let keyCode = UInt32(event.keyCode)
-            // 用 charactersIgnoringModifiers 获取实际按键字符，不受键盘布局影响
-            let displayChar = event.charactersIgnoringModifiers?.uppercased() ?? "Key\(keyCode)"
+        private var monitor: Any?
+        private var isRecording = false
 
-            onRecorded?(keyCode, modifierInt, displayChar)
+        init(onRecorded: @escaping (UInt32, Int, String) -> Void, onCancel: @escaping () -> Void) {
+            self.onRecorded = onRecorded
+            self.onCancel = onCancel
         }
 
-        override func cancelOperation(_ sender: Any?) {
-            onCancel?()
+        func setRecording(_ recording: Bool) {
+            if recording {
+                startRecording()
+            } else {
+                stopRecording()
+            }
+        }
+
+        func stopRecording() {
+            isRecording = false
+            if let monitor {
+                NSEvent.removeMonitor(monitor)
+                self.monitor = nil
+            }
+        }
+
+        private func startRecording() {
+            isRecording = true
+            guard monitor == nil else { return }
+
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                self?.handleKeyDown(event)
+            }
+        }
+
+        private func handleKeyDown(_ event: NSEvent) -> NSEvent? {
+            guard isRecording else { return event }
+
+            if event.keyCode == 53 {
+                isRecording = false
+                onCancel()
+                return nil
+            }
+
+            guard let shortcut = Self.shortcut(from: event) else {
+                NSSound.beep()
+                return nil
+            }
+
+            isRecording = false
+            onRecorded(shortcut.keyCode, shortcut.modifiers, shortcut.display)
+            return nil
+        }
+
+        private static func shortcut(from event: NSEvent) -> (keyCode: UInt32, modifiers: Int, display: String)? {
+            let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
+            guard !modifiers.isEmpty else { return nil }
+            guard let display = displayText(for: event) else { return nil }
+            return (UInt32(event.keyCode), Int(modifiers.rawValue), display)
+        }
+
+        private static func displayText(for event: NSEvent) -> String? {
+            if let characters = event.charactersIgnoringModifiers?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !characters.isEmpty {
+                return characters.uppercased()
+            }
+
+            switch event.keyCode {
+            case 36: return "Return"
+            case 48: return "Tab"
+            case 49: return "Space"
+            case 51: return "Delete"
+            case 53: return nil
+            case 123: return "Left"
+            case 124: return "Right"
+            case 125: return "Down"
+            case 126: return "Up"
+            default: return "Key\(event.keyCode)"
+            }
         }
     }
 }
@@ -315,97 +821,112 @@ struct HistorySettingsView: View {
     }
 
     var body: some View {
-        Form {
-            Section("当前状态") {
-                HStack {
-                    Text("记录条数")
-                    Spacer()
+        SettingsContentStack {
+            SettingsCard(title: "当前状态", icon: "chart.bar") {
+                SettingsRow(title: "记录条数") {
                     Text("\(totalItemCount) 条")
+                        .font(.system(size: 13, weight: .medium, design: .monospaced))
                         .foregroundColor(.secondary)
                 }
 
-                HStack {
-                    Text("最早记录")
-                    Spacer()
-                    if let date = earliestDate {
-                        Text(dateFormatter.string(from: date))
-                            .foregroundColor(.secondary)
-                    } else {
-                        Text("无记录")
-                            .foregroundColor(.secondary)
-                    }
+                SettingsDivider()
+
+                SettingsRow(title: "最早记录") {
+                    Text(earliestDate.map(dateFormatter.string(from:)) ?? "无记录")
+                        .font(.system(size: 13))
+                        .foregroundColor(.secondary)
                 }
 
-                HStack {
-                    Text("缓存占用")
-                    Spacer()
+                SettingsDivider()
+
+                SettingsRow(title: "缓存占用") {
                     Text(formatBytes(CacheManager().getTotalCacheSize()))
+                        .font(.system(size: 13, weight: .medium, design: .monospaced))
                         .foregroundColor(.secondary)
                 }
             }
 
-            Section("自动限制") {
-                Picker("条数限制", selection: Binding(
-                    get: { appSettings.historyCountLimit },
-                    set: { appSettings.historyCountLimit = $0; try? modelContext.save() }
-                )) {
-                    Text("100 条").tag(100)
-                    Text("500 条").tag(500)
-                    Text("1000 条").tag(1000)
-                    Text("2000 条").tag(2000)
-                    Text("无限制").tag(0)
+            SettingsCard(title: "自动限制", icon: "timer") {
+                SettingsRow(title: "条数限制", subtitle: "超过限制后自动清理最早的普通记录") {
+                    SettingsMenuPicker(selection: Binding(
+                        get: { appSettings.historyCountLimit },
+                        set: { appSettings.historyCountLimit = $0; try? modelContext.save() }
+                    ), options: [
+                        SettingsMenuOption(value: 100, title: "100 条"),
+                        SettingsMenuOption(value: 500, title: "500 条"),
+                        SettingsMenuOption(value: 1000, title: "1000 条"),
+                        SettingsMenuOption(value: 2000, title: "2000 条"),
+                        SettingsMenuOption(value: 0, title: "无限制")
+                    ])
                 }
 
-                Picker("时间限制", selection: Binding(
-                    get: { appSettings.historyDaysLimit },
-                    set: { appSettings.historyDaysLimit = $0; try? modelContext.save() }
-                )) {
-                    Text("7 天").tag(7)
-                    Text("14 天").tag(14)
-                    Text("30 天").tag(30)
-                    Text("无限制").tag(0)
-                }
-            }
+                SettingsDivider()
 
-            Section("缓存空间") {
-                Picker("最大缓存空间", selection: Binding(
-                    get: { appSettings.cacheSizeLimit },
-                    set: { appSettings.cacheSizeLimit = $0; try? modelContext.save() }
-                )) {
-                    Text("100 MB").tag(100)
-                    Text("500 MB").tag(500)
-                    Text("1 GB").tag(1000)
-                    Text("无限制").tag(0)
+                SettingsRow(title: "时间限制", subtitle: "超过保留天数后自动清理普通记录") {
+                    SettingsMenuPicker(selection: Binding(
+                        get: { appSettings.historyDaysLimit },
+                        set: { appSettings.historyDaysLimit = $0; try? modelContext.save() }
+                    ), options: [
+                        SettingsMenuOption(value: 7, title: "7 天"),
+                        SettingsMenuOption(value: 14, title: "14 天"),
+                        SettingsMenuOption(value: 30, title: "30 天"),
+                        SettingsMenuOption(value: 0, title: "无限制")
+                    ])
                 }
             }
 
-            Section("手动清理") {
-                HStack {
-                    Stepper("清理最早", value: $cleanupCount, in: 1...1000, step: 10)
-                    Text("\(cleanupCount) 条")
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundColor(.secondary)
-                    Spacer()
-                    Button("清理") {
-                        showCleanupCountAlert = true
+            SettingsCard(title: "缓存空间", icon: "externaldrive") {
+                SettingsRow(title: "最大缓存空间", subtitle: "用于图片等本地缓存文件") {
+                    SettingsMenuPicker(selection: Binding(
+                        get: { appSettings.cacheSizeLimit },
+                        set: { appSettings.cacheSizeLimit = $0; try? modelContext.save() }
+                    ), options: [
+                        SettingsMenuOption(value: 100, title: "100 MB"),
+                        SettingsMenuOption(value: 500, title: "500 MB"),
+                        SettingsMenuOption(value: 1000, title: "1 GB"),
+                        SettingsMenuOption(value: 0, title: "无限制")
+                    ])
+                }
+            }
+
+            SettingsCard(title: "手动清理", icon: "trash") {
+                SettingsRow(title: "清理最早记录") {
+                    HStack(spacing: 10) {
+                        Stepper("", value: $cleanupCount, in: 1...1000, step: 10)
+                            .labelsHidden()
+                        Text("\(cleanupCount) 条")
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundColor(.secondary)
+                            .frame(width: 64, alignment: .trailing)
+                        Button(role: .destructive) {
+                            showCleanupCountAlert = true
+                        } label: {
+                            Label("清理", systemImage: "trash")
+                        }
+                        .buttonStyle(SettingsActionButtonStyle(tone: .destructive))
                     }
-                    .foregroundColor(.red)
                 }
 
-                HStack {
-                    Stepper("清理", value: $cleanupDays, in: 1...365, step: 7)
-                    Text("\(cleanupDays) 天前的数据")
-                        .font(.system(size: 12))
-                        .foregroundColor(.secondary)
-                    Spacer()
-                    Button("清理") {
-                        showCleanupDaysAlert = true
+                SettingsDivider()
+
+                SettingsRow(title: "按时间清理") {
+                    HStack(spacing: 10) {
+                        Stepper("", value: $cleanupDays, in: 1...365, step: 7)
+                            .labelsHidden()
+                        Text("\(cleanupDays) 天前")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                            .frame(width: 70, alignment: .trailing)
+                        Button(role: .destructive) {
+                            showCleanupDaysAlert = true
+                        } label: {
+                            Label("清理", systemImage: "trash")
+                        }
+                        .buttonStyle(SettingsActionButtonStyle(tone: .destructive))
                     }
-                    .foregroundColor(.red)
                 }
             }
         }
-        .formStyle(.grouped)
         .alert("确定清理最早的 \(cleanupCount) 条记录吗？", isPresented: $showCleanupCountAlert) {
             Button("取消", role: .cancel) {}
             Button("清理", role: .destructive) {
@@ -505,45 +1026,76 @@ struct FilterSettingsView: View {
     }
 
     var body: some View {
-        Form {
-            Section("应用黑名单") {
-                ForEach(appSettings.blacklistedApps, id: \.self) { app in
-                    HStack {
-                        Text(app)
-                        Spacer()
-                        Button(action: {
-                            appSettings.blacklistedApps.removeAll { $0 == app }
-                            try? modelContext.save()
-                        }) {
-                            Image(systemName: "minus.circle.fill")
-                                .foregroundColor(.red)
+        SettingsContentStack {
+            SettingsCard(title: "应用黑名单", icon: "nosign") {
+                if appSettings.blacklistedApps.isEmpty {
+                    Text("暂无黑名单应用")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 4)
+                } else {
+                    LazyVStack(spacing: 8) {
+                        ForEach(appSettings.blacklistedApps, id: \.self) { app in
+                            HStack(spacing: 8) {
+                                Image(systemName: "app.dashed")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.secondary)
+                                Text(app)
+                                    .font(.system(size: 13, weight: .medium))
+                                Spacer()
+                                Button(action: {
+                                    appSettings.blacklistedApps.removeAll { $0 == app }
+                                    try? modelContext.save()
+                                }) {
+                                    Image(systemName: "minus.circle.fill")
+                                        .foregroundColor(.red)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 7)
+                            .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.035)))
                         }
-                        .buttonStyle(.plain)
                     }
                 }
 
-                HStack {
+                SettingsDivider()
+
+                HStack(spacing: 8) {
+                    Image(systemName: "plus")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.secondary)
                     TextField("添加应用名称", text: $newBlacklistApp)
-                        .textFieldStyle(.roundedBorder)
-                    Button("添加") {
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 13))
+                    Button {
                         let trimmed = newBlacklistApp.trimmingCharacters(in: .whitespacesAndNewlines)
                         if !trimmed.isEmpty && !appSettings.blacklistedApps.contains(trimmed) {
                             appSettings.blacklistedApps.append(trimmed)
                             newBlacklistApp = ""
                             try? modelContext.save()
                         }
+                    } label: {
+                        Label("添加", systemImage: "plus.circle")
                     }
+                    .buttonStyle(SettingsActionButtonStyle(tone: .primary))
+                    .disabled(newBlacklistApp.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.045)))
             }
 
-            Section("运行中的应用") {
+            SettingsCard(title: "运行中的应用", icon: "macwindow") {
                 if runningApps.isEmpty {
                     Text("暂无可添加的运行中应用")
                         .foregroundColor(.secondary)
                         .font(.system(size: 12))
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
                     ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 4) {
+                        LazyVStack(alignment: .leading, spacing: 6) {
                             ForEach(runningApps) { appInfo in
                                 Button(action: {
                                     if !appSettings.blacklistedApps.contains(appInfo.name) {
@@ -551,39 +1103,49 @@ struct FilterSettingsView: View {
                                         try? modelContext.save()
                                     }
                                 }) {
-                                    HStack(spacing: 8) {
+                                    HStack(spacing: 9) {
                                         if let icon = appInfo.icon {
                                             Image(nsImage: icon)
                                                 .resizable()
-                                                .frame(width: 20, height: 20)
-                                        }
-                                        Text(appInfo.name)
-                                            .foregroundColor(.primary)
-                                        if !appInfo.bundleID.isEmpty {
-                                            Text(appInfo.bundleID)
-                                                .font(.system(size: 10, design: .monospaced))
+                                                .frame(width: 22, height: 22)
+                                        } else {
+                                            Image(systemName: "app")
+                                                .font(.system(size: 15))
                                                 .foregroundColor(.secondary)
-                                                .lineLimit(1)
-                                                .truncationMode(.tail)
+                                                .frame(width: 22, height: 22)
                                         }
+
+                                        VStack(alignment: .leading, spacing: 1) {
+                                            Text(appInfo.name)
+                                                .font(.system(size: 13, weight: .medium))
+                                                .foregroundColor(.primary)
+                                            if !appInfo.bundleID.isEmpty {
+                                                Text(appInfo.bundleID)
+                                                    .font(.system(size: 10, design: .monospaced))
+                                                    .foregroundColor(.secondary)
+                                                    .lineLimit(1)
+                                                    .truncationMode(.tail)
+                                            }
+                                        }
+
                                         Spacer()
+
                                         Image(systemName: "plus.circle.fill")
                                             .foregroundColor(.accentColor)
-                                            .font(.system(size: 14))
+                                            .font(.system(size: 15))
                                     }
-                                    .padding(.vertical, 4)
-                                    .padding(.horizontal, 8)
-                                    .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.03)))
+                                    .padding(.vertical, 7)
+                                    .padding(.horizontal, 10)
+                                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.035)))
                                 }
                                 .buttonStyle(.plain)
                             }
                         }
                     }
-                    .frame(maxHeight: 200)
+                    .frame(maxHeight: 210)
                 }
             }
         }
-        .formStyle(.grouped)
     }
 }
 
@@ -606,11 +1168,13 @@ struct FavoritesSettingsView: View {
     @State private var collectionToDelete: FavoriteCollection?
 
     var body: some View {
-        Form {
-            Section {
+        SettingsContentStack {
+            SettingsCard(title: "收藏夹列表", icon: "star") {
                 if collections.isEmpty {
                     Text("暂无收藏夹")
                         .foregroundColor(.secondary)
+                        .font(.system(size: 12))
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
                     List {
                         ForEach(collections, id: \.id) { collection in
@@ -626,18 +1190,21 @@ struct FavoritesSettingsView: View {
                             moveCollections(from: from, to: to)
                         }
                     }
+                    .listStyle(.plain)
+                    .scrollContentBackground(.hidden)
+                    .frame(height: min(CGFloat(collections.count) * 36 + 12, 220))
                 }
-            } header: {
-                HStack {
-                    Text("收藏夹列表")
-                    Spacer()
-                    Text("拖拽排序")
+
+                if !collections.isEmpty {
+                    SettingsDivider()
+
+                    Label("拖拽调整顺序", systemImage: "arrow.up.arrow.down")
                         .font(.system(size: 11))
                         .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
         }
-        .formStyle(.grouped)
         .alert("确认删除", isPresented: $showDeleteAlert) {
             Button("取消", role: .cancel) {}
             Button("删除", role: .destructive) {
@@ -782,31 +1349,39 @@ struct AppearanceSettingsView: View {
     }
 
     var body: some View {
-        Form {
-            Section("主题") {
-                Picker("外观模式", selection: Binding(
-                    get: { appSettings.themeMode },
-                    set: { appSettings.themeMode = $0; try? modelContext.save() }
-                )) {
-                    Text("跟随系统").tag(0)
-                    Text("浅色").tag(1)
-                    Text("深色").tag(2)
+        SettingsContentStack {
+            SettingsCard(title: "主题", icon: "circle.lefthalf.filled") {
+                SettingsRow(title: "外观模式", subtitle: "设置主面板和预览窗口的颜色模式") {
+                    Picker("", selection: Binding(
+                        get: { appSettings.themeMode },
+                        set: { appSettings.themeMode = $0; try? modelContext.save() }
+                    )) {
+                        Text("跟随系统").tag(0)
+                        Text("浅色").tag(1)
+                        Text("深色").tag(2)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .frame(width: 230)
                 }
-                .pickerStyle(.segmented)
             }
 
-            Section("卡片") {
-                Picker("卡片大小", selection: Binding(
-                    get: { appSettings.cardSize },
-                    set: { appSettings.cardSize = $0; try? modelContext.save() }
-                )) {
-                    Text("小").tag(0)
-                    Text("中").tag(1)
-                    Text("大").tag(2)
+            SettingsCard(title: "卡片", icon: "rectangle.grid.1x2") {
+                SettingsRow(title: "卡片大小", subtitle: "影响主面板中剪贴板卡片的展示尺寸") {
+                    Picker("", selection: Binding(
+                        get: { appSettings.cardSize },
+                        set: { appSettings.cardSize = $0; try? modelContext.save() }
+                    )) {
+                        Text("小").tag(0)
+                        Text("中").tag(1)
+                        Text("大").tag(2)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .frame(width: 160)
                 }
             }
         }
-        .formStyle(.grouped)
     }
 }
 
@@ -835,45 +1410,61 @@ struct AdvancedSettingsView: View {
     }
 
     var body: some View {
-        Form {
-            Section("语法高亮后缀") {
-                FlowLayout(spacing: 6) {
-                    ForEach(Array(highlightExtensions.keys.sorted()), id: \.self) { ext in
-                        HStack(spacing: 4) {
-                            Text("." + ext)
-                                .font(.system(size: 12, design: .monospaced))
-                            Text("→")
-                                .font(.system(size: 10))
-                                .foregroundColor(.secondary)
-                            Text(highlightExtensions[ext] ?? "")
-                                .font(.system(size: 11))
-                                .foregroundColor(.secondary)
-                            Button(action: {
-                                highlightExtensions.removeValue(forKey: ext)
-                                saveConfig()
-                            }) {
-                                Image(systemName: "xmark.circle.fill")
+        SettingsContentStack {
+            SettingsCard(title: "语法高亮后缀", icon: "chevron.left.forwardslash.chevron.right") {
+                if highlightExtensions.isEmpty {
+                    Text("暂无高亮后缀")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    FlowLayout(spacing: 6) {
+                        ForEach(Array(highlightExtensions.keys.sorted()), id: \.self) { ext in
+                            SettingsTag {
+                                Text("." + ext)
+                                    .font(.system(size: 12, design: .monospaced))
+                                Text("->")
                                     .font(.system(size: 10))
                                     .foregroundColor(.secondary)
+                                Text(highlightExtensions[ext] ?? "")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+                                Button(action: {
+                                    highlightExtensions.removeValue(forKey: ext)
+                                    saveConfig()
+                                }) {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .font(.system(size: 10))
+                                        .foregroundColor(.secondary)
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
                         }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.secondary.opacity(0.1))
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
-                HStack {
+                SettingsDivider()
+
+                HStack(spacing: 8) {
                     TextField("后缀", text: $newHighlightExt)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 80)
-                    Text("→")
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 13, design: .monospaced))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .frame(width: 90)
+                        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.045)))
+                    Text("->")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.secondary)
                     TextField("语言", text: $newHighlightLang)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 100)
-                    Button("添加") {
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 13))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .frame(width: 120)
+                        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.045)))
+                    Button {
                         let ext = newHighlightExt.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
                         let lang = newHighlightLang.lowercased().trimmingCharacters(in: .whitespaces)
                         if !ext.isEmpty && !lang.isEmpty {
@@ -882,56 +1473,78 @@ struct AdvancedSettingsView: View {
                             newHighlightLang = ""
                             saveConfig()
                         }
+                    } label: {
+                        Label("添加", systemImage: "plus.circle")
                     }
+                    .buttonStyle(SettingsActionButtonStyle(tone: .primary))
+                    .disabled(newHighlightExt.isEmpty || newHighlightLang.isEmpty)
                 }
             }
 
-            Section("纯文本后缀") {
-                FlowLayout(spacing: 6) {
-                    ForEach(plainTextExtensions, id: \.self) { ext in
-                        HStack(spacing: 4) {
-                            Text("." + ext)
-                                .font(.system(size: 12, design: .monospaced))
-                            Button(action: {
-                                plainTextExtensions.removeAll { $0 == ext }
-                                saveConfig()
-                            }) {
-                                Image(systemName: "xmark.circle.fill")
-                                    .font(.system(size: 10))
-                                    .foregroundColor(.secondary)
+            SettingsCard(title: "纯文本后缀", icon: "doc.plaintext") {
+                if plainTextExtensions.isEmpty {
+                    Text("暂无纯文本后缀")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    FlowLayout(spacing: 6) {
+                        ForEach(plainTextExtensions, id: \.self) { ext in
+                            SettingsTag {
+                                Text("." + ext)
+                                    .font(.system(size: 12, design: .monospaced))
+                                Button(action: {
+                                    plainTextExtensions.removeAll { $0 == ext }
+                                    saveConfig()
+                                }) {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .font(.system(size: 10))
+                                        .foregroundColor(.secondary)
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
                         }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.secondary.opacity(0.1))
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
-                HStack {
+                SettingsDivider()
+
+                HStack(spacing: 8) {
                     TextField("后缀", text: $newPlainExt)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 100)
-                    Button("添加") {
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 13, design: .monospaced))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .frame(width: 110)
+                        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.045)))
+                    Button {
                         let ext = newPlainExt.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
                         if !ext.isEmpty && !plainTextExtensions.contains(ext) {
                             plainTextExtensions.append(ext)
                             newPlainExt = ""
                             saveConfig()
                         }
+                    } label: {
+                        Label("添加", systemImage: "plus.circle")
                     }
+                    .buttonStyle(SettingsActionButtonStyle(tone: .primary))
+                    .disabled(newPlainExt.isEmpty)
                 }
             }
 
-            Section {
-                Toggle("启用百度翻译", isOn: Binding(
-                    get: { appSettings.baiduTranslateEnabled },
-                    set: { appSettings.baiduTranslateEnabled = $0; try? modelContext.save() }
-                ))
-            } header: {
-                Text("百度翻译")
-            } footer: {
+            SettingsCard(title: "百度翻译", icon: "character.book.closed") {
+                SettingsRow(title: "启用百度翻译", subtitle: "预览窗口中的翻译能力") {
+                    Toggle("", isOn: Binding(
+                        get: { appSettings.baiduTranslateEnabled },
+                        set: { appSettings.baiduTranslateEnabled = $0; try? modelContext.save() }
+                    ))
+                    .toggleStyle(.switch)
+                    .labelsHidden()
+                }
+
+                SettingsDivider()
+
                 HStack {
                     Text("免费额度：5万字/月")
                         .font(.system(size: 11))
@@ -943,70 +1556,92 @@ struct AdvancedSettingsView: View {
             }
 
             if appSettings.baiduTranslateEnabled {
-                Section("翻译配置") {
-                    TextField("App ID", text: Binding(
-                        get: { appSettings.baiduTranslateAppId },
-                        set: { appSettings.baiduTranslateAppId = $0; try? modelContext.save() }
-                    ))
-                    .textFieldStyle(.roundedBorder)
+                SettingsCard(title: "翻译配置", icon: "key") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        TextField("App ID", text: Binding(
+                            get: { appSettings.baiduTranslateAppId },
+                            set: { appSettings.baiduTranslateAppId = $0; try? modelContext.save() }
+                        ))
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 13))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.045)))
 
-                    SecureField("密钥", text: Binding(
-                        get: { appSettings.baiduTranslateSecretKey },
-                        set: { appSettings.baiduTranslateSecretKey = $0; try? modelContext.save() }
-                    ))
-                    .textFieldStyle(.roundedBorder)
+                        SecureField("密钥", text: Binding(
+                            get: { appSettings.baiduTranslateSecretKey },
+                            set: { appSettings.baiduTranslateSecretKey = $0; try? modelContext.save() }
+                        ))
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 13))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.045)))
 
-                    Toggle("高级版（支持并发请求）", isOn: Binding(
-                        get: { appSettings.baiduTranslateIsAdvanced },
-                        set: { appSettings.baiduTranslateIsAdvanced = $0; try? modelContext.save() }
-                    ))
-
-                    HStack {
-                        Button("验证配置") {
-                            verifyBaiduApi()
+                        SettingsRow(title: "高级版", subtitle: "支持并发请求") {
+                            Toggle("", isOn: Binding(
+                                get: { appSettings.baiduTranslateIsAdvanced },
+                                set: { appSettings.baiduTranslateIsAdvanced = $0; try? modelContext.save() }
+                            ))
+                            .toggleStyle(.switch)
+                            .labelsHidden()
                         }
-                        .disabled(appSettings.baiduTranslateAppId.isEmpty || appSettings.baiduTranslateSecretKey.isEmpty)
 
-                        if isVerifyingBaidu {
-                            ProgressView()
-                                .controlSize(.small)
-                        }
+                        HStack(spacing: 10) {
+                            Button {
+                                verifyBaiduApi()
+                            } label: {
+                                Label("验证配置", systemImage: "checkmark.seal")
+                            }
+                            .buttonStyle(SettingsActionButtonStyle(tone: .primary))
+                            .disabled(appSettings.baiduTranslateAppId.isEmpty || appSettings.baiduTranslateSecretKey.isEmpty)
 
-                        if let result = baiduVerifyResult {
-                            HStack(spacing: 4) {
-                                Image(systemName: result.isSuccess ? "checkmark.circle.fill" : "xmark.circle.fill")
-                                    .foregroundColor(result.isSuccess ? .green : .red)
-                                Text(result.message)
-                                    .font(.system(size: 12))
-                                    .foregroundColor(result.isSuccess ? .green : .secondary)
+                            if isVerifyingBaidu {
+                                ProgressView()
+                                    .controlSize(.small)
+                            }
+
+                            if let result = baiduVerifyResult {
+                                HStack(spacing: 4) {
+                                    Image(systemName: result.isSuccess ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                        .foregroundColor(result.isSuccess ? .green : .red)
+                                    Text(result.message)
+                                        .font(.system(size: 12))
+                                        .foregroundColor(result.isSuccess ? .green : .secondary)
+                                }
                             }
                         }
                     }
                 }
             }
 
-            Section("清除数据") {
-                Button("清除所有历史记录") {
-                    showingClearHistoryAlert = true
-                }
-                .foregroundColor(.red)
+            SettingsCard(title: "清除数据", icon: "trash") {
+                HStack(spacing: 10) {
+                    Button(role: .destructive) {
+                        showingClearHistoryAlert = true
+                    } label: {
+                        Label("清除所有历史记录", systemImage: "trash")
+                    }
+                    .buttonStyle(SettingsActionButtonStyle(tone: .destructive))
 
-                Button("清除缓存") {
-                    showingClearCacheAlert = true
+                    Button(role: .destructive) {
+                        showingClearCacheAlert = true
+                    } label: {
+                        Label("清除缓存", systemImage: "externaldrive.badge.xmark")
+                    }
+                    .buttonStyle(SettingsActionButtonStyle(tone: .destructive))
                 }
-                .foregroundColor(.red)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            Section("关于") {
-                HStack {
-                    Text("版本")
-                    Spacer()
-                    Text("1.2.0")
+            SettingsCard(title: "关于", icon: "info.circle") {
+                SettingsRow(title: "版本") {
+                    Text(PasteDeckVersion.display)
+                        .font(.system(size: 13, weight: .medium, design: .monospaced))
                         .foregroundColor(.secondary)
                 }
             }
         }
-        .formStyle(.grouped)
         .alert("确定要清除所有历史记录吗？", isPresented: $showingClearHistoryAlert) {
             Button("取消", role: .cancel) {}
             Button("清除", role: .destructive) {
