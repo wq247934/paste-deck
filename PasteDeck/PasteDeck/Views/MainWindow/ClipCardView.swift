@@ -57,11 +57,17 @@ struct AsyncLocalImage: View {
     }
 }
 
+enum CardContextMenuMode: Equatable {
+    case history
+    case cleanupQueue
+}
+
 struct ClipCardView: View, Equatable {
     let item: ClipboardItemSnapshot
     let isSelected: Bool
     var isMultiSelected: Bool = false
     var showPinOption: Bool = true
+    var contextMenuMode: CardContextMenuMode = .history
     let cardSize: CardSize
     let collections: [ClipboardCollectionSnapshot]
     let onCopy: () -> Void
@@ -71,6 +77,7 @@ struct ClipCardView: View, Equatable {
     let onToggleCollection: (UUID) -> Void
     let onSaveTitle: (String?) -> Void
     let onDelete: () -> Void
+    var onRemoveFromCleanupQueue: (() -> Void)? = nil
 
     @State private var isEditingTitle = false
     @State private var titleDraft = ""
@@ -82,6 +89,7 @@ struct ClipCardView: View, Equatable {
             && lhs.isSelected == rhs.isSelected
             && lhs.isMultiSelected == rhs.isMultiSelected
             && lhs.showPinOption == rhs.showPinOption
+            && lhs.contextMenuMode == rhs.contextMenuMode
             && lhs.cardSize == rhs.cardSize
             && lhs.item.contentType == rhs.item.contentType
             && lhs.item.textContent == rhs.item.textContent
@@ -139,6 +147,23 @@ struct ClipCardView: View, Equatable {
         }
         .shadow(color: .black.opacity(0.1), radius: isSelected ? 8 : 2, x: 0, y: isSelected ? 4 : 1)
         .contextMenu {
+            cardContextMenu
+        }
+        .alert("重命名", isPresented: $isEditingTitle) {
+            TextField("别名", text: $titleDraft)
+            Button("取消", role: .cancel) {}
+            Button("保存") {
+                saveTitle()
+            }
+        } message: {
+            Text("原始剪贴板内容不会被修改。")
+        }
+    }
+
+    @ViewBuilder
+    private var cardContextMenu: some View {
+        switch contextMenuMode {
+        case .history:
             CardContextMenu(
                 item: item,
                 collections: collections,
@@ -154,15 +179,21 @@ struct ClipCardView: View, Equatable {
                 onClearTitle: { onSaveTitle(nil) },
                 onDelete: onDelete
             )
-        }
-        .alert("重命名", isPresented: $isEditingTitle) {
-            TextField("别名", text: $titleDraft)
-            Button("取消", role: .cancel) {}
-            Button("保存") {
-                saveTitle()
-            }
-        } message: {
-            Text("原始剪贴板内容不会被修改。")
+        case .cleanupQueue:
+            CardContextMenu(
+                item: item,
+                collections: collections,
+                showPinOption: false,
+                collectionMenuTitle: "加入收藏",
+                onCopy: onCopy,
+                onPastePlain: nil,
+                onTogglePinned: onTogglePinned,
+                onToggleCollection: onToggleCollection,
+                onClearTitle: { onSaveTitle(nil) },
+                onRemoveFromCleanupQueue: onRemoveFromCleanupQueue,
+                showDeleteOption: false,
+                onDelete: onDelete
+            )
         }
     }
 
@@ -368,12 +399,15 @@ struct CardContextMenu: View {
     let item: ClipboardItemSnapshot
     let collections: [ClipboardCollectionSnapshot]
     var showPinOption: Bool = true
+    var collectionMenuTitle = "添加到收藏夹"
     var onEditTitle: (() -> Void)?
     let onCopy: () -> Void
     var onPastePlain: (() -> Void)? = nil
     let onTogglePinned: () -> Void
     let onToggleCollection: (UUID) -> Void
     let onClearTitle: () -> Void
+    var onRemoveFromCleanupQueue: (() -> Void)? = nil
+    var showDeleteOption = true
     let onDelete: () -> Void
 
     var body: some View {
@@ -406,26 +440,41 @@ struct CardContextMenu: View {
         }
 
         // 收藏夹子菜单
-        Menu("添加到收藏夹") {
-            ForEach(collections, id: \.id) { collection in
-                let isInCollection = item.collectionIDs.contains(collection.id)
-                Button(action: {
-                    onToggleCollection(collection.id)
-                }) {
-                    HStack {
-                        Text(collection.name)
-                        if isInCollection {
-                            Image(systemName: "checkmark")
+        if collections.isEmpty {
+            Button(collectionMenuTitle) {}
+                .disabled(true)
+        } else {
+            Menu(collectionMenuTitle) {
+                ForEach(collections, id: \.id) { collection in
+                    let isInCollection = item.collectionIDs.contains(collection.id)
+                    Button(action: {
+                        onToggleCollection(collection.id)
+                    }) {
+                        HStack {
+                            Text(collection.name)
+                            if isInCollection {
+                                Image(systemName: "checkmark")
+                            }
                         }
                     }
                 }
             }
         }
 
-        Divider()
+        if let onRemoveFromCleanupQueue {
+            Divider()
 
-        Button("删除", role: .destructive) {
-            onDelete()
+            Button("移出清理队列") {
+                onRemoveFromCleanupQueue()
+            }
+        }
+
+        if showDeleteOption {
+            Divider()
+
+            Button("删除", role: .destructive) {
+                onDelete()
+            }
         }
     }
 }

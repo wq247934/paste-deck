@@ -49,12 +49,14 @@ struct PasteDeckApp: App {
 // MARK: - App Delegate
 
 /// Main application delegate handling lifecycle, status bar, and services
-class AppDelegate: NSObject, NSApplicationDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var statusItem: NSStatusItem?
     private var clipboardMonitor: ClipboardMonitor?
     private var hotKeyManager: HotKeyManager?
     private var mainPanelController: MainPanelController?
     private var settingsWindow: NSWindow?
+    private var settingsWindowFrame: NSRect?
+    private var settingsKeyMonitor: Any?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Setup UI first (status bar is always available)
@@ -66,6 +68,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         hotKeyManager?.unregister()
+        if let settingsKeyMonitor {
+            NSEvent.removeMonitor(settingsKeyMonitor)
+        }
     }
 
     // MARK: - Status Bar Setup
@@ -150,6 +155,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // pay the SwiftUI/SwiftData history-loading cost.
     }
 
+    func applicationDidResignActive(_ notification: Notification) {
+        hideSettingsWindowAfterFocusChange()
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        false
+    }
+
     // MARK: - Menu Actions
 
     @objc private func openMainPanel() {
@@ -170,11 +183,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let window = NSWindow(contentViewController: hostingController)
         window.title = "PasteDeck 设置"
         window.styleMask = [.titled, .closable, .miniaturizable]
-        window.center()
+        window.delegate = self
         window.isReleasedWhenClosed = false
+        window.setContentSize(NSSize(width: 760, height: 520))
+        if let settingsWindowFrame {
+            window.setFrame(settingsWindowFrame, display: false)
+        } else {
+            window.center()
+        }
+        settingsWindow = window
+        installSettingsKeyMonitorIfNeeded()
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
-        settingsWindow = window
 
         // 确保有"窗口"菜单包含"关闭"项，使 ⌘+W 可用
         ensureWindowMenuExists()
@@ -229,6 +249,69 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             NSApp.mainMenu?.addItem(menuItem)
         }
+    }
+
+    func windowDidResignKey(_ notification: Notification) {
+        guard notification.object as? NSWindow === settingsWindow else { return }
+        hideSettingsWindowAfterFocusChange()
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        guard let closingWindow = notification.object as? NSWindow,
+              closingWindow === settingsWindow else { return }
+        releaseSettingsWindow(closingWindow)
+    }
+
+    private func hideSettingsWindowAfterFocusChange() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let settingsWindow, settingsWindow.isVisible else { return }
+            if settingsWindow.isKeyWindow {
+                return
+            }
+
+            if settingsWindow.attachedSheet?.isKeyWindow == true {
+                return
+            }
+
+            // 点击桌面/其它窗口会让 LSUIElement 应用失活，但普通 NSWindow 仍保持 visible。
+            // 下次全局快捷键激活应用时，visible 的设置窗口会被系统一起带到前台；
+            // 因此在失焦后隐藏并释放 SwiftUI 内容，避免后台 @Query 继续参与历史数据刷新。
+            settingsWindowFrame = settingsWindow.frame
+            settingsWindow.orderOut(nil)
+            releaseSettingsWindow(settingsWindow)
+        }
+    }
+
+    private func releaseSettingsWindow(_ window: NSWindow) {
+        settingsWindowFrame = window.frame
+        window.delegate = nil
+        window.contentViewController = nil
+        if window === settingsWindow {
+            settingsWindow = nil
+        }
+    }
+
+    private func installSettingsKeyMonitorIfNeeded() {
+        guard settingsKeyMonitor == nil else { return }
+
+        settingsKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return event }
+            return self.handleSettingsKey(event)
+        }
+    }
+
+    private func handleSettingsKey(_ event: NSEvent) -> NSEvent? {
+        guard let settingsWindow, settingsWindow.isVisible else { return event }
+        guard NSApp.keyWindow === settingsWindow else { return event }
+        guard settingsWindow.attachedSheet == nil else { return event }
+
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if event.keyCode == 53 || (event.keyCode == 13 && modifiers == .command) {
+            settingsWindow.performClose(nil)
+            return nil
+        }
+
+        return event
     }
 }
 

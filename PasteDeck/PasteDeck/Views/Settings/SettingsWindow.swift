@@ -155,11 +155,11 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
 
 private enum PasteDeckVersion {
     static var short: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.2.5"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.3.0"
     }
 
     static var build: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "125"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "130"
     }
 
     static var display: String {
@@ -790,15 +790,88 @@ struct HotkeyRecorderView: NSViewRepresentable {
 
 // MARK: - History Settings
 
+private enum CleanupPreviewKind: Equatable {
+    /// 清理最早的普通记录，候选数量由用户在设置页 Stepper 中选择。
+    case oldest(count: Int)
+    /// 清理指定天数前的普通记录，候选范围由记录创建时间决定。
+    case olderThan(days: Int)
+    /// 清理最早的普通记录，直到普通历史估算占用不超过目标容量。
+    case exceedingStorage(limitMegabytes: Int)
+
+    var title: String {
+        switch self {
+        case .oldest(let count):
+            return "清理最早 \(count) 条记录"
+        case .olderThan(let days):
+            return "清理 \(days) 天前记录"
+        case .exceedingStorage(let limitMegabytes):
+            return "保留 \(Self.storageLimitLabel(limitMegabytes)) 数据"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .oldest:
+            return "仅包含未置顶、未加入收藏夹的普通记录。"
+        case .olderThan:
+            return "仅包含超过时间条件且未被保护的普通记录。"
+        case .exceedingStorage:
+            return "按最早记录优先清理，直到普通历史估算占用不超过目标容量。"
+        }
+    }
+
+    var emptyMessage: String {
+        switch self {
+        case .oldest:
+            return "当前没有符合条数清理条件的普通记录。"
+        case .olderThan:
+            return "当前没有超过该时间条件的普通记录。"
+        case .exceedingStorage:
+            return "当前普通历史占用没有超过目标容量。"
+        }
+    }
+
+    static func storageLimitLabel(_ megabytes: Int) -> String {
+        if megabytes >= 1000, megabytes % 1000 == 0 {
+            return "\(megabytes / 1000) GB"
+        }
+
+        return "\(megabytes) MB"
+    }
+}
+
+private struct CleanupPreviewRequest: Identifiable, Equatable {
+    /// 本次清理预览会话的唯一标识，用于让 sheet 对相同条件的重复打开也能刷新。
+    let id: UUID
+    /// 用户触发的清理策略，决定标题、空状态和候选数据来源。
+    let kind: CleanupPreviewKind
+
+    init(kind: CleanupPreviewKind) {
+        self.id = UUID()
+        self.kind = kind
+    }
+}
+
+private struct HistorySettingsSnapshot: Equatable, Sendable {
+    /// 当前历史记录总数，只用于设置页状态展示，避免切页时拉取全部 ClipboardItem。
+    let itemCount: Int
+    /// 当前最早记录时间，只取升序第一条，避免设置页持有全量历史对象。
+    let earliestDate: Date?
+    /// 图片等缓存文件占用，用于历史页展示缓存状态。
+    let cacheBytes: Int
+}
+
 struct HistorySettingsView: View {
     @Environment(\.modelContext) private var modelContext
-    @Query(sort: \ClipboardItem.createdAt, order: .reverse) private var items: [ClipboardItem]
+    @Query(sort: \FavoriteCollection.sortOrder) private var collections: [FavoriteCollection]
     @Query private var settings: [AppSettings]
 
     @State private var cleanupCount = 100
     @State private var cleanupDays = 30
-    @State private var showCleanupCountAlert = false
-    @State private var showCleanupDaysAlert = false
+    @State private var cleanupStorageLimitMegabytes = 500
+    @State private var cleanupPreviewRequest: CleanupPreviewRequest?
+    @State private var historySnapshot: HistorySettingsSnapshot?
+    @State private var isLoadingHistorySnapshot = false
 
     private var appSettings: AppSettings {
         if let existing = settings.first {
@@ -811,20 +884,36 @@ struct HistorySettingsView: View {
     }
 
     /// 当前记录条数
-    private var totalItemCount: Int {
-        items.count
+    private var totalItemCountText: String {
+        historySnapshot.map { "\($0.itemCount) 条" } ?? "读取中"
     }
 
     /// 最早记录的日期
-    private var earliestDate: Date? {
-        items.last?.createdAt
+    private var earliestDateText: String {
+        guard let historySnapshot else { return "读取中" }
+        return historySnapshot.earliestDate.map(dateFormatter.string(from:)) ?? "无记录"
+    }
+
+    private var cacheSizeText: String {
+        historySnapshot.map { formatBytes($0.cacheBytes) } ?? "读取中"
+    }
+
+    private var collectionSnapshots: [ClipboardCollectionSnapshot] {
+        collections.map {
+            ClipboardCollectionSnapshot(
+                id: $0.id,
+                name: $0.name,
+                sortOrder: $0.sortOrder,
+                isDefault: $0.isDefault
+            )
+        }
     }
 
     var body: some View {
         SettingsContentStack {
             SettingsCard(title: "当前状态", icon: "chart.bar") {
                 SettingsRow(title: "记录条数") {
-                    Text("\(totalItemCount) 条")
+                    Text(totalItemCountText)
                         .font(.system(size: 13, weight: .medium, design: .monospaced))
                         .foregroundColor(.secondary)
                 }
@@ -832,7 +921,7 @@ struct HistorySettingsView: View {
                 SettingsDivider()
 
                 SettingsRow(title: "最早记录") {
-                    Text(earliestDate.map(dateFormatter.string(from:)) ?? "无记录")
+                    Text(earliestDateText)
                         .font(.system(size: 13))
                         .foregroundColor(.secondary)
                 }
@@ -840,7 +929,7 @@ struct HistorySettingsView: View {
                 SettingsDivider()
 
                 SettingsRow(title: "缓存占用") {
-                    Text(formatBytes(CacheManager().getTotalCacheSize()))
+                    Text(cacheSizeText)
                         .font(.system(size: 13, weight: .medium, design: .monospaced))
                         .foregroundColor(.secondary)
                 }
@@ -890,16 +979,16 @@ struct HistorySettingsView: View {
             }
 
             SettingsCard(title: "手动清理", icon: "trash") {
-                SettingsRow(title: "清理最早记录") {
+                SettingsRow(title: "清理最早记录", subtitle: "先预览普通记录队列，再确认删除") {
                     HStack(spacing: 10) {
                         Stepper("", value: $cleanupCount, in: 1...1000, step: 10)
                             .labelsHidden()
                         Text("\(cleanupCount) 条")
                             .font(.system(size: 12, design: .monospaced))
                             .foregroundColor(.secondary)
-                            .frame(width: 64, alignment: .trailing)
+                            .frame(width: 86, alignment: .trailing)
                         Button(role: .destructive) {
-                            showCleanupCountAlert = true
+                            presentCleanupPreview(kind: .oldest(count: cleanupCount))
                         } label: {
                             Label("清理", systemImage: "trash")
                         }
@@ -909,16 +998,35 @@ struct HistorySettingsView: View {
 
                 SettingsDivider()
 
-                SettingsRow(title: "按时间清理") {
+                SettingsRow(title: "按时间清理", subtitle: "列出超过保留天数的普通记录") {
                     HStack(spacing: 10) {
                         Stepper("", value: $cleanupDays, in: 1...365, step: 7)
                             .labelsHidden()
                         Text("\(cleanupDays) 天前")
                             .font(.system(size: 12))
                             .foregroundColor(.secondary)
-                            .frame(width: 70, alignment: .trailing)
+                            .frame(width: 86, alignment: .trailing)
                         Button(role: .destructive) {
-                            showCleanupDaysAlert = true
+                            presentCleanupPreview(kind: .olderThan(days: cleanupDays))
+                        } label: {
+                            Label("清理", systemImage: "trash")
+                        }
+                        .buttonStyle(SettingsActionButtonStyle(tone: .destructive))
+                    }
+                }
+
+                SettingsDivider()
+
+                SettingsRow(title: "按容量清理", subtitle: "列出超出目标容量的最早普通记录") {
+                    HStack(spacing: 10) {
+                        Stepper("", value: $cleanupStorageLimitMegabytes, in: 100...10000, step: 100)
+                            .labelsHidden()
+                        Text(CleanupPreviewKind.storageLimitLabel(cleanupStorageLimitMegabytes))
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundColor(.secondary)
+                            .frame(width: 86, alignment: .trailing)
+                        Button(role: .destructive) {
+                            presentCleanupPreview(kind: .exceedingStorage(limitMegabytes: cleanupStorageLimitMegabytes))
                         } label: {
                             Label("清理", systemImage: "trash")
                         }
@@ -927,45 +1035,57 @@ struct HistorySettingsView: View {
                 }
             }
         }
-        .alert("确定清理最早的 \(cleanupCount) 条记录吗？", isPresented: $showCleanupCountAlert) {
-            Button("取消", role: .cancel) {}
-            Button("清理", role: .destructive) {
-                cleanupOldestItems(count: cleanupCount)
-            }
+        .sheet(item: $cleanupPreviewRequest) { request in
+            CleanupPreviewSheet(
+                request: request,
+                collections: collectionSnapshots
+            )
         }
-        .alert("确定清理 \(cleanupDays) 天前的所有记录吗？", isPresented: $showCleanupDaysAlert) {
-            Button("取消", role: .cancel) {}
-            Button("清理", role: .destructive) {
-                cleanupItemsOlderThan(days: cleanupDays)
-            }
+        .task {
+            refreshHistorySnapshot()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .clipboardDataChanged)) { _ in
+            refreshHistorySnapshot()
         }
     }
 
     // MARK: - Cleanup Methods
 
-    private func cleanupOldestItems(count: Int) {
-        let allItems = items
-            .filter(\.isCleanupEligible)
-            .sorted(by: { $0.createdAt < $1.createdAt })
-        let toDelete = Array(allItems.prefix(count))
-        for item in toDelete {
-            modelContext.delete(item)
-        }
-        try? modelContext.save()
-        NotificationCenter.default.post(name: .clipboardDataChanged, object: nil)
+    private func presentCleanupPreview(kind: CleanupPreviewKind) {
+        cleanupPreviewRequest = CleanupPreviewRequest(kind: kind)
     }
 
-    private func cleanupItemsOlderThan(days: Int) {
-        let cutoff = Calendar.current.date(byAdding: .day, value: -days, to: Date()) ?? Date()
-        let descriptor = FetchDescriptor<ClipboardItem>(
-            predicate: #Predicate { $0.createdAt < cutoff }
-        )
-        guard let oldItems = try? modelContext.fetch(descriptor) else { return }
-        for item in oldItems where item.isCleanupEligible {
-            modelContext.delete(item)
+    private func refreshHistorySnapshot() {
+        guard !isLoadingHistorySnapshot else { return }
+        isLoadingHistorySnapshot = true
+
+        Task {
+            let snapshot = await Task.detached(priority: .userInitiated) {
+                Self.fetchHistorySettingsSnapshot()
+            }.value
+
+            await MainActor.run {
+                historySnapshot = snapshot
+                isLoadingHistorySnapshot = false
+            }
         }
-        try? modelContext.save()
-        NotificationCenter.default.post(name: .clipboardDataChanged, object: nil)
+    }
+
+    private nonisolated static func fetchHistorySettingsSnapshot() -> HistorySettingsSnapshot {
+        let context = ModelContext(AppModelContainer.container)
+        let count = (try? context.fetchCount(FetchDescriptor<ClipboardItem>())) ?? 0
+
+        var earliestDescriptor = FetchDescriptor<ClipboardItem>(
+            sortBy: [SortDescriptor(\.createdAt)]
+        )
+        earliestDescriptor.fetchLimit = 1
+        let earliestDate = (try? context.fetch(earliestDescriptor).first)?.createdAt
+
+        return HistorySettingsSnapshot(
+            itemCount: count,
+            earliestDate: earliestDate,
+            cacheBytes: CacheManager().getTotalCacheSize()
+        )
     }
 
     // MARK: - Formatters
@@ -981,6 +1101,544 @@ struct HistorySettingsView: View {
         let formatter = ByteCountFormatter()
         formatter.countStyle = .file
         return formatter.string(fromByteCount: Int64(bytes))
+    }
+}
+
+private struct CleanupPreviewSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
+
+    /// 用户本次触发清理时形成的预览请求，提供标题和初始候选范围。
+    let request: CleanupPreviewRequest
+    /// 当前可用收藏夹快照，用于右键把候选记录转入收藏保护范围。
+    let collections: [ClipboardCollectionSnapshot]
+
+    @State private var queuedItems: [ClipboardItemSnapshot]
+    @State private var selectedItemID: UUID?
+    @State private var previewController: PreviewWindowController?
+    @State private var hasLoadedCandidates = false
+
+    private let cardSize: CardSize = .medium
+    private let gridColumnCount = 4
+
+    private var gridColumns: [GridItem] {
+        Array(
+            repeating:
+            GridItem(
+                .fixed(cardSize.width),
+                spacing: 12,
+                alignment: .top
+            ),
+            count: gridColumnCount
+        )
+    }
+
+    private var removedCount: Int {
+        max(0, loadedCandidateCount - queuedItems.count)
+    }
+
+    private var loadedCandidateCount: Int {
+        hasLoadedCandidates ? queuedItems.count + removedItemCount : 0
+    }
+
+    @State private var removedItemCount = 0
+
+    private var statusText: String {
+        hasLoadedCandidates ? "\(queuedItems.count) 条" : "读取中"
+    }
+
+    init(request: CleanupPreviewRequest, collections: [ClipboardCollectionSnapshot]) {
+        self.request = request
+        self.collections = collections
+        _queuedItems = State(initialValue: [])
+        _selectedItemID = State(initialValue: nil)
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            header
+
+            Divider()
+
+            content
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            Divider()
+
+            footer
+        }
+        .frame(width: 760, height: 520)
+        .background(.thinMaterial)
+        .background(
+            CleanupPreviewKeyboardMonitor(
+                onMovePrevious: { moveSelection(by: -1) },
+                onMoveNext: { moveSelection(by: 1) },
+                onMoveUp: { moveSelection(by: -gridColumnCount) },
+                onMoveDown: { moveSelection(by: gridColumnCount) },
+                onPreview: { previewSelectedItem() },
+                onClose: { dismiss() }
+            )
+        )
+        .task(id: request.id) {
+            loadCandidates()
+        }
+    }
+
+    private var header: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "trash")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(.red)
+                .frame(width: 34, height: 34)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color.red.opacity(0.12)))
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(request.kind.title)
+                    .font(.system(size: 18, weight: .semibold))
+                Text(request.kind.subtitle)
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer()
+
+            SettingsStatusPill(text: statusText, color: .red)
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 16)
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if !hasLoadedCandidates {
+            loadingState
+        } else if queuedItems.isEmpty {
+            emptyState
+        } else {
+            ScrollViewReader { scrollProxy in
+                ScrollView {
+                    LazyVGrid(columns: gridColumns, alignment: .center, spacing: 12) {
+                        ForEach(Array(queuedItems.enumerated()), id: \.element.id) { index, item in
+                            ClipCardView(
+                                item: item,
+                                isSelected: selectedItemID == item.id,
+                                contextMenuMode: .cleanupQueue,
+                                cardSize: cardSize,
+                                collections: collections,
+                                onCopy: {
+                                    copyToPasteboard(id: item.id)
+                                },
+                                onTogglePinned: {},
+                                onToggleFavorite: {
+                                    addToDefaultFavorite(id: item.id)
+                                },
+                                onToggleCollection: { collectionID in
+                                    addToCollection(itemID: item.id, collectionID: collectionID)
+                                },
+                                onSaveTitle: { _ in },
+                                onDelete: {},
+                                onRemoveFromCleanupQueue: {
+                                    removeFromQueue(id: item.id)
+                                }
+                            )
+                            .equatable()
+                            .onTapGesture {
+                                selectedItemID = item.id
+                            }
+                            .id(item.id)
+                        }
+                    }
+                    .padding(18)
+                }
+                .scrollIndicators(.visible)
+                .onChange(of: selectedItemID) { _, newValue in
+                    guard let newValue else { return }
+                    withAnimation(.easeOut(duration: 0.12)) {
+                        scrollProxy.scrollTo(newValue, anchor: .center)
+                    }
+                }
+            }
+        }
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 12) {
+            Image(systemName: loadedCandidateCount == 0 ? "checkmark.circle" : "tray")
+                .font(.system(size: 42, weight: .medium))
+                .foregroundColor(.secondary)
+
+            Text(loadedCandidateCount == 0 ? "没有可清理记录" : "清理队列已清空")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundColor(.primary)
+
+            Text(loadedCandidateCount == 0 ? request.kind.emptyMessage : "本次不会删除任何记录。")
+                .font(.system(size: 12))
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var loadingState: some View {
+        VStack(spacing: 12) {
+            ProgressView()
+                .controlSize(.small)
+
+            Text("正在读取清理队列")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundColor(.primary)
+
+            Text(request.kind.subtitle)
+                .font(.system(size: 12))
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var footer: some View {
+        HStack(spacing: 10) {
+            if removedCount > 0 {
+                Text("已移出 \(removedCount) 条")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer()
+
+            Button("取消") {
+                dismiss()
+            }
+            .buttonStyle(SettingsActionButtonStyle())
+
+            Button(role: .destructive) {
+                confirmCleanup()
+            } label: {
+                Label("确认清理", systemImage: "trash")
+            }
+            .buttonStyle(SettingsActionButtonStyle(tone: .destructive))
+            .disabled(!hasLoadedCandidates || queuedItems.isEmpty)
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 14)
+    }
+
+    private func moveSelection(by offset: Int) {
+        guard !queuedItems.isEmpty else {
+            selectedItemID = nil
+            return
+        }
+
+        let currentIndex = selectedItemID.flatMap { selectedItemID in
+            queuedItems.firstIndex { $0.id == selectedItemID }
+        } ?? 0
+        let nextIndex = max(0, min(queuedItems.count - 1, currentIndex + offset))
+        selectedItemID = queuedItems[nextIndex].id
+    }
+
+    private func loadCandidates() {
+        hasLoadedCandidates = false
+        queuedItems = []
+        selectedItemID = nil
+        removedItemCount = 0
+
+        let kind = request.kind
+        Task {
+            let candidates = await Task.detached(priority: .userInitiated) {
+                Self.cleanupCandidateSnapshots(for: kind)
+            }.value
+
+            await MainActor.run {
+                queuedItems = candidates
+                selectedItemID = candidates.first?.id
+                hasLoadedCandidates = true
+            }
+        }
+    }
+
+    private func previewSelectedItem() {
+        guard let selectedItemID else { return }
+        guard let item = fetchItem(id: selectedItemID) else {
+            removeFromQueue(id: selectedItemID)
+            return
+        }
+
+        let controller = previewController ?? PreviewWindowController()
+        previewController = controller
+        controller.show(item: item, onClose: {})
+    }
+
+    private func copyToPasteboard(id: UUID) {
+        guard let item = fetchItem(id: id) else {
+            removeFromQueue(id: id)
+            return
+        }
+
+        PasteService.shared.copyToPasteboard(item)
+    }
+
+    private func addToDefaultFavorite(id: UUID) {
+        let collection = ensureDefaultCollection()
+        addItem(id, to: collection)
+    }
+
+    private func addToCollection(itemID: UUID, collectionID: UUID) {
+        guard let collection = fetchCollection(id: collectionID) else { return }
+        addItem(itemID, to: collection)
+    }
+
+    private func addItem(_ itemID: UUID, to collection: FavoriteCollection) {
+        guard let item = fetchItem(id: itemID) else {
+            removeFromQueue(id: itemID)
+            return
+        }
+
+        if item.collections == nil {
+            item.collections = []
+        }
+
+        guard item.collections?.contains(where: { $0.id == collection.id }) != true else {
+            removeFromQueue(id: itemID)
+            return
+        }
+
+        item.collections?.append(collection)
+        try? modelContext.save()
+        removeFromQueue(id: itemID)
+        postItemUpdated(id: itemID)
+    }
+
+    private func confirmCleanup() {
+        let queuedIDs = Set(queuedItems.map(\.id))
+        guard !queuedIDs.isEmpty else { return }
+
+        previewController?.performClose()
+        for itemID in queuedIDs {
+            guard let item = fetchItem(id: itemID), item.isCleanupEligible else { continue }
+            modelContext.delete(item)
+        }
+        try? modelContext.save()
+        NotificationCenter.default.post(name: .clipboardDataChanged, object: nil)
+        dismiss()
+    }
+
+    private func removeFromQueue(id: UUID) {
+        guard let removedIndex = queuedItems.firstIndex(where: { $0.id == id }) else { return }
+        queuedItems.remove(at: removedIndex)
+        removedItemCount += 1
+
+        guard selectedItemID == id else { return }
+        if queuedItems.isEmpty {
+            selectedItemID = nil
+        } else {
+            let nextIndex = min(removedIndex, queuedItems.count - 1)
+            selectedItemID = queuedItems[nextIndex].id
+        }
+    }
+
+    private func fetchItem(id: UUID) -> ClipboardItem? {
+        let descriptor = FetchDescriptor<ClipboardItem>(
+            predicate: #Predicate { $0.id == id }
+        )
+        return try? modelContext.fetch(descriptor).first
+    }
+
+    private func fetchCollection(id: UUID) -> FavoriteCollection? {
+        let descriptor = FetchDescriptor<FavoriteCollection>(
+            predicate: #Predicate { $0.id == id }
+        )
+        return try? modelContext.fetch(descriptor).first
+    }
+
+    private func ensureDefaultCollection() -> FavoriteCollection {
+        let descriptor = FetchDescriptor<FavoriteCollection>(
+            predicate: #Predicate { $0.isDefault == true }
+        )
+        if let collection = try? modelContext.fetch(descriptor).first {
+            return collection
+        }
+
+        let collection = FavoriteCollection(name: "收藏", sortOrder: 0, isDefault: true)
+        modelContext.insert(collection)
+        try? modelContext.save()
+        return collection
+    }
+
+    private func postItemUpdated(id: UUID) {
+        NotificationCenter.default.post(
+            name: .clipboardDataChanged,
+            object: nil,
+            userInfo: [
+                ClipboardDataChangeNotification.itemIDKey: id,
+                ClipboardDataChangeNotification.changeKindKey: ClipboardDataChangeKind.updated.rawValue
+            ]
+        )
+    }
+
+    private nonisolated static func cleanupCandidateSnapshots(for kind: CleanupPreviewKind) -> [ClipboardItemSnapshot] {
+        let context = ModelContext(AppModelContainer.container)
+        let items: [ClipboardItem]
+
+        switch kind {
+        case .oldest(let count):
+            let descriptor = FetchDescriptor<ClipboardItem>(
+                predicate: #Predicate { item in
+                    item.isPinned == false
+                },
+                sortBy: [SortDescriptor(\.createdAt)]
+            )
+            items = Array(((try? context.fetch(descriptor)) ?? [])
+                .filter(\.isCleanupEligible)
+                .prefix(count))
+        case .olderThan(let days):
+            let cutoff = Calendar.current.date(byAdding: .day, value: -days, to: Date()) ?? Date()
+            let descriptor = FetchDescriptor<ClipboardItem>(
+                predicate: #Predicate { item in
+                    item.createdAt < cutoff && item.isPinned == false
+                },
+                sortBy: [SortDescriptor(\.createdAt)]
+            )
+            items = ((try? context.fetch(descriptor)) ?? [])
+                .filter(\.isCleanupEligible)
+        case .exceedingStorage(let limitMegabytes):
+            let limitBytes = Int64(limitMegabytes) * 1024 * 1024
+            let descriptor = FetchDescriptor<ClipboardItem>(
+                sortBy: [SortDescriptor(\.createdAt)]
+            )
+            let allItems = (try? context.fetch(descriptor)) ?? []
+            var remainingBytes = allItems.reduce(Int64(0)) { total, item in
+                total + estimatedStoredBytes(for: item)
+            }
+            var storageCandidates: [ClipboardItem] = []
+
+            for item in allItems where item.isCleanupEligible {
+                guard remainingBytes > limitBytes else { break }
+                let itemBytes = estimatedStoredBytes(for: item)
+                guard itemBytes > 0 else { continue }
+                storageCandidates.append(item)
+                remainingBytes -= itemBytes
+            }
+
+            items = storageCandidates
+        }
+
+        return items.map(ClipboardItemSnapshot.init)
+    }
+
+    private nonisolated static func estimatedStoredBytes(for item: ClipboardItem) -> Int64 {
+        let sourceBytes = byteCount(item.sourceApp)
+
+        switch item.contentType {
+        case .image:
+            return Int64(max(item.fileSize, 0)) + sourceBytes
+        case .file:
+            return byteCount(item.filePath) + byteCount(item.fileName) + sourceBytes
+        case .text, .link, .markdown, .json:
+            return byteCount(item.textContent) + Int64(item.rtfData?.count ?? 0) + sourceBytes
+        case .color:
+            return byteCount(item.colorHex) + byteCount(item.textContent) + sourceBytes
+        }
+    }
+
+    private nonisolated static func byteCount(_ text: String?) -> Int64 {
+        Int64(text?.utf8.count ?? 0)
+    }
+}
+
+private struct CleanupPreviewKeyboardMonitor: NSViewRepresentable {
+    let onMovePrevious: () -> Void
+    let onMoveNext: () -> Void
+    let onMoveUp: () -> Void
+    let onMoveDown: () -> Void
+    let onPreview: () -> Void
+    let onClose: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = CleanupPreviewFocusView()
+        context.coordinator.view = view
+        context.coordinator.startMonitor()
+        requestFocus(for: view)
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.parent = self
+        context.coordinator.view = nsView
+        requestFocus(for: nsView)
+    }
+
+    private func requestFocus(for view: NSView) {
+        DispatchQueue.main.async {
+            view.window?.makeFirstResponder(view)
+        }
+    }
+
+    final class CleanupPreviewFocusView: NSView {
+        override var acceptsFirstResponder: Bool { true }
+    }
+
+    final class Coordinator {
+        var parent: CleanupPreviewKeyboardMonitor
+        weak var view: NSView?
+        private var monitor: Any?
+
+        init(_ parent: CleanupPreviewKeyboardMonitor) {
+            self.parent = parent
+        }
+
+        func startMonitor() {
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                guard let self else { return event }
+                return self.handleKey(event)
+            }
+        }
+
+        deinit {
+            if let monitor {
+                NSEvent.removeMonitor(monitor)
+            }
+        }
+
+        private func handleKey(_ event: NSEvent) -> NSEvent? {
+            guard view?.window?.isKeyWindow == true else { return event }
+            guard !Self.isEditingText(in: view?.window) else { return event }
+
+            let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            if event.keyCode == 13 && modifiers == .command {
+                parent.onClose()
+                return nil
+            }
+
+            switch event.keyCode {
+            case 49:
+                parent.onPreview()
+                return nil
+            case 53:
+                parent.onClose()
+                return nil
+            case 123:
+                parent.onMovePrevious()
+                return nil
+            case 124:
+                parent.onMoveNext()
+                return nil
+            case 126:
+                parent.onMoveUp()
+                return nil
+            case 125:
+                parent.onMoveDown()
+                return nil
+            default:
+                return event
+            }
+        }
+
+        private static func isEditingText(in window: NSWindow?) -> Bool {
+            guard let firstResponder = window?.firstResponder else { return false }
+            return firstResponder is NSTextView || firstResponder is NSTextField
+        }
     }
 }
 
