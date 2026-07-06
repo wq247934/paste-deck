@@ -44,6 +44,7 @@ struct MainPanelView: View {
 
     @State private var searchText = ""
     @State private var selectedFilter: ClipboardFilterOption = .all
+    @State private var selectedSourceApp: String?
     @State private var selectedItemID: UUID?
     @State private var selectedIndex = 0
 
@@ -126,6 +127,14 @@ struct MainPanelView: View {
         cardFocusRequest += 1
     }
 
+    private func setSourceAppFilter(_ sourceApp: String?) {
+        let normalizedSourceApp = ClipboardItem.normalizedSourceAppName(sourceApp)
+        selectedSourceApp = normalizedSourceApp
+        historyStore.setSourceAppFilter(normalizedSourceApp)
+        clearMultiSelection()
+        selectDefaultCard()
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             // 顶部搜索和筛选
@@ -153,6 +162,12 @@ struct MainPanelView: View {
                                 clearMultiSelection()
                             }
                         }
+
+                    SourceAppFilterMenu(
+                        selectedSourceApp: selectedSourceApp,
+                        sourceApps: historyStore.sourceApps,
+                        onSelect: setSourceAppFilter
+                    )
 
                     MainPanelSettingsButton {
                         openSettingsHandler?()
@@ -234,6 +249,11 @@ struct MainPanelView: View {
         .onChange(of: selectedFilter) { _, _ in
             historyStore.setFilter(selectedFilter)
         }
+        .onChange(of: historyStore.sourceApps) { _, sourceApps in
+            if let selectedSourceApp, !sourceApps.contains(selectedSourceApp) {
+                setSourceAppFilter(nil)
+            }
+        }
         .onReceive(historyStore.$filteredItems) { items in
             if selectedItemID == nil && !items.isEmpty {
                 selectDefaultCard()
@@ -259,6 +279,7 @@ struct MainPanelView: View {
             searchText = ""
             clearMultiSelection()
             selectedFilter = .all
+            setSourceAppFilter(nil)
             historyStore.setSearchText("")
             historyStore.setFilter(.all)
             selectDefaultCard()
@@ -266,6 +287,7 @@ struct MainPanelView: View {
         // 面板打开时重置焦点到卡片区，选中第二项
         .onReceive(NotificationCenter.default.publisher(for: .panelDidShow)) { _ in
             historyStore.loadIfNeeded()
+            setSourceAppFilter(nil)
             selectDefaultCard()
             focusCards()
             clearMultiSelection()
@@ -509,6 +531,104 @@ struct MainPanelSettingsButton: View {
         .help("打开设置")
         .onHover { hovering in
             isHovering = hovering
+        }
+    }
+}
+
+struct SourceAppFilterMenu: View {
+    let selectedSourceApp: String?
+    let sourceApps: [String]
+    let onSelect: (String?) -> Void
+
+    @State private var isHovering = false
+
+    private var isActive: Bool {
+        selectedSourceApp != nil
+    }
+
+    private var selectedTitle: String {
+        selectedSourceApp ?? "全部"
+    }
+
+    var body: some View {
+        Menu {
+            sourceMenuItem(title: "全部来源", isSelected: !isActive) {
+                onSelect(nil)
+            }
+
+            if !sourceApps.isEmpty {
+                Divider()
+
+                ForEach(sourceApps, id: \.self) { sourceApp in
+                    sourceMenuItem(title: sourceApp, isSelected: selectedSourceApp == sourceApp) {
+                        onSelect(sourceApp)
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: isActive ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(isActive ? .accentColor : .secondary)
+
+                Text("来源")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.secondary)
+
+                Text(selectedTitle)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(isActive ? .primary : .secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: 88, alignment: .leading)
+
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundColor(.secondary)
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 34)
+            .background(
+                Capsule()
+                    .fill(backgroundColor)
+            )
+            .overlay(
+                Capsule()
+                    .stroke(borderColor, lineWidth: 1)
+            )
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize(horizontal: true, vertical: true)
+        .help("按来源应用筛选")
+        .onHover { hovering in
+            isHovering = hovering
+        }
+    }
+
+    private var backgroundColor: Color {
+        if isActive {
+            return Color.accentColor.opacity(isHovering ? 0.16 : 0.12)
+        }
+        return Color.primary.opacity(isHovering ? 0.08 : 0.045)
+    }
+
+    private var borderColor: Color {
+        if isActive {
+            return Color.accentColor.opacity(isHovering ? 0.26 : 0.18)
+        }
+        return Color.primary.opacity(isHovering ? 0.1 : 0.05)
+    }
+
+    @ViewBuilder
+    private func sourceMenuItem(title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack {
+                Text(title)
+                if isSelected {
+                    Image(systemName: "checkmark")
+                }
+            }
         }
     }
 }

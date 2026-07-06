@@ -156,11 +156,11 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
 
 private enum PasteDeckVersion {
     static var short: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.4.0"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.5.0"
     }
 
     static var build: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "140"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "150"
     }
 
     static var display: String {
@@ -798,6 +798,8 @@ private enum CleanupPreviewKind: Equatable {
     case olderThan(days: Int)
     /// 清理最早的普通记录，直到普通历史估算占用不超过目标容量。
     case exceedingStorage(limitMegabytes: Int)
+    /// 清理指定来源 App 的普通记录，候选范围由记录的 sourceApp 名称决定。
+    case sourceApp(name: String)
 
     var title: String {
         switch self {
@@ -807,6 +809,8 @@ private enum CleanupPreviewKind: Equatable {
             return "清理 \(days) 天前记录"
         case .exceedingStorage(let limitMegabytes):
             return "保留 \(Self.storageLimitLabel(limitMegabytes)) 数据"
+        case .sourceApp(let name):
+            return "清理 \(name) 记录"
         }
     }
 
@@ -818,6 +822,8 @@ private enum CleanupPreviewKind: Equatable {
             return "仅包含超过时间条件且未被保护的普通记录。"
         case .exceedingStorage:
             return "按最早记录优先清理，直到普通历史估算占用不超过目标容量。"
+        case .sourceApp:
+            return "仅包含来自该 App 且未置顶、未加入收藏夹的普通记录。"
         }
     }
 
@@ -829,6 +835,8 @@ private enum CleanupPreviewKind: Equatable {
             return "当前没有超过该时间条件的普通记录。"
         case .exceedingStorage:
             return "当前普通历史占用没有超过目标容量。"
+        case .sourceApp:
+            return "当前没有来自该 App 的可清理普通记录。"
         }
     }
 
@@ -860,6 +868,8 @@ private struct HistorySettingsSnapshot: Equatable, Sendable {
     let earliestDate: Date?
     /// 图片等缓存文件占用，用于历史页展示缓存状态。
     let cacheBytes: Int
+    /// 历史记录中已有的来源 App 名称列表，用于按 App 手动清理入口。
+    let sourceApps: [String]
 }
 
 struct HistorySettingsView: View {
@@ -897,6 +907,10 @@ struct HistorySettingsView: View {
 
     private var cacheSizeText: String {
         historySnapshot.map { formatBytes($0.cacheBytes) } ?? "读取中"
+    }
+
+    private var sourceAppNames: [String] {
+        historySnapshot?.sourceApps ?? []
     }
 
     private var collectionSnapshots: [ClipboardCollectionSnapshot] {
@@ -1034,6 +1048,19 @@ struct HistorySettingsView: View {
                         .buttonStyle(SettingsActionButtonStyle(tone: .destructive))
                     }
                 }
+
+                SettingsDivider()
+
+                SettingsRow(title: "按 App 清理", subtitle: "列出某个来源 App 下未被保护的普通记录") {
+                    HStack(spacing: 10) {
+                        Text(sourceAppNames.isEmpty ? "暂无来源" : "\(sourceAppNames.count) 个来源")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                            .frame(width: 86, alignment: .trailing)
+
+                        sourceAppCleanupMenu
+                    }
+                }
             }
         }
         .sheet(item: $cleanupPreviewRequest) { request in
@@ -1051,6 +1078,22 @@ struct HistorySettingsView: View {
     }
 
     // MARK: - Cleanup Methods
+
+    private var sourceAppCleanupMenu: some View {
+        Menu {
+            ForEach(sourceAppNames, id: \.self) { sourceApp in
+                Button(role: .destructive) {
+                    presentCleanupPreview(kind: .sourceApp(name: sourceApp))
+                } label: {
+                    Text(sourceApp)
+                }
+            }
+        } label: {
+            Label("选择 App", systemImage: "app")
+        }
+        .buttonStyle(SettingsActionButtonStyle(tone: .destructive))
+        .disabled(sourceAppNames.isEmpty)
+    }
 
     private func presentCleanupPreview(kind: CleanupPreviewKind) {
         cleanupPreviewRequest = CleanupPreviewRequest(kind: kind)
@@ -1082,11 +1125,24 @@ struct HistorySettingsView: View {
         earliestDescriptor.fetchLimit = 1
         let earliestDate = (try? context.fetch(earliestDescriptor).first)?.createdAt
 
+        let sourceDescriptor = FetchDescriptor<ClipboardItem>(
+            predicate: #Predicate { item in
+                item.sourceApp != nil
+            }
+        )
+        let sourceApps = sourceAppNames(from: (try? context.fetch(sourceDescriptor)) ?? [])
+
         return HistorySettingsSnapshot(
             itemCount: count,
             earliestDate: earliestDate,
-            cacheBytes: CacheManager().getTotalCacheSize()
+            cacheBytes: CacheManager().getTotalCacheSize(),
+            sourceApps: sourceApps
         )
+    }
+
+    private nonisolated static func sourceAppNames(from items: [ClipboardItem]) -> [String] {
+        Array(Set(items.compactMap { ClipboardItem.normalizedSourceAppName($0.sourceApp) }))
+            .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
     }
 
     // MARK: - Formatters
@@ -1519,6 +1575,15 @@ private struct CleanupPreviewSheet: View {
             }
 
             items = storageCandidates
+        case .sourceApp(let name):
+            let descriptor = FetchDescriptor<ClipboardItem>(
+                predicate: #Predicate { item in
+                    item.sourceApp == name && item.isPinned == false
+                },
+                sortBy: [SortDescriptor(\.createdAt)]
+            )
+            items = ((try? context.fetch(descriptor)) ?? [])
+                .filter(\.isCleanupEligible)
         }
 
         return items.map(ClipboardItemSnapshot.init)

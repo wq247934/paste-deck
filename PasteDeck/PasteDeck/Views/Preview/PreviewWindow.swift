@@ -161,10 +161,14 @@ struct PreviewWindow: View {
         didInitializeEditableFields ? editableColorHex : (item.colorHex ?? "")
     }
 
+    private var sourceAppName: String? {
+        ClipboardItem.normalizedSourceAppName(item.sourceApp)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             // 顶部栏
-            HStack {
+            HStack(spacing: 8) {
                 Image(systemName: item.contentType.icon)
                     .font(.system(size: 14))
                     .foregroundColor(.secondary)
@@ -178,13 +182,26 @@ struct PreviewWindow: View {
                     Text(fileName)
                         .font(.system(size: 13))
                         .foregroundColor(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
                 }
 
-                Spacer()
+                if let sourceAppName {
+                    Text("·")
+                        .foregroundColor(.secondary)
+                    Text(sourceAppName)
+                        .font(.system(size: 13))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+
+                Spacer(minLength: 12)
 
                 Text(item.displayTime)
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
+                    .lineLimit(1)
 
                 Button(action: {
                     closeWindow()
