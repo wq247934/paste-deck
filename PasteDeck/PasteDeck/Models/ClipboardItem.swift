@@ -132,6 +132,11 @@ final class ClipboardItem {
         return parts.isEmpty ? nil : parts.joined(separator: " ")
     }
 
+    static func normalizedSourceAppName(_ sourceApp: String?) -> String? {
+        let trimmed = sourceApp?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
     // MARK: - Initialization
 
     init(

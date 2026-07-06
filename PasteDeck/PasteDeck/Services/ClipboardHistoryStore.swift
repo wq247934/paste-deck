@@ -156,6 +156,10 @@ struct ClipboardItemSnapshot: Identifiable, Equatable, Sendable {
         collections.filter { !$0.isDefault }
     }
 
+    var displaySourceApp: String? {
+        ClipboardItem.normalizedSourceAppName(sourceApp)
+    }
+
     private static func makeDisplayTitle(
         contentType: ClipboardContentType,
         textContent: String?,
@@ -206,11 +210,13 @@ final class ClipboardHistoryStore: ObservableObject {
     @Published private(set) var allItems: [ClipboardItemSnapshot] = []
     @Published private(set) var filteredItems: [ClipboardItemSnapshot] = []
     @Published private(set) var collections: [ClipboardCollectionSnapshot] = []
+    @Published private(set) var sourceApps: [String] = []
     @Published private(set) var isLoading = false
 
     private let modelContext: ModelContext
     private var searchText = ""
     private var selectedFilter: ClipboardFilterOption = .all
+    private var selectedSourceApp: String?
     private var filterTask: Task<Void, Never>?
     private var reloadTask: Task<Void, Never>?
     private var hasLoaded = false
@@ -218,6 +224,7 @@ final class ClipboardHistoryStore: ObservableObject {
     private struct HistoryLoadResult: Sendable {
         let items: [ClipboardItemSnapshot]
         let collections: [ClipboardCollectionSnapshot]
+        let sourceApps: [String]
     }
 
     init(modelContext: ModelContext) {
@@ -249,6 +256,7 @@ final class ClipboardHistoryStore: ObservableObject {
 
             allItems = result.items
             collections = result.collections
+            sourceApps = result.sourceApps
             hasLoaded = true
             isLoading = false
             applyFilterNow()
@@ -279,7 +287,11 @@ final class ClipboardHistoryStore: ObservableObject {
                 )
             }
 
-        return HistoryLoadResult(items: items, collections: collections)
+        return HistoryLoadResult(
+            items: items,
+            collections: collections,
+            sourceApps: sourceAppNames(from: items)
+        )
     }
 
     func setSearchText(_ text: String) {
@@ -289,6 +301,11 @@ final class ClipboardHistoryStore: ObservableObject {
 
     func setFilter(_ filter: ClipboardFilterOption) {
         selectedFilter = filter
+        applyFilterNow()
+    }
+
+    func setSourceAppFilter(_ sourceApp: String?) {
+        selectedSourceApp = ClipboardItem.normalizedSourceAppName(sourceApp)
         applyFilterNow()
     }
 
@@ -417,12 +434,13 @@ final class ClipboardHistoryStore: ObservableObject {
         filterTask?.cancel()
         let query = searchText
         let filter = selectedFilter
+        let sourceApp = selectedSourceApp
         let items = allItems
 
         filterTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 50_000_000)
             guard !Task.isCancelled else { return }
-            let result = Self.filter(items: items, searchText: query, filter: filter)
+            let result = Self.filter(items: items, searchText: query, filter: filter, sourceApp: sourceApp)
             await MainActor.run {
                 guard !Task.isCancelled else { return }
                 self?.filteredItems = result
@@ -432,19 +450,30 @@ final class ClipboardHistoryStore: ObservableObject {
 
     private func applyFilterNow() {
         filterTask?.cancel()
-        filteredItems = Self.filter(items: allItems, searchText: searchText, filter: selectedFilter)
+        filteredItems = Self.filter(
+            items: allItems,
+            searchText: searchText,
+            filter: selectedFilter,
+            sourceApp: selectedSourceApp
+        )
     }
 
     private static func filter(
         items: [ClipboardItemSnapshot],
         searchText: String,
-        filter: ClipboardFilterOption
+        filter: ClipboardFilterOption,
+        sourceApp: String?
     ) -> [ClipboardItemSnapshot] {
         let normalizedQuery = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let normalizedSourceApp = ClipboardItem.normalizedSourceAppName(sourceApp)
         var result = items
 
         if !normalizedQuery.isEmpty {
             result = result.filter { $0.searchBlob.contains(normalizedQuery) }
+        }
+
+        if let normalizedSourceApp {
+            result = result.filter { $0.displaySourceApp == normalizedSourceApp }
         }
 
         switch filter {
@@ -463,6 +492,11 @@ final class ClipboardHistoryStore: ObservableObject {
         return result
     }
 
+    private nonisolated static func sourceAppNames(from items: [ClipboardItemSnapshot]) -> [String] {
+        Array(Set(items.compactMap(\.displaySourceApp)))
+            .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
     private func saveAndRefresh(_ item: ClipboardItem) {
         try? modelContext.save()
         upsertSnapshot(ClipboardItemSnapshot(item: item))
@@ -477,6 +511,7 @@ final class ClipboardHistoryStore: ObservableObject {
         if allItems.count > Self.historyLimit {
             allItems = Array(allItems.prefix(Self.historyLimit))
         }
+        sourceApps = Self.sourceAppNames(from: allItems)
 
         if applyImmediately {
             applyFilterNow()
@@ -486,6 +521,7 @@ final class ClipboardHistoryStore: ObservableObject {
     private func removeSnapshots(ids: Set<UUID>) {
         allItems.removeAll { ids.contains($0.id) }
         filteredItems.removeAll { ids.contains($0.id) }
+        sourceApps = Self.sourceAppNames(from: allItems)
     }
 
     private func removeSnapshots(ids: [UUID]) {

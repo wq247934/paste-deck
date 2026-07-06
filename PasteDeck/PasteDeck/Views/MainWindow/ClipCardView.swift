@@ -94,6 +94,7 @@ struct ClipCardView: View, Equatable {
             && lhs.item.contentType == rhs.item.contentType
             && lhs.item.textContent == rhs.item.textContent
             && lhs.item.linkWebsiteName == rhs.item.linkWebsiteName
+            && lhs.item.sourceApp == rhs.item.sourceApp
             && lhs.item.fileName == rhs.item.fileName
             && lhs.item.imagePath == rhs.item.imagePath
             && lhs.item.colorHex == rhs.item.colorHex
@@ -203,18 +204,11 @@ struct ClipCardView: View, Equatable {
                 .font(.system(size: 9, weight: .medium))
                 .foregroundColor(.secondary)
 
-            if item.customTitle != nil {
-                Text(item.displayTitle)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(.primary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-            } else {
-                Text(item.displaySize)
-                    .font(.system(size: 10))
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
-            }
+            Text(metadataText)
+                .font(metadataFont)
+                .foregroundColor(item.customTitle != nil ? .primary : .secondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
 
             Spacer(minLength: 4)
 
@@ -228,6 +222,18 @@ struct ClipCardView: View, Equatable {
         .frame(height: 26)
         .padding(.horizontal, 8)
         .background(Color.primary.opacity(0.035))
+    }
+
+    private var metadataText: String {
+        let detail = item.customTitle != nil ? item.displayTitle : item.displaySize
+        guard let sourceApp = item.displaySourceApp else {
+            return detail
+        }
+        return "\(sourceApp) · \(detail)"
+    }
+
+    private var metadataFont: Font {
+        item.customTitle != nil ? .system(size: 10, weight: .medium) : .system(size: 10)
     }
 
     @ViewBuilder
