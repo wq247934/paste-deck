@@ -156,7 +156,7 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
 
 private enum PasteDeckVersion {
     static var short: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.5.0"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.5.1"
     }
 
     static var build: String {
@@ -2144,7 +2144,12 @@ struct AppearanceSettingsView: View {
                 SettingsRow(title: "外观模式", subtitle: "设置主面板和预览窗口的颜色模式") {
                     Picker("", selection: Binding(
                         get: { appSettings.themeMode },
-                        set: { appSettings.themeMode = $0; try? modelContext.save() }
+                        set: {
+                            appSettings.themeMode = $0
+                            try? modelContext.save()
+                            // 通知已打开的主面板/预览/设置窗口实时更新外观
+                            NotificationCenter.default.post(name: .appearanceModeDidChange, object: nil)
+                        }
                     )) {
                         Text("跟随系统").tag(0)
                         Text("浅色").tag(1)

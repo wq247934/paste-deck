@@ -165,6 +165,18 @@ struct PreviewWindow: View {
         ClipboardItem.normalizedSourceAppName(item.sourceApp)
     }
 
+    /// 代码/文本预览使用的明暗主题，跟随设置中的外观模式。
+    /// 预览窗口自身通过 window.appearance 生效；此属性用于代码高亮视图，
+    /// 因为 Highlightr 主题无法靠 appearance 派生，需要显式传入。
+    private var codePreviewTheme: CodePreviewTheme {
+        let context = ModelContext(AppModelContainer.container)
+        let descriptor = FetchDescriptor<AppSettings>()
+        let mode = (try? context.fetch(descriptor).first
+            .flatMap { AppTheme(rawValue: $0.themeMode) })
+            ?? .system
+        return mode.codePreviewTheme
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             // 顶部栏
@@ -569,7 +581,7 @@ struct PreviewWindow: View {
                     language: codePreview.language,
                     title: codePreview.title,
                     showLineNumbers: true,
-                    theme: .light,
+                    theme: codePreviewTheme,
                     onSave: saveTextContent
                 )
             } else {
@@ -586,7 +598,7 @@ struct PreviewWindow: View {
                 language: "markdown",
                 title: "Markdown",
                 showLineNumbers: true,
-                theme: .light,
+                theme: codePreviewTheme,
                 onSave: saveTextContent
             )
 
@@ -660,7 +672,8 @@ struct PreviewWindow: View {
                 language: PreviewConfigManager.shared.highlightLanguage(for: item.fileName),
                 title: item.fileName ?? "代码预览",
                 showLineNumbers: true,
-                allowEditing: false
+                allowEditing: false,
+                theme: codePreviewTheme
             )
         } else if previewMode == .plain, let content = fileContent {
             CodeEditorPreviewView(
@@ -668,7 +681,8 @@ struct PreviewWindow: View {
                 language: "text",
                 title: item.fileName ?? "文本预览",
                 showLineNumbers: true,
-                allowEditing: false
+                allowEditing: false,
+                theme: codePreviewTheme
             )
         } else if previewMode == .none {
             VStack(spacing: 12) {
@@ -1015,11 +1029,11 @@ private struct EditablePlainTextPreview: View {
                 TextPreviewNSView(text: text, rtfData: nil)
             }
         }
-        .background(Color.white.opacity(0.92))
+        .background(Color(.textBackgroundColor))
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.black.opacity(0.08), lineWidth: 1)
+                .stroke(Color.primary.opacity(0.1), lineWidth: 1)
         )
         .background(commandSaveShortcut)
     }
@@ -1078,14 +1092,14 @@ private struct EditableColorPreview: View {
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
-            .background(Color.primary.opacity(0.035))
+            .background(Color(.windowBackgroundColor))
 
             VStack(spacing: 16) {
                 RoundedRectangle(cornerRadius: 12)
                     .fill(Color(hex: isEditing ? draft : hex) ?? Color.clear)
                     .overlay(
                         RoundedRectangle(cornerRadius: 12)
-                            .stroke(Color.black.opacity(0.08), lineWidth: 1)
+                            .stroke(Color.primary.opacity(0.1), lineWidth: 1)
                     )
                     .frame(height: 200)
 
@@ -1109,11 +1123,11 @@ private struct EditableColorPreview: View {
             .padding(20)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .background(Color.white.opacity(0.92))
+        .background(Color(.textBackgroundColor))
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.black.opacity(0.08), lineWidth: 1)
+                .stroke(Color.primary.opacity(0.1), lineWidth: 1)
         )
         .background(commandSaveShortcut)
     }
@@ -1494,6 +1508,17 @@ class PreviewWindowController: NSObject, NSWindowDelegate {
         window.hidesOnDeactivate = false
         window.delegate = self
 
+        // 按当前外观模式渲染顶/底栏、内容区与代码预览。
+        window.appearance = AppearanceResolver.currentAppearance
+
+        // 监听外观模式变更，实时更新已打开的预览窗口。
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAppearanceModeChange),
+            name: .appearanceModeDidChange,
+            object: nil
+        )
+
         self.window = window
 
         NSApp.activate(ignoringOtherApps: true)
@@ -1542,7 +1567,11 @@ class PreviewWindowController: NSObject, NSWindowDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    // MARK: - NSWindowDelegate
+    // MARK: - Appearance
+
+    @objc private func handleAppearanceModeChange() {
+        window?.appearance = AppearanceResolver.currentAppearance
+    }
 
     @objc func windowWillClose(_ notification: Notification) {
         // 窗口关闭时的兜底：如果 performClose 已执行则跳过，否则补执行
