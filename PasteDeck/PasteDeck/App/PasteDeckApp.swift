@@ -320,7 +320,8 @@ enum AppModelContainer {
         let schema = Schema([
             ClipboardItem.self,
             AppSettings.self,
-            FavoriteCollection.self
+            FavoriteCollection.self,
+            DailyStatsSnapshot.self
         ])
 
         let appSupportURL = try! FileManager.default.url(

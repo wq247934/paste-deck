@@ -94,6 +94,8 @@ struct SettingsWindow: View {
             HotkeySettingsView()
         case .history:
             HistorySettingsView()
+        case .stats:
+            StatsSettingsView()
         case .filter:
             FilterSettingsView()
         case .favorites:
@@ -110,6 +112,7 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
     case general
     case hotkey
     case history
+    case stats
     case filter
     case favorites
     case appearance
@@ -122,6 +125,7 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
         case .general: return "通用"
         case .hotkey: return "快捷键"
         case .history: return "历史记录"
+        case .stats: return "统计"
         case .filter: return "过滤"
         case .favorites: return "收藏夹"
         case .appearance: return "外观"
@@ -134,6 +138,7 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
         case .general: return "启动和系统权限"
         case .hotkey: return "唤起主面板的键盘入口"
         case .history: return "容量、保留和清理策略"
+        case .stats: return "使用洞察与趋势"
         case .filter: return "不记录指定来源"
         case .favorites: return "管理收藏夹名称和顺序"
         case .appearance: return "主题和卡片展示密度"
@@ -146,6 +151,7 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
         case .general: return "gearshape"
         case .hotkey: return "keyboard"
         case .history: return "clock.arrow.circlepath"
+        case .stats: return "chart.bar.xaxis"
         case .filter: return "line.3.horizontal.decrease"
         case .favorites: return "star"
         case .appearance: return "paintpalette"
@@ -223,7 +229,7 @@ private struct SettingsPaneHeader: View {
     }
 }
 
-private struct SettingsContentStack<Content: View>: View {
+struct SettingsContentStack<Content: View>: View {
     @ViewBuilder let content: () -> Content
 
     var body: some View {
@@ -233,7 +239,7 @@ private struct SettingsContentStack<Content: View>: View {
     }
 }
 
-private struct SettingsCard<Content: View>: View {
+struct SettingsCard<Content: View>: View {
     let title: String
     var icon: String? = nil
     var footer: String? = nil
@@ -277,7 +283,7 @@ private struct SettingsCard<Content: View>: View {
     }
 }
 
-private struct SettingsRow<Trailing: View>: View {
+struct SettingsRow<Trailing: View>: View {
     let title: String
     var subtitle: String? = nil
     @ViewBuilder let trailing: () -> Trailing
@@ -304,7 +310,7 @@ private struct SettingsRow<Trailing: View>: View {
     }
 }
 
-private struct SettingsDivider: View {
+struct SettingsDivider: View {
     var body: some View {
         Rectangle()
             .fill(Color.primary.opacity(0.06))

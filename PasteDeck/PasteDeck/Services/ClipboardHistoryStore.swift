@@ -345,7 +345,11 @@ final class ClipboardHistoryStore: ObservableObject {
 
     func togglePinned(id: UUID) {
         guard let item = fetchItem(id: id) else { return }
+        let wasPinned = item.isPinned
         item.isPinned.toggle()
+        if item.isPinned != wasPinned {
+            DailyStatsUpdater.adjustPinned(by: item.isPinned ? 1 : -1, date: item.createdAt, context: modelContext)
+        }
         saveAndRefresh(item)
     }
 
@@ -360,13 +364,21 @@ final class ClipboardHistoryStore: ObservableObject {
         guard let item = fetchItem(id: id),
               let defaultCollection = defaultCollection() else { return }
 
-        if item.collections?.contains(where: { $0.id == defaultCollection.id }) == true {
+        let wasFavorite = item.collections?.contains(where: { $0.id == defaultCollection.id }) == true
+
+        if wasFavorite {
             item.collections?.removeAll(where: { $0.id == defaultCollection.id })
         } else {
             if item.collections == nil {
                 item.collections = []
             }
             item.collections?.append(defaultCollection)
+        }
+
+        if !wasFavorite {
+            DailyStatsUpdater.adjustFavorite(by: 1, date: item.createdAt, context: modelContext)
+        } else {
+            DailyStatsUpdater.adjustFavorite(by: -1, date: item.createdAt, context: modelContext)
         }
 
         saveAndRefresh(item)
