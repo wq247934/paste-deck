@@ -56,8 +56,10 @@ class MainPanelController: NSObject, NSWindowDelegate {
         panel.hidesOnDeactivate = false
 
         // Add blur background effect
+        // 使用能跟随 window.appearance 的材质；.hudWindow 会强制暗色，
+        // 导致用户选择浅色/跟随系统时主面板仍显示为暗色。
         let visualEffectView = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: 800, height: 400))
-        visualEffectView.material = .hudWindow
+        visualEffectView.material = .popover
         visualEffectView.blendingMode = .behindWindow
         visualEffectView.state = .active
         visualEffectView.wantsLayer = true
@@ -77,6 +79,27 @@ class MainPanelController: NSObject, NSWindowDelegate {
 
         panel.contentView = visualEffectView
         self.panel = panel
+
+        // 按当前外观模式渲染（浅色/深色/跟随系统）。
+        // 必须在主面板内容装配完成后设置，确保子视图继承该 appearance。
+        applyAppearance()
+
+        // 监听设置中的外观模式变更，实时更新已打开的主面板。
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAppearanceModeChange),
+            name: .appearanceModeDidChange,
+            object: nil
+        )
+    }
+
+    /// 将当前外观模式应用到主面板窗口。
+    @objc func applyAppearance() {
+        panel?.appearance = AppearanceResolver.currentAppearance
+    }
+
+    @objc private func handleAppearanceModeChange() {
+        applyAppearance()
     }
 
     // MARK: - Public Methods

@@ -68,6 +68,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         hotKeyManager?.unregister()
+        removeSettingsAppearanceObserver()
         if let settingsKeyMonitor {
             NSEvent.removeMonitor(settingsKeyMonitor)
         }
@@ -183,6 +184,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.isReleasedWhenClosed = false
         window.hidesOnDeactivate = false
         window.setContentSize(NSSize(width: 760, height: 520))
+        // 按当前外观模式渲染设置页（浅色/深色/跟随系统）。
+        window.appearance = AppearanceResolver.currentAppearance
+        installSettingsAppearanceObserver()
         if let settingsWindowFrame {
             window.setFrame(settingsWindowFrame, display: false)
         } else {
@@ -251,6 +255,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         guard let closingWindow = notification.object as? NSWindow,
               closingWindow === settingsWindow else { return }
+        removeSettingsAppearanceObserver()
         releaseSettingsWindow(closingWindow)
     }
 
@@ -260,6 +265,27 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.contentViewController = nil
         if window === settingsWindow {
             settingsWindow = nil
+        }
+    }
+
+    private var settingsAppearanceObserver: NSObjectProtocol?
+
+    /// 设置页打开期间监听外观模式变更，实时更新设置窗口外观。
+    private func installSettingsAppearanceObserver() {
+        guard settingsAppearanceObserver == nil else { return }
+        settingsAppearanceObserver = NotificationCenter.default.addObserver(
+            forName: .appearanceModeDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.settingsWindow?.appearance = AppearanceResolver.currentAppearance
+        }
+    }
+
+    private func removeSettingsAppearanceObserver() {
+        if let observer = settingsAppearanceObserver {
+            NotificationCenter.default.removeObserver(observer)
+            settingsAppearanceObserver = nil
         }
     }
 
