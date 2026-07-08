@@ -51,6 +51,7 @@ struct PasteDeckApp: App {
 /// Main application delegate handling lifecycle, status bar, and services
 class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var statusItem: NSStatusItem?
+    private var statusMenuDelegate: MenuRefreshDelegate?
     private var clipboardMonitor: ClipboardMonitor?
     private var hotKeyManager: HotKeyManager?
     private var mainPanelController: MainPanelController?
@@ -87,23 +88,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             button.imageScaling = .scaleProportionallyDown
         }
 
-        // Create menu
-        let menu = NSMenu()
-
-        let openItem = NSMenuItem(title: "打开 PasteDeck", action: #selector(openMainPanel), keyEquivalent: "v")
-        openItem.keyEquivalentModifierMask = [.command, .shift]
-        menu.addItem(openItem)
-
-        menu.addItem(NSMenuItem.separator())
-
-        let settingsItem = NSMenuItem(title: "设置...", action: #selector(openSettings), keyEquivalent: ",")
-        menu.addItem(settingsItem)
-
-        menu.addItem(NSMenuItem.separator())
-
-        let quitItem = NSMenuItem(title: "退出 PasteDeck", action: #selector(quitApp), keyEquivalent: "q")
-        menu.addItem(quitItem)
-
+        let (menu, delegate) = StatusMenuBuilder.buildMenu(
+            openMainPanel: { [weak self] in
+                self?.openMainPanel()
+            },
+            openStats: { [weak self] in
+                self?.openSettings(pane: .stats)
+            },
+            openSettings: { [weak self] in
+                self?.openSettings(pane: .general)
+            },
+            quit: { [weak self] in
+                self?.quitApp()
+            }
+        )
+        statusMenuDelegate = delegate
         statusItem?.menu = menu
     }
 
@@ -147,7 +146,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         NotificationCenter.default.addObserver(
             self,
-            selector: #selector(openSettings),
+            selector: #selector(openSettings as () -> Void),
             name: .openSettingsWindow,
             object: nil
         )
@@ -167,6 +166,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     @objc private func openSettings() {
+        openSettings(pane: .general)
+    }
+
+    /// 打开设置窗口并定位到指定设置页。
+    /// - Parameter pane: 初次打开时选中的设置页；若窗口已存在则忽略并直接前置。
+    private func openSettings(pane: SettingsPane) {
         // 如果已有设置窗口且可见，直接前置
         if let existing = settingsWindow, existing.isVisible {
             existing.makeKeyAndOrderFront(nil)
@@ -174,7 +179,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             return
         }
 
-        let settingsView = SettingsWindow()
+        let settingsView = SettingsWindow(initialPane: pane)
             .modelContainer(AppModelContainer.container)
         let hostingController = NSHostingController(rootView: settingsView)
         let window = NSWindow(contentViewController: hostingController)

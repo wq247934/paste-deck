@@ -11,7 +11,12 @@ import ServiceManagement
 import UniformTypeIdentifiers
 
 struct SettingsWindow: View {
-    @State private var selectedPane: SettingsPane = .general
+    @State private var selectedPane: SettingsPane
+
+    /// 允许外部指定初次打开时选中的设置页，例如从菜单栏直接进入统计。
+    init(initialPane: SettingsPane = .general) {
+        _selectedPane = State(initialValue: initialPane)
+    }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -108,7 +113,7 @@ struct SettingsWindow: View {
     }
 }
 
-private enum SettingsPane: String, CaseIterable, Identifiable {
+enum SettingsPane: String, CaseIterable, Identifiable {
     case general
     case hotkey
     case history
