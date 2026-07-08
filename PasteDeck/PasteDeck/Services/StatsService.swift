@@ -167,56 +167,38 @@ enum StatsService {
     nonisolated static func fetchExtremes() -> ExtremeStats {
         let context = ModelContext(AppModelContainer.container)
 
+        // 全量读取，内存中按类型过滤
+        let allItems = (try? context.fetch(FetchDescriptor<ClipboardItem>())) ?? []
+
         // 最长文本
         var longestTextChars: Int? = nil
-        let textRaw = ClipboardContentType.text.rawValue
-        if let textItems = try? context.fetch(FetchDescriptor<ClipboardItem>(
-            predicate: #Predicate { $0.contentType.rawValue == textRaw }
-        )) {
-            longestTextChars = textItems.map { $0.textContent?.count ?? 0 }.max()
-            if longestTextChars == 0 { longestTextChars = nil }
-        }
+        let maxText = allItems
+            .filter { $0.contentType == .text }
+            .map { $0.textContent?.count ?? 0 }
+            .max()
+        if let maxText, maxText > 0 { longestTextChars = maxText }
 
         // 最大图片
         var largestImageSize: String? = nil
-        let imageRaw = ClipboardContentType.image.rawValue
-        if let imageItems = try? context.fetch(FetchDescriptor<ClipboardItem>(
-            predicate: #Predicate { $0.contentType.rawValue == imageRaw },
-            sortBy: [SortDescriptor(\.fileSize, order: .reverse)]
-        )) {
-            if let largest = imageItems.first {
-                let formatter = ByteCountFormatter()
-                formatter.countStyle = .file
-                largestImageSize = "\(formatter.string(fromByteCount: Int64(largest.fileSize))) · \(largest.imageWidth)×\(largest.imageHeight)"
-            }
+        if let largest = allItems.filter({ $0.contentType == .image }).max(by: { $0.fileSize < $1.fileSize }) {
+            let formatter = ByteCountFormatter()
+            formatter.countStyle = .file
+            largestImageSize = "\(formatter.string(fromByteCount: Int64(largest.fileSize))) · \(largest.imageWidth)×\(largest.imageHeight)"
         }
 
         // 最大文件引用
         var largestFileDisplay: String? = nil
-        let fileRaw = ClipboardContentType.file.rawValue
-        if let fileItems = try? context.fetch(FetchDescriptor<ClipboardItem>(
-            predicate: #Predicate { $0.contentType.rawValue == fileRaw },
-            sortBy: [SortDescriptor(\.fileSize, order: .reverse)]
-        )) {
-            if let largest = fileItems.first {
-                let formatter = ByteCountFormatter()
-                formatter.countStyle = .file
-                let name = largest.fileName ?? "未知文件"
-                largestFileDisplay = "\(name) · \(formatter.string(fromByteCount: Int64(largest.fileSize)))"
-            }
+        if let largest = allItems.filter({ $0.contentType == .file }).max(by: { $0.fileSize < $1.fileSize }) {
+            let formatter = ByteCountFormatter()
+            formatter.countStyle = .file
+            let name = largest.fileName ?? "未知文件"
+            largestFileDisplay = "\(name) · \(formatter.string(fromByteCount: Int64(largest.fileSize)))"
         }
 
         // 最早记录
-        var earliestDate: Date? = nil
-        var earliestDescriptor = FetchDescriptor<ClipboardItem>(
-            sortBy: [SortDescriptor(\.createdAt)]
-        )
-        earliestDescriptor.fetchLimit = 1
-        earliestDate = (try? context.fetch(earliestDescriptor).first)?.createdAt
+        let earliestDate = allItems.map(\.createdAt).min()
 
-        // 收藏数 — 查 collections 关联含 isDefault 的记录
-        let favoriteDescriptor = FetchDescriptor<ClipboardItem>()
-        let allItems = (try? context.fetch(favoriteDescriptor)) ?? []
+        // 收藏数与置顶数
         let totalFavorites = allItems.filter { ($0.collections ?? []).contains(where: { $0.isDefault }) }.count
         let totalPinned = allItems.filter(\.isPinned).count
 
