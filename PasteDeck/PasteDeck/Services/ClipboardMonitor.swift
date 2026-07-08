@@ -363,6 +363,7 @@ class ClipboardMonitor {
     private func saveItem(_ item: ClipboardItem) {
         modelContext.insert(item)
         try? modelContext.save()
+        DailyStatsUpdater.upsert(for: item, context: modelContext)
         postClipboardDataChanged(itemID: item.id, kind: .inserted)
         scheduleOCRIfNeeded(for: item)
     }
@@ -443,6 +444,7 @@ class ClipboardMonitor {
         startupMaintenanceWorkItem?.cancel()
 
         let workItem = DispatchWorkItem { [weak self] in
+            DailyStatsUpdater.backfillIfNeeded()
             let deletedCount = Self.performAutoCleanup()
             let ocrJobs = Self.pendingImageOCRJobs(limit: 20)
 
