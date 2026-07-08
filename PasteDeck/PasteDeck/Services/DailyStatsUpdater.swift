@@ -52,36 +52,59 @@ enum DailyStatsUpdater {
 
     // MARK: - Backfill
 
-    /// 首次启用时，如果 DailyStatsSnapshot 表为空且 ClipboardItem 表非空，执行一次性回填。
-    /// 应在后台线程调用，不阻塞主线程。
+    /// 首次启用时执行一次性回填，将现有 ClipboardItem 历史数据按天聚合并写入 DailyStatsSnapshot。
+    /// 使用 AppSettings.statsBackfilledAt 标记判断是否已回填，避免增量写入导致误判跳过。
+    /// 回填是幂等的：对已存在的 snapshot 会对字段做累加合并，不会重复计数。
     nonisolated static func backfillIfNeeded() {
         let context = ModelContext(AppModelContainer.container)
 
-        // 检查是否已有数据
-        let existingCount = (try? context.fetchCount(FetchDescriptor<DailyStatsSnapshot>())) ?? 0
-        guard existingCount == 0 else { return }
+        // 检查是否已回填过
+        let settingsDescriptor = FetchDescriptor<AppSettings>()
+        guard let settings = try? context.fetch(settingsDescriptor).first else { return }
+        if settings.statsBackfilledAt != nil { return }
 
         // 检查是否有 ClipboardItem
         let itemCount = (try? context.fetchCount(FetchDescriptor<ClipboardItem>())) ?? 0
-        guard itemCount > 0 else { return }
+        guard itemCount > 0 else {
+            // 没有历史数据也标记为已回填
+            settings.statsBackfilledAt = Date()
+            try? context.save()
+            return
+        }
 
-        // 全量读取，按天分组
+        // 全量读取 ClipboardItem，按天分组
         let descriptor = FetchDescriptor<ClipboardItem>(
             sortBy: [SortDescriptor(\.createdAt)]
         )
         guard let items = try? context.fetch(descriptor) else { return }
 
-        var snapshotsByDay: [Date: DailyStatsSnapshot] = [:]
+        // 预加载已有的 snapshot，按 date 建立索引
+        // backfill 会重建所有 snapshot，先清零已有记录，避免增量写入导致重复计数
+        let existingSnapshots = (try? context.fetch(FetchDescriptor<DailyStatsSnapshot>())) ?? []
+        var snapshotsByDate: [Date: DailyStatsSnapshot] = [:]
+        for snapshot in existingSnapshots {
+            snapshot.totalCount = 0
+            snapshot.typeCounts = [:]
+            snapshot.sourceAppCounts = [:]
+            snapshot.pinnedAddedCount = 0
+            snapshot.favoriteAddedCount = 0
+            snapshotsByDate[snapshot.date] = snapshot
+        }
+
         let calendar = Calendar.current
 
         for item in items {
             let dayStart = calendar.startOfDay(for: item.createdAt)
-            let snapshot = snapshotsByDay[dayStart] ?? {
+
+            let snapshot: DailyStatsSnapshot
+            if let existing = snapshotsByDate[dayStart] {
+                snapshot = existing
+            } else {
                 let s = DailyStatsSnapshot(date: dayStart)
                 context.insert(s)
-                return s
-            }()
-            snapshotsByDay[dayStart] = snapshot
+                snapshotsByDate[dayStart] = s
+                snapshot = s
+            }
 
             snapshot.totalCount += 1
             let typeKey = item.contentType.rawValue
@@ -93,12 +116,15 @@ enum DailyStatsUpdater {
         }
 
         // 设置每条 snapshot 的 updatedAt
-        for snapshot in snapshotsByDay.values {
+        for snapshot in snapshotsByDate.values {
             snapshot.updatedAt = Date()
         }
 
+        // 标记已回填
+        settings.statsBackfilledAt = Date()
+
         try? context.save()
-        NSLog("[PasteDeck] DailyStats backfill: \(snapshotsByDay.count) day snapshots created from \(itemCount) items")
+        NSLog("[PasteDeck] DailyStats backfill: \(snapshotsByDate.count) day snapshots processed from \(itemCount) items")
     }
 
     // MARK: - Private

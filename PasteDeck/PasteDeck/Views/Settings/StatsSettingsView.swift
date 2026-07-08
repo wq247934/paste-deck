@@ -26,7 +26,7 @@ struct StatsSettingsView: View {
             viewModel.loadIfNeeded()
         }
         .onReceive(NotificationCenter.default.publisher(for: .clipboardDataChanged)) { _ in
-            viewModel.markStale()
+            viewModel.handleClipboardChanged()
         }
     }
 
@@ -200,8 +200,9 @@ struct StatsSettingsView: View {
                 innerRadius: .ratio(0.5),
                 angularInset: 1.5
             )
-            .foregroundStyle(by: .value("类型", item.type.displayName))
+            .foregroundStyle(typeColor(for: item.type))
         }
+        .chartLegend(.hidden)
         .frame(width: 140, height: 140)
     }
 

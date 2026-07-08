@@ -21,6 +21,7 @@ final class StatsViewModel: ObservableObject {
     @Published var trendDays: Int = 7
 
     private var hasLoaded = false
+    private var reloadTask: Task<Void, Never>?
 
     func loadIfNeeded() {
         guard !hasLoaded else { return }
@@ -62,7 +63,14 @@ final class StatsViewModel: ObservableObject {
         }
     }
 
-    func markStale() {
-        hasLoaded = false
+    /// 收到剪贴板变更通知时调用，debounce 后重载全部数据。
+    func handleClipboardChanged() {
+        reloadTask?.cancel()
+        reloadTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 500_000_000) // 500ms debounce
+            guard !Task.isCancelled else { return }
+            guard let self else { return }
+            self.loadAll()
+        }
     }
 }
