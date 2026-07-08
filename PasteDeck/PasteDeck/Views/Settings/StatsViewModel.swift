@@ -35,21 +35,24 @@ final class StatsViewModel: ObservableObject {
         let days = trendDays
 
         Task { [weak self] in
-            async let o = Task.detached(priority: .userInitiated) { StatsService.fetchOverview() }.value
-            async let t = Task.detached(priority: .userInitiated) { StatsService.fetchTrend(days: days) }.value
-            async let d = Task.detached(priority: .userInitiated) { StatsService.fetchTypeDistribution() }.value
-            async let s = Task.detached(priority: .userInitiated) { StatsService.fetchTopSourceApps() }.value
-            async let e = Task.detached(priority: .userInitiated) { StatsService.fetchExtremes() }.value
+            // 串行执行所有查询，避免多个 ModelContext 并发访问同一 container 导致崩溃
+            let result = await Task.detached(priority: .userInitiated) {
+                let overview = StatsService.fetchOverview()
+                let trend = StatsService.fetchTrend(days: days)
+                let distribution = StatsService.fetchTypeDistribution()
+                let apps = StatsService.fetchTopSourceApps()
+                let extremes = StatsService.fetchExtremes()
 
-            let (overview, trend, distribution, apps, extremes) = await (o, t, d, s, e)
+                return (overview, trend, distribution, apps, extremes)
+            }.value
 
             guard let self else { return }
 
-            self.overview = overview
-            self.trend = trend
-            self.typeDistribution = distribution
-            self.topSourceApps = apps
-            self.extremes = extremes
+            self.overview = result.0
+            self.trend = result.1
+            self.typeDistribution = result.2
+            self.topSourceApps = result.3
+            self.extremes = result.4
             self.isLoading = false
         }
     }
