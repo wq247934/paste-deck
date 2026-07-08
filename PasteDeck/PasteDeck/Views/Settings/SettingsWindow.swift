@@ -167,11 +167,11 @@ enum SettingsPane: String, CaseIterable, Identifiable {
 
 private enum PasteDeckVersion {
     static var short: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.6.0"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.6.1"
     }
 
     static var build: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "160"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "161"
     }
 
     static var display: String {
