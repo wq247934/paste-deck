@@ -136,15 +136,15 @@ struct StatsSettingsView: View {
         let data = viewModel.trend
 
         return Chart(data) { point in
-            let isHovered = hoveredTrendIndex == data.firstIndex(where: { $0.date == point.date })
+            let index = data.firstIndex(where: { $0.date == point.date }) ?? 0
+            let isHovered = hoveredTrendIndex == index
 
             BarMark(
                 x: .value("日期", point.date, unit: .day),
                 y: .value("次数", point.count)
             )
-            .foregroundStyle(isHovered ? Color.accentColor : Color.accentColor.opacity(0.7))
+            .foregroundStyle(isHovered ? Color.accentColor : Color.accentColor.opacity(0.6))
             .cornerRadius(2)
-            .opacity(isHovered ? 1.0 : 0.85)
         }
         .chartXAxis {
             AxisMarks(values: .stride(by: .day)) { value in
@@ -163,62 +163,98 @@ struct StatsSettingsView: View {
         .chartYScale(domain: 0...max(maxValue, 5))
         .frame(height: 180)
         .chartBackground { chartProxy in
-            trendChartBackground(data: data, chartProxy: chartProxy)
+            GeometryReader { geometry in
+                Color.clear
+            }
         }
-        .overlay {
-            trendChartOverlay(data: data)
-        }
-    }
-
-    private func trendChartBackground(data: [DailyTrendPoint], chartProxy: ChartProxy) -> some View {
-        GeometryReader { geometry in
-            Rectangle()
-                .fill(Color.clear)
-                .contentShape(Rectangle())
-                .onContinuousHover { phase in
-                    handleTrendHover(phase: phase, geometry: geometry, chartProxy: chartProxy, data: data)
+        .overlay(alignment: .top) {
+            if let index = hoveredTrendIndex, index < data.count {
+                let point = data[index]
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(StatsService.formatDate(point.date))
+                        .font(.system(size: 11, weight: .medium))
+                    Text("\(point.count) 次复制")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.accentColor)
                 }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color(NSColor.controlBackgroundColor))
+                        .shadow(color: .black.opacity(0.15), radius: 6, x: 0, y: 2)
+                )
+                .padding(.top, 8)
+            }
         }
+        .background(
+            GeometryReader { geometry in
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onContinuousHover { phase in
+                        handleTrendHover(phase: phase, geometry: geometry, data: data)
+                    }
+            }
+        )
     }
 
-    private func handleTrendHover(phase: HoverPhase, geometry: GeometryProxy, chartProxy: ChartProxy, data: [DailyTrendPoint]) {
+    private func handleTrendHover(phase: HoverPhase, geometry: GeometryProxy, data: [DailyTrendPoint]) {
+        // Map mouse position to data index based on bar positions
         switch phase {
         case .active(let location):
-            if let date: Date = chartProxy.value(atX: location.x, as: Date.self) {
-                let calendar = Calendar.current
-                hoveredTrendIndex = data.firstIndex { calendar.isDate($0.date, inSameDayAs: date) }
+            let width = geometry.size.width
+            let count = data.count
+            guard count > 0 else {
+                hoveredTrendIndex = nil
+                return
+            }
+            // Calculate which bar is being hovered (approximate based on x position)
+            let barWidth = width / CGFloat(count)
+            let index = Int(location.x / barWidth)
+            if index >= 0 && index < count {
+                hoveredTrendIndex = index
+            } else {
+                hoveredTrendIndex = nil
             }
         case .ended:
             hoveredTrendIndex = nil
         }
     }
 
-    private func trendChartOverlay(data: [DailyTrendPoint]) -> some View {
-        Group {
-            if let index = hoveredTrendIndex, index < data.count {
-                trendTooltip(for: data[index])
-            }
-        }
-    }
+    private func handlePieHover(phase: HoverPhase, geometry: GeometryProxy, data: [TypeDistributionItem]) {
+        switch phase {
+        case .active(let location):
+            let center = CGPoint(x: geometry.size.width / 2, y: geometry.size.height / 2)
+            let dx = location.x - center.x
+            let dy = location.y - center.y
+            let distance = sqrt(dx * dx + dy * dy)
+            let radius = min(geometry.size.width, geometry.size.height) / 2
 
-    private func trendTooltip(for point: DailyTrendPoint) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(StatsService.formatDate(point.date))
-                .font(.system(size: 11, weight: .medium))
-                .foregroundColor(.primary)
-            Text("\(point.count) 次复制")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(.accentColor)
+            guard distance <= radius else {
+                hoveredType = nil
+                return
+            }
+
+            var angle = atan2(dy, dx)
+            if angle < 0 { angle += 2 * .pi }
+            angle = (angle + .pi / 2)
+            if angle < 0 { angle += 2 * .pi }
+            if angle >= 2 * .pi { angle -= 2 * .pi }
+            let degrees = angle * 180 / .pi
+
+            let total = data.map(\.count).reduce(0, +)
+            var currentAngle: Double = 0
+            for item in data {
+                let itemAngle = Double(item.count) / Double(total) * 360
+                if degrees >= currentAngle && degrees < currentAngle + itemAngle {
+                    hoveredType = item.type
+                    break
+                }
+                currentAngle += itemAngle
+            }
+        case .ended:
+            hoveredType = nil
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color(NSColor.controlBackgroundColor))
-                .shadow(color: .black.opacity(0.15), radius: 6, x: 0, y: 2)
-        )
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .padding(.top, 8)
     }
 
     private var emptyChartPlaceholder: some View {
@@ -263,103 +299,53 @@ struct StatsSettingsView: View {
 
         return Chart(data) { item in
             let isHovered = hoveredType == item.type
-            let outerRadius: CGFloat = isHovered ? 1.05 : 1.0
-            let opacity: Double = isHovered ? 1.0 : (hoveredType == nil ? 1.0 : 0.5)
 
             SectorMark(
                 angle: .value("数量", item.count),
                 innerRadius: .ratio(0.5),
-                outerRadius: .ratio(outerRadius),
+                outerRadius: .ratio(isHovered ? 1.08 : 1.0),
                 angularInset: 1.5
             )
             .foregroundStyle(typeColor(for: item.type))
-            .opacity(opacity)
+            .opacity(isHovered ? 1.0 : (hoveredType == nil ? 1.0 : 0.4))
         }
         .chartLegend(.hidden)
         .frame(width: 140, height: 140)
         .chartBackground { chartProxy in
-            pieChartBackground(data: data)
-        }
-        .overlay {
-            pieChartOverlay(data: data)
-        }
-    }
-
-    private func pieChartBackground(data: [TypeDistributionItem]) -> some View {
-        GeometryReader { geometry in
-            Rectangle()
-                .fill(Color.clear)
-                .contentShape(Circle())
-                .onContinuousHover { phase in
-                    handlePieHover(phase: phase, geometry: geometry, data: data)
-                }
-        }
-    }
-
-    private func handlePieHover(phase: HoverPhase, geometry: GeometryProxy, data: [TypeDistributionItem]) {
-        switch phase {
-        case .active(let location):
-            let center = CGPoint(x: geometry.size.width / 2, y: geometry.size.height / 2)
-            let dx = location.x - center.x
-            let dy = location.y - center.y
-            let distance = sqrt(dx * dx + dy * dy)
-            let radius = min(geometry.size.width, geometry.size.height) / 2
-
-            guard distance <= radius else {
-                hoveredType = nil
-                return
-            }
-
-            var angle = atan2(dy, dx)
-            if angle < 0 { angle += 2 * .pi }
-            angle = (angle + .pi / 2)
-            if angle < 0 { angle += 2 * .pi }
-            if angle >= 2 * .pi { angle -= 2 * .pi }
-            let degrees = angle * 180 / .pi
-
-            let total = data.map(\.count).reduce(0, +)
-            var currentAngle: Double = 0
-            for item in data {
-                let itemAngle = Double(item.count) / Double(total) * 360
-                if degrees >= currentAngle && degrees < currentAngle + itemAngle {
-                    hoveredType = item.type
-                    break
-                }
-                currentAngle += itemAngle
-            }
-        case .ended:
-            hoveredType = nil
-        }
-    }
-
-    private func pieChartOverlay(data: [TypeDistributionItem]) -> some View {
-        Group {
-            if let type = hoveredType, let item = data.first(where: { $0.type == type }) {
-                pieTooltip(for: item)
+            GeometryReader { geometry in
+                Color.clear
             }
         }
-    }
-
-    private func pieTooltip(for item: TypeDistributionItem) -> some View {
-        VStack(alignment: .center, spacing: 4) {
-            Text(item.type.displayName)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundColor(.primary)
-            Text("\(item.count) 条")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(typeColor(for: item.type))
-            Text(String(format: "%.1f%%", item.percentage))
-                .font(.system(size: 11))
-                .foregroundColor(.secondary)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
         .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color(NSColor.controlBackgroundColor))
-                .shadow(color: .black.opacity(0.15), radius: 6, x: 0, y: 2)
+            GeometryReader { geometry in
+                Color.clear
+                    .contentShape(Circle())
+                    .onContinuousHover { phase in
+                        handlePieHover(phase: phase, geometry: geometry, data: data)
+                    }
+            }
         )
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlay {
+            if let type = hoveredType, let item = data.first(where: { $0.type == type }) {
+                VStack(alignment: .center, spacing: 4) {
+                    Text(item.type.displayName)
+                        .font(.system(size: 11, weight: .medium))
+                    Text("\(item.count) 条")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(typeColor(for: item.type))
+                    Text(String(format: "%.1f%%", item.percentage))
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color(NSColor.controlBackgroundColor))
+                        .shadow(color: .black.opacity(0.15), radius: 6, x: 0, y: 2)
+                )
+            }
+        }
     }
 
     private var typeLegend: some View {
