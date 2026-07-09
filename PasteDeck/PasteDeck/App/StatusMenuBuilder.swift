@@ -45,7 +45,7 @@ final class StatsOverviewMenuItemView: NSView {
             label.alignment = .center
             label.textColor = .labelColor
             label.lineBreakMode = .byTruncatingTail
-            label.preferredMaxLayoutWidth = 60
+            label.preferredMaxLayoutWidth = 80
             label.setContentCompressionResistancePriority(.required, for: .horizontal)
         }
 
@@ -53,7 +53,7 @@ final class StatsOverviewMenuItemView: NSView {
             caption.font = NSFont.systemFont(ofSize: 10, weight: .regular)
             caption.alignment = .center
             caption.textColor = .secondaryLabelColor
-            caption.preferredMaxLayoutWidth = 60
+            caption.preferredMaxLayoutWidth = 80
             caption.setContentCompressionResistancePriority(.required, for: .horizontal)
         }
 
@@ -138,7 +138,7 @@ enum StatusMenuBuilder {
         menu.delegate = delegate
 
         // 统计概览 header
-        let overviewView = StatsOverviewMenuItemView(frame: NSRect(x: 0, y: 0, width: 260, height: 62))
+        let overviewView = StatsOverviewMenuItemView(frame: NSRect(x: 0, y: 0, width: 280, height: 62))
         let overviewItem = NSMenuItem()
         overviewItem.view = overviewView
         overviewItem.target = nil
