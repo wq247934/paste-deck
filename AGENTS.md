@@ -21,6 +21,14 @@ This repository is Swift Package Manager based; there is no checked-in `.xcodepr
 - The DMG build script uses Finder/AppleScript to apply installer window layout, so it intentionally opens the mounted DMG folder and can leave temporary disk images mounted if interrupted.
 - Only run DMG packaging when the user explicitly asks for a release installer. Use `PASTEDECK_ALLOW_DMG_BUILD=1 scripts/build-dmg.sh`, then verify afterward that no PasteDeck DMG images remain mounted.
 
+## Documentation Maintenance
+
+- Every code change must include a check of `PROGRESS.md`, `REQUIREMENTS.md`, and `README.md` to see if they need updating.
+- **README.md is the priority** — keep it accurate and in sync with the current state of the project: features, usage instructions, shortcuts, requirements, and any user-facing behavior changes.
+- Update `PROGRESS.md` to reflect the current development status, completed milestones, and next steps.
+- Update `REQUIREMENTS.md` when functional or non-functional requirements change.
+- Documentation updates should be part of the same commit as the code change when possible.
+
 ## Development Principles
 
 - Bug fixes must be normal, maintainable fixes: identify the root cause, keep responsibilities separated, and avoid workaround-style code that piles timers, duplicated state changes, or unrelated logic into existing paths.
