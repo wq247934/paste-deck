@@ -68,6 +68,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        mainPanelController?.savePanelFrame()
         hotKeyManager?.unregister()
         removeSettingsAppearanceObserver()
         if let settingsKeyMonitor {
@@ -219,6 +220,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             return mainPanelController
         }
         let controller = MainPanelController()
+        controller.settingsWindowProvider = { [weak self] in
+            self?.settingsWindow
+        }
         mainPanelController = controller
         return controller
     }

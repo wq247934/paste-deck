@@ -36,6 +36,83 @@ enum ScrollDirection {
     case down
 }
 
+/// 主面板列表的实际视觉布局。横竖方向设置会映射到其中一种稳定布局。
+enum MainPanelCollectionLayout: Equatable {
+    case horizontal
+    case verticalCompactList
+    case verticalLargeCards
+    case verticalAdaptiveGrid
+
+    var isHorizontal: Bool {
+        self == .horizontal
+    }
+}
+
+/// 主面板键盘导航使用的四个物理方向。
+enum MainPanelNavigationDirection {
+    case left
+    case right
+    case up
+    case down
+}
+
+/// 与 SwiftUI 状态解耦的导航计算，确保网格末行和边界行为可以稳定测试。
+enum MainPanelNavigation {
+    static func nextIndex(
+        currentIndex: Int,
+        itemCount: Int,
+        layout: MainPanelCollectionLayout,
+        gridColumnCount: Int,
+        direction: MainPanelNavigationDirection
+    ) -> Int {
+        guard itemCount > 0 else { return 0 }
+
+        let lastIndex = itemCount - 1
+        let boundedCurrentIndex = min(max(0, currentIndex), lastIndex)
+
+        switch layout {
+        case .horizontal:
+            switch direction {
+            case .left:
+                return max(0, boundedCurrentIndex - 1)
+            case .right:
+                return min(lastIndex, boundedCurrentIndex + 1)
+            case .up, .down:
+                return boundedCurrentIndex
+            }
+        case .verticalCompactList, .verticalLargeCards:
+            switch direction {
+            case .up:
+                return max(0, boundedCurrentIndex - 1)
+            case .down:
+                return min(lastIndex, boundedCurrentIndex + 1)
+            case .left, .right:
+                return boundedCurrentIndex
+            }
+        case .verticalAdaptiveGrid:
+            let columnCount = max(1, min(2, gridColumnCount))
+            let currentColumn = boundedCurrentIndex % columnCount
+            switch direction {
+            case .left:
+                guard currentColumn > 0 else { return boundedCurrentIndex }
+                return boundedCurrentIndex - 1
+            case .right:
+                guard currentColumn < columnCount - 1,
+                      boundedCurrentIndex < lastIndex else { return boundedCurrentIndex }
+                return boundedCurrentIndex + 1
+            case .up:
+                guard boundedCurrentIndex >= columnCount else { return boundedCurrentIndex }
+                return boundedCurrentIndex - columnCount
+            case .down:
+                let currentRow = boundedCurrentIndex / columnCount
+                let lastRow = lastIndex / columnCount
+                guard currentRow < lastRow else { return boundedCurrentIndex }
+                return min(lastIndex, boundedCurrentIndex + columnCount)
+            }
+        }
+    }
+}
+
 struct MainPanelView: View {
     @Query private var settings: [AppSettings]
 
@@ -57,6 +134,8 @@ struct MainPanelView: View {
     /// 当前焦点所在区域
     @State private var focusZone: FocusZone = .cards
     @State private var cardFocusRequest = 0
+    /// 自适应网格当前实际列数（1 或 2），用于让键盘上下移动与可见布局保持一致。
+    @State private var adaptiveGridColumnCount = 1
 
     /// 搜索栏焦点绑定
     @FocusState private var isSearchFocused: Bool
@@ -73,9 +152,25 @@ struct MainPanelView: View {
         settings.first
     }
 
-    private var cardSize: CardSize {
-        appSettings
-            .flatMap { CardSize(rawValue: $0.cardSize) } ?? .medium
+    private var panelOrientation: PanelOrientation {
+        appSettings?.panelOrientation ?? .horizontal
+    }
+
+    private var verticalPanelStyle: VerticalPanelStyle {
+        appSettings?.verticalPanelStyle ?? .compactList
+    }
+
+    private var collectionLayout: MainPanelCollectionLayout {
+        guard panelOrientation == .vertical else { return .horizontal }
+
+        switch verticalPanelStyle {
+        case .compactList:
+            return .verticalCompactList
+        case .largeCards:
+            return .verticalLargeCards
+        case .adaptiveGrid:
+            return .verticalAdaptiveGrid
+        }
     }
 
     private var preferredColorScheme: ColorScheme? {
@@ -113,12 +208,15 @@ struct MainPanelView: View {
         if items.count > 1 {
             selectedIndex = 1
             selectedItemID = items[1].id
+            anchorIndex = 1
         } else if !items.isEmpty {
             selectedIndex = 0
             selectedItemID = items.first?.id
+            anchorIndex = 0
         } else {
             selectedIndex = 0
             selectedItemID = nil
+            anchorIndex = 0
         }
     }
 
@@ -138,110 +236,15 @@ struct MainPanelView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // 顶部搜索和筛选
-            VStack(spacing: 12) {
-                HStack(spacing: 10) {
-                    SearchBarView(text: $searchText, isFocused: $isSearchFocused)
-                        .onChange(of: isSearchFocused) { _, newValue in
-                            if newValue {
-                                focusZone = .search
-                            }
-                        }
-                        .onChange(of: focusZone) { _, newZone in
-                            if newZone == .search {
-                                isSearchFocused = true
-                            } else {
-                                isSearchFocused = false
-                            }
-                        }
-                        .onSubmit {
-                            // 搜索框按 Enter → 焦点切到卡片区，选中第一个
-                            focusCards()
-                            if !historyStore.filteredItems.isEmpty {
-                                selectedIndex = 0
-                                selectedItemID = historyStore.filteredItems.first?.id
-                                clearMultiSelection()
-                            }
-                        }
-
-                    SourceAppFilterMenu(
-                        selectedSourceApp: selectedSourceApp,
-                        sourceApps: historyStore.sourceApps,
-                        onSelect: setSourceAppFilter
-                    )
-
-                    MainPanelSettingsButton {
-                        openSettingsHandler?()
-                    }
-                }
-
-                FavoriteFilterTabs(
-                    options: filterOptions,
-                    selectedFilter: $selectedFilter,
-                    collections: historyStore.collections,
-                    onCreateCollection: { name in
-                        historyStore.createCollection(name: name)
-                    }
-                )
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 16)
-
-            // 卡片列表
-            if historyStore.isLoading && historyStore.filteredItems.isEmpty {
-                ProgressView()
-                    .controlSize(.small)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if historyStore.filteredItems.isEmpty {
-                EmptyStateView()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                VirtualizedCardList(
-                    items: historyStore.filteredItems,
-                    collections: historyStore.collections,
-                    selectedItemId: selectedItemID,
-                    selectedItems: selectedItems,
-                    showSelection: focusZone == .cards,
-                    showPinOption: selectedFilter != .all,
-                    cardSize: cardSize,
-                    onItemTapped: { index, itemID in
-                        handleItemTap(index: index, itemID: itemID)
-                    },
-                    onItemDoubleTapped: { itemID in
-                        pasteItem(id: itemID)
-                    },
-                    onCopy: { itemID in
-                        historyStore.copyToPasteboard(id: itemID)
-                    },
-                    onPastePlain: { itemID in
-                        pasteItem(id: itemID, plainText: true)
-                    },
-                    onTogglePinned: { itemID in
-                        historyStore.togglePinned(id: itemID)
-                    },
-                    onToggleFavorite: { itemID in
-                        historyStore.toggleDefaultFavorite(id: itemID)
-                    },
-                    onToggleCollection: { itemID, collectionID in
-                        historyStore.toggleCollection(itemID: itemID, collectionID: collectionID)
-                    },
-                    onSaveTitle: { itemID, title in
-                        historyStore.saveTitle(id: itemID, title: title)
-                    },
-                    onDelete: { itemID in
-                        deleteItem(id: itemID)
-                    }
-                )
-                .padding(.top, 12)
-            }
+            panelHeader
+            panelContent
         }
-        .frame(width: 800, height: 400)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .preferredColorScheme(preferredColorScheme)
         .onAppear {
             historyStore.loadIfNeeded()
             reconcileSelection()
             selectDefaultCard()
-            // 打开面板时焦点默认在卡片区
             focusCards()
         }
         .onChange(of: searchText) { _, _ in
@@ -262,7 +265,6 @@ struct MainPanelView: View {
                 reconcileSelection()
             }
         }
-        // 剪贴板监听或设置页清理会通过通知更新轻量缓存
         .onReceive(NotificationCenter.default.publisher(for: .clipboardDataChanged)) { notification in
             if let itemID = notification.userInfo?[ClipboardDataChangeNotification.itemIDKey] as? UUID {
                 let kind = notification.userInfo?[ClipboardDataChangeNotification.changeKindKey] as? String
@@ -275,7 +277,6 @@ struct MainPanelView: View {
             }
             reconcileSelection()
         }
-        // 监听清空搜索通知
         .onReceive(NotificationCenter.default.publisher(for: .clearSearchText)) { _ in
             searchText = ""
             clearMultiSelection()
@@ -285,7 +286,6 @@ struct MainPanelView: View {
             historyStore.setFilter(.all)
             selectDefaultCard()
         }
-        // 面板打开时重置焦点到卡片区，选中第二项
         .onReceive(NotificationCenter.default.publisher(for: .panelDidShow)) { _ in
             historyStore.loadIfNeeded()
             setSourceAppFilter(nil)
@@ -293,67 +293,234 @@ struct MainPanelView: View {
             focusCards()
             clearMultiSelection()
         }
-        // AppKit 在面板真正成为 key window 后再次确认卡片区 first responder。
         .onReceive(NotificationCenter.default.publisher(for: .panelDidRequestCardFocus)) { _ in
             focusCards()
         }
-        // 使用 NSEvent 监听键盘
-        .background(
-            KeyboardEventMonitorView(
-                focusZone: $focusZone,
-                selectedFilter: $selectedFilter,
-                focusRequest: cardFocusRequest,
-                filterOptions: filterOptions,
-                onLeftArrow: { extend in
-                    moveSelection(by: -1, extending: extend)
-                },
-                onRightArrow: { extend in
-                    moveSelection(by: 1, extending: extend)
-                },
-                onUpArrow: {
-                    scrollPage(direction: .up)
-                },
-                onDownArrow: {
-                    scrollPage(direction: .down)
-                },
-                onEnter: { shiftHeld in
-                    // Enter 在搜索模式 → 焦点切到卡片区
-                    if focusZone == .search {
-                        focusCards()
-                        if !historyStore.filteredItems.isEmpty {
-                            selectedIndex = 0
-                            selectedItemID = historyStore.filteredItems.first?.id
-                            clearMultiSelection()
-                        }
-                    } else {
-                        pasteSelectedItems(plainText: shiftHeld)
-                    }
-                },
-                onEscape: {
-                    closePreviewOrPanel()
-                },
-                onSpace: {
-                    if let selectedItemID {
-                        previewItem(id: selectedItemID)
-                    }
-                },
-                onDelete: {
-                    deleteSelectedItem()
-                },
-                onCmdF: {
+        .background(keyboardEventMonitor)
+    }
+
+    @ViewBuilder
+    private var panelContent: some View {
+        if historyStore.isLoading && historyStore.filteredItems.isEmpty {
+            ProgressView()
+                .controlSize(.small)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if historyStore.filteredItems.isEmpty {
+            EmptyStateView()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            virtualizedList
+        }
+    }
+
+    private var virtualizedList: some View {
+        VirtualizedCardList(
+            items: historyStore.filteredItems,
+            collections: historyStore.collections,
+            selectedItemId: selectedItemID,
+            selectedItems: selectedItems,
+            showSelection: focusZone == .cards,
+            showPinOption: selectedFilter != .all,
+            layout: collectionLayout,
+            onGridColumnCountChange: updateAdaptiveGridColumnCount,
+            onItemTapped: handleItemTap,
+            onItemDoubleTapped: { itemID in
+                pasteItem(id: itemID)
+            },
+            onCopy: { itemID in
+                historyStore.copyToPasteboard(id: itemID)
+            },
+            onPastePlain: { itemID in
+                pasteItem(id: itemID, plainText: true)
+            },
+            onTogglePinned: historyStore.togglePinned,
+            onToggleFavorite: historyStore.toggleDefaultFavorite,
+            onToggleCollection: historyStore.toggleCollection,
+            onSaveTitle: historyStore.saveTitle,
+            onDelete: deleteItem
+        )
+        .padding(.top, panelOrientation == .horizontal ? 12 : 8)
+    }
+
+    private var keyboardEventMonitor: some View {
+        KeyboardEventMonitorView(
+            focusZone: $focusZone,
+            selectedFilter: $selectedFilter,
+            focusRequest: cardFocusRequest,
+            filterOptions: filterOptions,
+            onLeftArrow: handleLeftArrow,
+            onRightArrow: handleRightArrow,
+            onUpArrow: handleUpArrow,
+            onDownArrow: handleDownArrow,
+            onEnter: handleEnter,
+            onEscape: closePreviewOrPanel,
+            onSpace: previewSelectedItem,
+            onDelete: deleteSelectedItem,
+            onCmdF: focusSearch
+        )
+    }
+
+    @ViewBuilder
+    private var panelHeader: some View {
+        if panelOrientation == .horizontal {
+            VStack(spacing: 12) {
+                HStack(spacing: 10) {
+                    panelSearchBar
+                    sourceAppMenu
+                    settingsButton
+                }
+
+                favoriteFilterTabs
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 16)
+        } else {
+            VStack(spacing: 10) {
+                HStack(spacing: 10) {
+                    panelSearchBar
+                    settingsButton
+                }
+
+                HStack(spacing: 10) {
+                    sourceAppMenu
+                    favoriteFilterTabs
+                        .frame(maxWidth: .infinity)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 14)
+        }
+    }
+
+    private var panelSearchBar: some View {
+        SearchBarView(text: $searchText, isFocused: $isSearchFocused)
+            .onChange(of: isSearchFocused) { _, newValue in
+                if newValue {
                     focusZone = .search
                 }
-            )
+            }
+            .onChange(of: focusZone) { _, newZone in
+                isSearchFocused = newZone == .search
+            }
+            .onSubmit {
+                focusCards()
+                if !historyStore.filteredItems.isEmpty {
+                    selectedIndex = 0
+                    selectedItemID = historyStore.filteredItems.first?.id
+                    anchorIndex = 0
+                    clearMultiSelection()
+                }
+            }
+    }
+
+    private var sourceAppMenu: some View {
+        SourceAppFilterMenu(
+            selectedSourceApp: selectedSourceApp,
+            sourceApps: historyStore.sourceApps,
+            onSelect: setSourceAppFilter
         )
+    }
+
+    private var settingsButton: some View {
+        MainPanelSettingsButton {
+            openSettingsHandler?()
+        }
+    }
+
+    private var favoriteFilterTabs: some View {
+        FavoriteFilterTabs(
+            options: filterOptions,
+            selectedFilter: $selectedFilter,
+            collections: historyStore.collections,
+            onCreateCollection: { name in
+                historyStore.createCollection(name: name)
+            }
+        )
+    }
+
+    private func updateAdaptiveGridColumnCount(_ columnCount: Int) {
+        let normalizedColumnCount = max(1, min(2, columnCount))
+        guard adaptiveGridColumnCount != normalizedColumnCount else { return }
+        adaptiveGridColumnCount = normalizedColumnCount
+    }
+
+    private func handleLeftArrow(_ extending: Bool) {
+        switch collectionLayout {
+        case .horizontal, .verticalAdaptiveGrid:
+            moveSelection(direction: .left, extending: extending)
+        case .verticalCompactList, .verticalLargeCards:
+            break
+        }
+    }
+
+    private func handleRightArrow(_ extending: Bool) {
+        switch collectionLayout {
+        case .horizontal, .verticalAdaptiveGrid:
+            moveSelection(direction: .right, extending: extending)
+        case .verticalCompactList, .verticalLargeCards:
+            break
+        }
+    }
+
+    private func handleUpArrow(_ extending: Bool) {
+        switch collectionLayout {
+        case .horizontal:
+            scrollPage(direction: .up)
+        case .verticalCompactList, .verticalLargeCards:
+            moveSelection(direction: .up, extending: extending)
+        case .verticalAdaptiveGrid:
+            moveSelection(direction: .up, extending: extending)
+        }
+    }
+
+    private func handleDownArrow(_ extending: Bool) {
+        switch collectionLayout {
+        case .horizontal:
+            scrollPage(direction: .down)
+        case .verticalCompactList, .verticalLargeCards:
+            moveSelection(direction: .down, extending: extending)
+        case .verticalAdaptiveGrid:
+            moveSelection(direction: .down, extending: extending)
+        }
+    }
+
+    private func handleEnter(_ shiftHeld: Bool) {
+        if focusZone == .search {
+            focusCards()
+            if !historyStore.filteredItems.isEmpty {
+                selectedIndex = 0
+                selectedItemID = historyStore.filteredItems.first?.id
+                anchorIndex = 0
+                clearMultiSelection()
+            }
+        } else {
+            pasteSelectedItems(plainText: shiftHeld)
+        }
+    }
+
+    private func previewSelectedItem() {
+        guard let selectedItemID else { return }
+        previewItem(id: selectedItemID)
+    }
+
+    private func focusSearch() {
+        focusZone = .search
     }
 
     // MARK: - Selection Logic
 
-    /// 单纯移动选区（方向键）
-    private func moveSelection(by offset: Int, extending: Bool) {
+    /// 按当前可见布局计算方向键的目标索引，再统一更新单选或 Shift 连续选区。
+    private func moveSelection(direction: MainPanelNavigationDirection, extending: Bool) {
         let items = historyStore.filteredItems
         guard !items.isEmpty else { return }
-        let newIndex = max(0, min(items.count - 1, selectedIndex + offset))
+        let newIndex = MainPanelNavigation.nextIndex(
+            currentIndex: selectedIndex,
+            itemCount: items.count,
+            layout: collectionLayout,
+            gridColumnCount: adaptiveGridColumnCount,
+            direction: direction
+        )
+        guard newIndex != selectedIndex else { return }
 
         if extending {
             // Shift+方向键：扩展/收缩选区
@@ -467,6 +634,7 @@ struct MainPanelView: View {
             selectedIndex = newIndex
             selectedItemID = items[newIndex].id
             clearMultiSelection()
+            anchorIndex = newIndex
         }
     }
 
@@ -500,9 +668,11 @@ struct MainPanelView: View {
         if !items.isEmpty {
             selectedIndex = min(nextIndex, items.count - 1)
             selectedItemID = items[selectedIndex].id
+            anchorIndex = selectedIndex
         } else {
             selectedIndex = 0
             selectedItemID = nil
+            anchorIndex = 0
         }
         clearMultiSelection()
     }
@@ -728,23 +898,41 @@ struct FavoriteFilterTabs: View {
 
 // MARK: - Virtualized Card List
 
-/// 水平虚拟化卡片列表，只为可见区域附近创建卡片视图。
+/// 布局感知的虚拟化剪切板列表，只为可见区域附近创建 SwiftUI 单元格。
 struct VirtualizedCardList: NSViewRepresentable {
+    /// 当前筛选后的剪切板快照，顺序即屏幕展示与键盘导航顺序。
     let items: [ClipboardItemSnapshot]
+    /// 当前收藏夹快照，为所有可见单元格提供右键收藏菜单。
     let collections: [ClipboardCollectionSnapshot]
+    /// 键盘主选项 ID；nil 表示当前没有可选择记录。
     let selectedItemId: UUID?
+    /// Cmd 或 Shift 建立的连续/离散多选集合。
     let selectedItems: Set<UUID>
+    /// 是否绘制选中状态；搜索框获得焦点时关闭，避免出现双重焦点提示。
     var showSelection: Bool = true
+    /// 当前筛选上下文是否允许单元格展示置顶操作。
     var showPinOption: Bool = true
-    let cardSize: CardSize
+    /// 当前横向或竖向视觉布局，决定滚动轴、单元格尺寸和渲染器。
+    let layout: MainPanelCollectionLayout
+    /// 自适应网格列数变化回调，让键盘导航与 AppKit 实际布局使用同一列数。
+    let onGridColumnCountChange: (Int) -> Void
+    /// 单击单元格后的索引和稳定 ID 回调。
     let onItemTapped: (Int, UUID) -> Void
+    /// 双击单元格后立即粘贴该记录的回调。
     let onItemDoubleTapped: (UUID) -> Void
+    /// 将指定记录重新写入剪切板的回调。
     let onCopy: (UUID) -> Void
+    /// 纯文本粘贴回调；nil 表示当前调用方不提供该能力。
     var onPastePlain: ((UUID) -> Void)? = nil
+    /// 切换指定记录置顶状态的回调。
     let onTogglePinned: (UUID) -> Void
+    /// 切换指定记录默认收藏状态的回调。
     let onToggleFavorite: (UUID) -> Void
+    /// 切换指定记录与收藏夹归属关系的回调。
     let onToggleCollection: (UUID, UUID) -> Void
+    /// 保存或清除指定记录用户别名的回调。
     let onSaveTitle: (UUID, String?) -> Void
+    /// 删除指定剪切板记录的回调。
     let onDelete: (UUID) -> Void
 
     private static let itemIdentifier = NSUserInterfaceItemIdentifier("PasteDeckCardCollectionViewItem")
@@ -753,16 +941,27 @@ struct VirtualizedCardList: NSViewRepresentable {
         Coordinator(self)
     }
 
-    func makeNSView(context: Context) -> NSScrollView {
-        let layout = NSCollectionViewFlowLayout()
-        layout.scrollDirection = .horizontal
-        layout.minimumInteritemSpacing = 12
-        layout.minimumLineSpacing = 12
-        layout.sectionInset = NSEdgeInsets(top: 8, left: 20, bottom: 8, right: 20)
-        layout.itemSize = itemSize
+    /// Swift arrays retain copy-on-write storage across view-state updates.
+    /// Pointer identity lets keyboard selection avoid a deep 5000-item equality
+    /// pass while any real snapshot replacement still triggers a data refresh.
+    private static func sharesStorage<Element>(_ left: [Element], _ right: [Element]) -> Bool {
+        guard left.count == right.count else { return false }
+        guard !left.isEmpty else { return true }
+
+        return left.withUnsafeBufferPointer { leftBuffer in
+            right.withUnsafeBufferPointer { rightBuffer in
+                leftBuffer.baseAddress == rightBuffer.baseAddress
+            }
+        }
+    }
+
+    func makeNSView(context: Context) -> AdaptiveCardScrollView {
+        let flowLayout = NSCollectionViewFlowLayout()
+        flowLayout.minimumInteritemSpacing = 12
+        flowLayout.minimumLineSpacing = 12
 
         let collectionView = NSCollectionView()
-        collectionView.collectionViewLayout = layout
+        collectionView.collectionViewLayout = flowLayout
         collectionView.dataSource = context.coordinator
         collectionView.delegate = context.coordinator
         collectionView.backgroundColors = [.clear]
@@ -772,7 +971,7 @@ struct VirtualizedCardList: NSViewRepresentable {
             forItemWithIdentifier: Self.itemIdentifier
         )
 
-        let scrollView = HorizontalCardScrollView()
+        let scrollView = AdaptiveCardScrollView()
         scrollView.documentView = collectionView
         scrollView.drawsBackground = false
         scrollView.hasHorizontalScroller = false
@@ -780,34 +979,64 @@ struct VirtualizedCardList: NSViewRepresentable {
         scrollView.autohidesScrollers = true
 
         context.coordinator.collectionView = collectionView
+        context.coordinator.scrollView = scrollView
+        scrollView.panelLayout = layout
+        scrollView.onViewportSizeChange = { [weak coordinator = context.coordinator] viewportSize in
+            coordinator?.viewportDidChange(viewportSize)
+        }
+        context.coordinator.viewportDidChange(scrollView.contentSize)
         return scrollView
     }
 
-    func updateNSView(_ scrollView: NSScrollView, context: Context) {
-        let oldSelectedID = context.coordinator.parent.selectedItemId
-        context.coordinator.parent = self
+    func updateNSView(_ scrollView: AdaptiveCardScrollView, context: Context) {
+        let coordinator = context.coordinator
+        let previousParent = coordinator.parent
+        let dataChanged = !Self.sharesStorage(previousParent.items, items)
+            || !Self.sharesStorage(previousParent.collections, collections)
+        let presentationChanged = previousParent.layout != layout
+            || previousParent.showSelection != showSelection
+            || previousParent.showPinOption != showPinOption
 
-        if let layout = context.coordinator.collectionView.collectionViewLayout as? NSCollectionViewFlowLayout {
-            layout.itemSize = itemSize
+        coordinator.parent = self
+        if dataChanged {
+            coordinator.rebuildItemIndexPaths()
+        }
+        scrollView.panelLayout = layout
+        coordinator.viewportDidChange(scrollView.contentSize)
+
+        if dataChanged || presentationChanged {
+            coordinator.collectionView.reloadData()
+        } else {
+            coordinator.reloadSelectionChanges(from: previousParent)
         }
 
-        context.coordinator.collectionView.reloadData()
-
-        if oldSelectedID != selectedItemId {
-            context.coordinator.scrollSelectedIntoViewIfNeeded()
+        if previousParent.selectedItemId != selectedItemId || presentationChanged {
+            if presentationChanged {
+                var scrollOrigin = scrollView.contentView.bounds.origin
+                if layout.isHorizontal {
+                    scrollOrigin.y = 0
+                } else {
+                    scrollOrigin.x = 0
+                }
+                scrollView.contentView.scroll(to: scrollOrigin)
+                scrollView.reflectScrolledClipView(scrollView.contentView)
+            }
+            coordinator.scrollSelectedIntoViewIfNeeded(force: presentationChanged)
         }
-    }
-
-    private var itemSize: NSSize {
-        NSSize(width: cardSize.width, height: cardSize.height + 26)
     }
 
     final class Coordinator: NSObject, NSCollectionViewDataSource, NSCollectionViewDelegate {
         var parent: VirtualizedCardList
         weak var collectionView: NSCollectionView!
+        weak var scrollView: AdaptiveCardScrollView?
+        private var currentMetrics = CollectionLayoutMetrics.horizontalFallback
+        private var lastReportedGridColumnCount = 0
+        private var itemIndexPathsByID: [UUID: IndexPath] = [:]
 
         init(_ parent: VirtualizedCardList) {
             self.parent = parent
+            super.init()
+            rebuildItemIndexPaths()
         }
 
         func collectionView(_ collectionView: NSCollectionView, numberOfItemsInSection section: Int) -> Int {
@@ -828,65 +1057,268 @@ struct VirtualizedCardList: NSViewRepresentable {
                 return item
             }
 
-            let snapshot = parent.items[indexPath.item]
-            let index = indexPath.item
-            let rootView = ClipCardView(
-                item: snapshot,
-                isSelected: parent.showSelection && (parent.selectedItems.contains(snapshot.id) || parent.selectedItemId == snapshot.id),
-                isMultiSelected: parent.showSelection && parent.selectedItems.contains(snapshot.id) && parent.selectedItems.count > 1,
-                showPinOption: parent.showPinOption,
-                cardSize: parent.cardSize,
-                collections: parent.collections,
-                onCopy: { [weak self] in
-                    self?.parent.onCopy(snapshot.id)
-                },
-                onPastePlain: { [weak self] in
-                    self?.parent.onPastePlain?(snapshot.id)
-                },
-                onTogglePinned: { [weak self] in
-                    self?.parent.onTogglePinned(snapshot.id)
-                },
-                onToggleFavorite: { [weak self] in
-                    self?.parent.onToggleFavorite(snapshot.id)
-                },
-                onToggleCollection: { [weak self] collectionID in
-                    self?.parent.onToggleCollection(snapshot.id, collectionID)
-                },
-                onSaveTitle: { [weak self] title in
-                    self?.parent.onSaveTitle(snapshot.id, title)
-                },
-                onDelete: { [weak self] in
-                    self?.parent.onDelete(snapshot.id)
-                }
-            )
-            .equatable()
-            .onTapGesture {
-                self.parent.onItemTapped(index, snapshot.id)
-            }
-            .onTapGesture(count: 2) {
-                self.parent.onItemDoubleTapped(snapshot.id)
-            }
-            .frame(width: parent.cardSize.width, height: parent.cardSize.height + 26)
-
-            cardItem.configure(rootView)
+            configure(cardItem, at: indexPath)
             return cardItem
         }
 
-        func scrollSelectedIntoViewIfNeeded() {
+        func viewportDidChange(_ viewportSize: NSSize) {
+            let nextMetrics = CollectionLayoutMetrics.make(
+                layout: parent.layout,
+                viewportSize: viewportSize
+            )
+            guard nextMetrics != currentMetrics else { return }
+
+            currentMetrics = nextMetrics
+            guard let flowLayout = collectionView?.collectionViewLayout as? NSCollectionViewFlowLayout else { return }
+
+            flowLayout.scrollDirection = nextMetrics.isHorizontal ? .horizontal : .vertical
+            flowLayout.sectionInset = nextMetrics.isHorizontal
+                ? NSEdgeInsets(top: 8, left: 20, bottom: 8, right: 20)
+                : NSEdgeInsets(top: 8, left: 16, bottom: 8, right: 16)
+            flowLayout.itemSize = nextMetrics.itemSize
+            flowLayout.invalidateLayout()
+
+            reportGridColumnCountIfNeeded(nextMetrics.gridColumnCount)
+            reconfigureVisibleItems()
+        }
+
+        func reloadSelectionChanges(from previousParent: VirtualizedCardList) {
+            var changedItemIDs = previousParent.selectedItems.symmetricDifference(parent.selectedItems)
+            if (previousParent.selectedItems.count > 1) != (parent.selectedItems.count > 1) {
+                changedItemIDs.formUnion(previousParent.selectedItems)
+                changedItemIDs.formUnion(parent.selectedItems)
+            }
+            if let previousSelectedItemID = previousParent.selectedItemId {
+                changedItemIDs.insert(previousSelectedItemID)
+            }
+            if let selectedItemID = parent.selectedItemId {
+                changedItemIDs.insert(selectedItemID)
+            }
+            guard !changedItemIDs.isEmpty else { return }
+
+            let indexPaths = changedItemIDs.compactMap { itemIndexPathsByID[$0] }
+            guard !indexPaths.isEmpty else { return }
+
+            collectionView.reloadItems(at: Set(indexPaths))
+        }
+
+        func rebuildItemIndexPaths() {
+            itemIndexPathsByID = Dictionary(
+                uniqueKeysWithValues: parent.items.enumerated().map { index, item in
+                    (item.id, IndexPath(item: index, section: 0))
+                }
+            )
+        }
+
+        func scrollSelectedIntoViewIfNeeded(force: Bool = false) {
             guard let selectedItemId = parent.selectedItemId,
-                  let index = parent.items.firstIndex(where: { $0.id == selectedItemId }) else {
+                  let indexPath = itemIndexPathsByID[selectedItemId] else {
                 return
             }
 
-            let indexPath = IndexPath(item: index, section: 0)
-            if collectionView.indexPathsForVisibleItems().contains(indexPath) {
+            if !force, collectionView.indexPathsForVisibleItems().contains(indexPath) {
                 return
             }
 
             collectionView.scrollToItems(
                 at: Set([indexPath]),
-                scrollPosition: .centeredHorizontally
+                scrollPosition: currentMetrics.isHorizontal ? .centeredHorizontally : .centeredVertically
             )
+        }
+
+        private func configure(_ cardItem: CardCollectionViewItem, at indexPath: IndexPath) {
+            guard indexPath.item < parent.items.count else { return }
+
+            let snapshot = parent.items[indexPath.item]
+            let index = indexPath.item
+            let isSelected = parent.showSelection
+                && (parent.selectedItems.contains(snapshot.id) || parent.selectedItemId == snapshot.id)
+            let isMultiSelected = parent.showSelection
+                && parent.selectedItems.contains(snapshot.id)
+                && parent.selectedItems.count > 1
+
+            switch parent.layout {
+            case .verticalCompactList:
+                let rootView = CompactClipRowView(
+                    item: snapshot,
+                    isSelected: isSelected,
+                    isMultiSelected: isMultiSelected,
+                    showPinOption: parent.showPinOption,
+                    collections: parent.collections,
+                    onCopy: { [weak self] in
+                        self?.parent.onCopy(snapshot.id)
+                    },
+                    onPastePlain: { [weak self] in
+                        self?.parent.onPastePlain?(snapshot.id)
+                    },
+                    onTogglePinned: { [weak self] in
+                        self?.parent.onTogglePinned(snapshot.id)
+                    },
+                    onToggleFavorite: { [weak self] in
+                        self?.parent.onToggleFavorite(snapshot.id)
+                    },
+                    onToggleCollection: { [weak self] collectionID in
+                        self?.parent.onToggleCollection(snapshot.id, collectionID)
+                    },
+                    onSaveTitle: { [weak self] title in
+                        self?.parent.onSaveTitle(snapshot.id, title)
+                    },
+                    onDelete: { [weak self] in
+                        self?.parent.onDelete(snapshot.id)
+                    }
+                )
+                .equatable()
+                .onTapGesture {
+                    self.parent.onItemTapped(index, snapshot.id)
+                }
+                .onTapGesture(count: 2) {
+                    self.parent.onItemDoubleTapped(snapshot.id)
+                }
+                .frame(width: currentMetrics.itemSize.width, height: currentMetrics.itemSize.height)
+
+                cardItem.configure(rootView)
+            case .horizontal, .verticalLargeCards, .verticalAdaptiveGrid:
+                let cardMetrics = currentMetrics.cardMetrics
+                    ?? ClipCardLayoutMetrics(cardSize: .medium)
+                let rootView = ClipCardView(
+                    item: snapshot,
+                    isSelected: isSelected,
+                    isMultiSelected: isMultiSelected,
+                    showPinOption: parent.showPinOption,
+                    cardSize: .medium,
+                    layoutMetrics: cardMetrics,
+                    collections: parent.collections,
+                    onCopy: { [weak self] in
+                        self?.parent.onCopy(snapshot.id)
+                    },
+                    onPastePlain: { [weak self] in
+                        self?.parent.onPastePlain?(snapshot.id)
+                    },
+                    onTogglePinned: { [weak self] in
+                        self?.parent.onTogglePinned(snapshot.id)
+                    },
+                    onToggleFavorite: { [weak self] in
+                        self?.parent.onToggleFavorite(snapshot.id)
+                    },
+                    onToggleCollection: { [weak self] collectionID in
+                        self?.parent.onToggleCollection(snapshot.id, collectionID)
+                    },
+                    onSaveTitle: { [weak self] title in
+                        self?.parent.onSaveTitle(snapshot.id, title)
+                    },
+                    onDelete: { [weak self] in
+                        self?.parent.onDelete(snapshot.id)
+                    }
+                )
+                .equatable()
+                .onTapGesture {
+                    self.parent.onItemTapped(index, snapshot.id)
+                }
+                .onTapGesture(count: 2) {
+                    self.parent.onItemDoubleTapped(snapshot.id)
+                }
+                .frame(width: currentMetrics.itemSize.width, height: currentMetrics.itemSize.height)
+
+                cardItem.configure(rootView)
+            }
+        }
+
+        private func reconfigureVisibleItems() {
+            for indexPath in collectionView.indexPathsForVisibleItems() {
+                guard let cardItem = collectionView.item(at: indexPath) as? CardCollectionViewItem else { continue }
+                configure(cardItem, at: indexPath)
+            }
+        }
+
+        private func reportGridColumnCountIfNeeded(_ columnCount: Int) {
+            guard columnCount != lastReportedGridColumnCount else { return }
+            lastReportedGridColumnCount = columnCount
+
+            DispatchQueue.main.async { [weak self] in
+                self?.parent.onGridColumnCountChange(columnCount)
+            }
+        }
+    }
+
+    /// AppKit flow layout 所需的固定度量。窗口 resize 只更新这些值并失效布局。
+    struct CollectionLayoutMetrics: Equatable {
+        /// 单元格在 `NSCollectionViewFlowLayout` 中占用的宽高。
+        let itemSize: NSSize
+        /// 大卡片渲染使用的内部预览和元信息尺寸；紧凑列表为 nil。
+        let cardMetrics: ClipCardLayoutMetrics?
+        /// 自适应网格当前实际列数；非网格布局固定为 1。
+        let gridColumnCount: Int
+        /// 是否使用横向滚动轴，同时控制滚轮轴转换。
+        let isHorizontal: Bool
+
+        static let horizontalFallback = CollectionLayoutMetrics(
+            itemSize: NSSize(width: 160, height: 156),
+            cardMetrics: ClipCardLayoutMetrics(cardSize: .medium),
+            gridColumnCount: 1,
+            isHorizontal: true
+        )
+
+        static func make(
+            layout: MainPanelCollectionLayout,
+            viewportSize: NSSize
+        ) -> CollectionLayoutMetrics {
+            let viewportWidth = max(1, viewportSize.width)
+            let viewportHeight = max(1, viewportSize.height)
+
+            switch layout {
+            case .horizontal:
+                let previewHeight = min(max(viewportHeight - 48, 100), 200)
+                let cardWidth = previewHeight * 1.25
+                let cardMetrics = ClipCardLayoutMetrics(
+                    width: cardWidth,
+                    previewHeight: previewHeight,
+                    metadataHeight: 26
+                )
+                let singleRowItemHeight = max(cardMetrics.totalHeight, viewportHeight - 16)
+                return CollectionLayoutMetrics(
+                    itemSize: NSSize(width: cardWidth, height: singleRowItemHeight),
+                    cardMetrics: cardMetrics,
+                    gridColumnCount: 1,
+                    isHorizontal: true
+                )
+            case .verticalCompactList:
+                let availableWidth = max(240, viewportWidth - 32)
+                return CollectionLayoutMetrics(
+                    itemSize: NSSize(width: availableWidth, height: 72),
+                    cardMetrics: nil,
+                    gridColumnCount: 1,
+                    isHorizontal: false
+                )
+            case .verticalLargeCards:
+                let availableWidth = max(240, viewportWidth - 32)
+                let cardMetrics = ClipCardLayoutMetrics(
+                    width: availableWidth,
+                    previewHeight: 180,
+                    metadataHeight: 28
+                )
+                return CollectionLayoutMetrics(
+                    itemSize: NSSize(width: availableWidth, height: cardMetrics.totalHeight),
+                    cardMetrics: cardMetrics,
+                    gridColumnCount: 1,
+                    isHorizontal: false
+                )
+            case .verticalAdaptiveGrid:
+                let availableWidth = max(240, viewportWidth - 32)
+                let gridColumnCount = availableWidth >= 412 ? 2 : 1
+                let totalSpacing = CGFloat(gridColumnCount - 1) * 12
+                let cardWidth = (availableWidth - totalSpacing) / CGFloat(gridColumnCount)
+                let cardMetrics = ClipCardLayoutMetrics(
+                    width: cardWidth,
+                    previewHeight: 140,
+                    metadataHeight: 28
+                )
+                return CollectionLayoutMetrics(
+                    itemSize: NSSize(width: cardWidth, height: cardMetrics.totalHeight),
+                    cardMetrics: cardMetrics,
+                    gridColumnCount: gridColumnCount,
+                    isHorizontal: false
+                )
+            }
         }
     }
 
@@ -920,9 +1352,22 @@ struct VirtualizedCardList: NSViewRepresentable {
         }
     }
 
-    final class HorizontalCardScrollView: NSScrollView {
+    final class AdaptiveCardScrollView: NSScrollView {
+        var panelLayout: MainPanelCollectionLayout = .horizontal
+        var onViewportSizeChange: ((NSSize) -> Void)?
+        private var lastViewportSize = NSSize.zero
+
+        override func layout() {
+            super.layout()
+
+            let viewportSize = contentSize
+            guard viewportSize != lastViewportSize else { return }
+            lastViewportSize = viewportSize
+            onViewportSizeChange?(viewportSize)
+        }
+
         override func scrollWheel(with event: NSEvent) {
-            if abs(event.scrollingDeltaY) > abs(event.scrollingDeltaX) {
+            if panelLayout.isHorizontal && abs(event.scrollingDeltaY) > abs(event.scrollingDeltaX) {
                 var newOrigin = contentView.bounds.origin
                 newOrigin.x -= event.scrollingDeltaY
                 if let documentView {
@@ -949,8 +1394,8 @@ struct KeyboardEventMonitorView: NSViewRepresentable {
     let filterOptions: [ClipboardFilterOption]
     var onLeftArrow: ((Bool) -> Void)?
     var onRightArrow: ((Bool) -> Void)?
-    var onUpArrow: (() -> Void)?
-    var onDownArrow: (() -> Void)?
+    var onUpArrow: ((Bool) -> Void)?
+    var onDownArrow: ((Bool) -> Void)?
     var onEnter: ((Bool) -> Void)?
     var onEscape: (() -> Void)?
     var onSpace: (() -> Void)?
@@ -1036,7 +1481,7 @@ struct KeyboardEventMonitorView: NSViewRepresentable {
                 return event
             }
 
-            // Cmd+F → 聚焦搜索框（任何模式下都响应）
+            // Cmd+F -> 聚焦搜索框（任何模式下都响应）
             if keyCode == 3 && modifiers == .command {
                 parent.onCmdF?()
                 return nil
@@ -1044,7 +1489,7 @@ struct KeyboardEventMonitorView: NSViewRepresentable {
 
             // ===== 搜索模式：只拦截 Enter 和 Cmd+F，其余全部交给 TextField =====
             if parent.focusZone == .search {
-                if keyCode == 36 { // Enter → 焦点回到卡片区
+                if keyCode == 36 { // Enter -> 焦点回到卡片区
                     parent.onEnter?(false)
                     return nil
                 }
@@ -1063,10 +1508,10 @@ struct KeyboardEventMonitorView: NSViewRepresentable {
                 parent.onRightArrow?(extending)
                 return nil
             case 126: // Up arrow
-                parent.onUpArrow?()
+                parent.onUpArrow?(modifiers.contains(.shift))
                 return nil
             case 125: // Down arrow
-                parent.onDownArrow?()
+                parent.onDownArrow?(modifiers.contains(.shift))
                 return nil
             case 36: // Enter
                 parent.onEnter?(modifiers.contains(.shift))
@@ -1086,7 +1531,7 @@ struct KeyboardEventMonitorView: NSViewRepresentable {
                 break
             }
 
-            // 普通字符输入（卡片区模式）→ 切到搜索栏，让 TextField 接收此事件
+            // 普通字符输入（卡片区模式）-> 切到搜索栏，让 TextField 接收此事件
             if let chars = event.characters, !chars.isEmpty,
                modifiers.isEmpty || modifiers == .shift {
                 parent.focusZone = .search

@@ -13,16 +13,183 @@ import AppKit
 import SwiftUI
 import SwiftData
 
+extension Notification.Name {
+    /// 设置页持久化主面板方向或竖向样式后发送，使已创建的 AppKit 面板同步窗口约束与 frame。
+    static let panelLayoutDidChange = Notification.Name("panelLayoutDidChange")
+}
+
+/// 主面板窗口在横竖布局间切换时使用的稳定尺寸和 frame 存储键。
+enum MainPanelWindowLayout {
+    static let horizontalDefaultContentSize = NSSize(width: 800, height: 400)
+    static let verticalDefaultContentSize = NSSize(width: 480, height: 680)
+    static let horizontalMinimumContentSize = NSSize(width: 520, height: 260)
+    static let verticalMinimumContentSize = NSSize(width: 360, height: 420)
+
+    private static let horizontalFrameAutosaveName = "PasteDeck.MainPanel.Horizontal.Frame"
+    private static let verticalFrameAutosaveName = "PasteDeck.MainPanel.Vertical.Frame"
+
+    static func defaultContentSize(for orientation: PanelOrientation) -> NSSize {
+        switch orientation {
+        case .horizontal:
+            return horizontalDefaultContentSize
+        case .vertical:
+            return verticalDefaultContentSize
+        }
+    }
+
+    static func minimumContentSize(for orientation: PanelOrientation) -> NSSize {
+        switch orientation {
+        case .horizontal:
+            return horizontalMinimumContentSize
+        case .vertical:
+            return verticalMinimumContentSize
+        }
+    }
+
+    static func frameAutosaveName(for orientation: PanelOrientation) -> String {
+        switch orientation {
+        case .horizontal:
+            return horizontalFrameAutosaveName
+        case .vertical:
+            return verticalFrameAutosaveName
+        }
+    }
+}
+
+/// Pure geometry used to recover a saved frame after displays are removed or resized.
+enum MainPanelFrameGeometry {
+    static func centeredFrame(size: NSSize, in visibleFrame: NSRect) -> NSRect {
+        NSRect(
+            x: visibleFrame.midX - size.width / 2,
+            y: visibleFrame.midY - size.height / 2,
+            width: size.width,
+            height: size.height
+        )
+    }
+
+    static func constrainedFrame(
+        _ requestedFrame: NSRect,
+        visibleFrames: [NSRect],
+        minimumSize: NSSize = .zero,
+        fallbackVisibleFrame: NSRect? = nil
+    ) -> NSRect {
+        guard !visibleFrames.isEmpty else { return requestedFrame }
+
+        // Preserve the exact persisted frame whenever the original display is
+        // still present. This avoids tiny position drift across repeated opens.
+        if requestedFrame.width >= minimumSize.width,
+           requestedFrame.height >= minimumSize.height,
+           isFullyCovered(requestedFrame, by: visibleFrames) {
+            return requestedFrame
+        }
+
+        let intersectionAreas = visibleFrames.map { visibleFrame in
+            let intersection = visibleFrame.intersection(requestedFrame)
+            return intersection.isNull ? CGFloat.zero : intersection.width * intersection.height
+        }
+        let largestIntersectionArea = intersectionAreas.max() ?? .zero
+
+        let targetVisibleFrame: NSRect
+        if largestIntersectionArea > 0,
+           let targetIndex = intersectionAreas.firstIndex(of: largestIntersectionArea) {
+            targetVisibleFrame = visibleFrames[targetIndex]
+        } else {
+            targetVisibleFrame = fallbackVisibleFrame ?? visibleFrames[0]
+        }
+
+        var constrainedFrame = requestedFrame
+        constrainedFrame.size.width = min(
+            max(requestedFrame.width, max(minimumSize.width, 1)),
+            targetVisibleFrame.width
+        )
+        constrainedFrame.size.height = min(
+            max(requestedFrame.height, max(minimumSize.height, 1)),
+            targetVisibleFrame.height
+        )
+        constrainedFrame.origin.x = min(
+            max(requestedFrame.minX, targetVisibleFrame.minX),
+            targetVisibleFrame.maxX - constrainedFrame.width
+        )
+        constrainedFrame.origin.y = min(
+            max(requestedFrame.minY, targetVisibleFrame.minY),
+            targetVisibleFrame.maxY - constrainedFrame.height
+        )
+        return constrainedFrame
+    }
+
+    /// Returns true when the union of all connected visible screen rectangles
+    /// covers the requested frame, including a window intentionally spanning
+    /// adjacent displays. A sweep across screen x-boundaries avoids treating
+    /// the empty gap between offset displays as usable space.
+    private static func isFullyCovered(_ requestedFrame: NSRect, by visibleFrames: [NSRect]) -> Bool {
+        guard requestedFrame.width > 0, requestedFrame.height > 0 else { return false }
+
+        let intersections = visibleFrames.compactMap { visibleFrame -> NSRect? in
+            let intersection = visibleFrame.intersection(requestedFrame)
+            return intersection.isNull || intersection.isEmpty ? nil : intersection
+        }
+        guard !intersections.isEmpty else { return false }
+
+        let horizontalBoundaries = Set(
+            [requestedFrame.minX, requestedFrame.maxX]
+                + intersections.flatMap { [$0.minX, $0.maxX] }
+        ).sorted()
+        let coverageTolerance: CGFloat = 0.5
+
+        for boundaryIndex in 0..<(horizontalBoundaries.count - 1) {
+            let leftBoundary = horizontalBoundaries[boundaryIndex]
+            let rightBoundary = horizontalBoundaries[boundaryIndex + 1]
+            guard rightBoundary - leftBoundary > coverageTolerance else { continue }
+
+            let horizontalMidpoint = (leftBoundary + rightBoundary) / 2
+            let verticalRanges = intersections
+                .filter { $0.minX <= horizontalMidpoint && $0.maxX >= horizontalMidpoint }
+                .map { max($0.minY, requestedFrame.minY)...min($0.maxY, requestedFrame.maxY) }
+                .sorted { $0.lowerBound < $1.lowerBound }
+            guard var mergedRange = verticalRanges.first else { return false }
+
+            var coveredHeight: CGFloat = 0
+            for verticalRange in verticalRanges.dropFirst() {
+                if verticalRange.lowerBound <= mergedRange.upperBound + coverageTolerance {
+                    mergedRange = mergedRange.lowerBound...max(mergedRange.upperBound, verticalRange.upperBound)
+                } else {
+                    coveredHeight += mergedRange.upperBound - mergedRange.lowerBound
+                    mergedRange = verticalRange
+                }
+            }
+            coveredHeight += mergedRange.upperBound - mergedRange.lowerBound
+
+            if coveredHeight + coverageTolerance < requestedFrame.height {
+                return false
+            }
+        }
+
+        return true
+    }
+}
+
 /// Manages the main floating panel for clipboard history display
 class MainPanelController: NSObject, NSWindowDelegate {
     private var panel: KeyboardFocusPanel?
     private var isVisible = false
+
+    /// Resolves the current settings window without retaining AppDelegate or the window controller graph.
+    var settingsWindowProvider: (() -> NSWindow?)?
+
+    /// Tracks which layout owns the panel's current frame so switches never overwrite the other layout's geometry.
+    private var activeOrientation: PanelOrientation = .horizontal
+
+    /// Delegate move/resize notifications caused by restore and clamp must not overwrite persisted user geometry.
+    private var isApplyingProgrammaticFrame = false
 
     /// Prevents auto-close when opening preview window
     private var canCloseOnResignKey = false
 
     /// Identifies the latest focus request so queued work from an older show/hide cycle cannot steal focus.
     private var focusRequestGeneration: UInt = 0
+
+    /// Suspends focus confirmation while AppKit finishes deciding which window receives a resign-key handoff.
+    private var pendingResignGeneration: UInt?
 
     /// Keeps transient menu or window changes from closing the panel while its key status is being established.
     private var isEstablishingFocus = false
@@ -40,10 +207,14 @@ class MainPanelController: NSObject, NSWindowDelegate {
     // MARK: - Panel Setup
 
     private func setupPanel() {
+        let initialOrientation = loadPanelOrientation()
+        activeOrientation = initialOrientation
+        let defaultContentSize = MainPanelWindowLayout.defaultContentSize(for: initialOrientation)
+
         // Create floating panel with transparent title bar
         let panel = KeyboardFocusPanel(
-            keyboardContentRect: NSRect(x: 0, y: 0, width: 800, height: 400),
-            styleMask: [.titled, .closable, .fullSizeContentView],
+            keyboardContentRect: NSRect(origin: .zero, size: defaultContentSize),
+            styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
@@ -59,11 +230,12 @@ class MainPanelController: NSObject, NSWindowDelegate {
         panel.titleVisibility = .hidden
         panel.delegate = self
         panel.acceptsMouseMovedEvents = true
+        panel.contentMinSize = MainPanelWindowLayout.minimumContentSize(for: initialOrientation)
 
         // Add blur background effect
         // 使用能跟随 window.appearance 的材质；.hudWindow 会强制暗色，
         // 导致用户选择浅色/跟随系统时主面板仍显示为暗色。
-        let visualEffectView = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: 800, height: 400))
+        let visualEffectView = NSVisualEffectView(frame: NSRect(origin: .zero, size: defaultContentSize))
         visualEffectView.material = .popover
         visualEffectView.blendingMode = .behindWindow
         visualEffectView.state = .active
@@ -84,6 +256,7 @@ class MainPanelController: NSObject, NSWindowDelegate {
 
         panel.contentView = visualEffectView
         self.panel = panel
+        restorePanelFrame(for: initialOrientation)
 
         // 按当前外观模式渲染（浅色/深色/跟随系统）。
         // 必须在主面板内容装配完成后设置，确保子视图继承该 appearance。
@@ -94,6 +267,15 @@ class MainPanelController: NSObject, NSWindowDelegate {
             self,
             selector: #selector(handleAppearanceModeChange),
             name: .appearanceModeDidChange,
+            object: nil
+        )
+
+        // MainPanelView observes SwiftData for its content layout; the controller
+        // separately owns AppKit frame persistence and minimum-size constraints.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handlePanelLayoutChange),
+            name: .panelLayoutDidChange,
             object: nil
         )
     }
@@ -107,6 +289,10 @@ class MainPanelController: NSObject, NSWindowDelegate {
         applyAppearance()
     }
 
+    @objc private func handlePanelLayoutChange() {
+        synchronizePanelOrientation()
+    }
+
     // MARK: - Public Methods
 
     /// 预览窗口关闭后，通过与快捷键呼出相同的路径恢复主面板键盘焦点。
@@ -116,7 +302,12 @@ class MainPanelController: NSObject, NSWindowDelegate {
     }
 
     func showPanel() {
-        guard let panel = panel else { return }
+        guard panel != nil else { return }
+
+        // Settings may have changed while the panel was hidden. Switching here
+        // is a fallback for any caller that persisted settings without posting
+        // panelLayoutDidChange.
+        synchronizePanelOrientation()
 
         // A previous settings/paste flow may have hidden PasteDeck. Unhide the
         // windows without activating the app that owns this non-activating panel.
@@ -126,7 +317,6 @@ class MainPanelController: NSObject, NSWindowDelegate {
 
         canCloseOnResignKey = false
         isVisible = true
-        centerPanel(panel)
 
         // 通知 MainPanelView 重置焦点和选中状态
         NotificationCenter.default.post(name: .panelDidShow, object: nil)
@@ -137,7 +327,9 @@ class MainPanelController: NSObject, NSWindowDelegate {
     func hidePanel(shouldHideApp: Bool = true) {
         let shouldHideActiveApplication = shouldHideApp && NSApp.isActive
 
+        persistCurrentPanelFrame()
         focusRequestGeneration &+= 1
+        pendingResignGeneration = nil
         isEstablishingFocus = false
         canCloseOnResignKey = false
         isVisible = false
@@ -156,6 +348,11 @@ class MainPanelController: NSObject, NSWindowDelegate {
         if shouldHideActiveApplication {
             NSApp.hide(nil)
         }
+    }
+
+    /// Persists the active layout's frame during app termination even when the panel is already hidden.
+    func savePanelFrame() {
+        persistCurrentPanelFrame()
     }
 
     func togglePanel() {
@@ -182,6 +379,77 @@ class MainPanelController: NSObject, NSWindowDelegate {
 
     // MARK: - Private Methods
 
+    private func loadPanelOrientation() -> PanelOrientation {
+        let modelContext = ModelContext(AppModelContainer.container)
+        let descriptor = FetchDescriptor<AppSettings>()
+        guard let settings = try? modelContext.fetch(descriptor).first else {
+            return .horizontal
+        }
+        return settings.panelOrientation
+    }
+
+    /// Saves the outgoing layout before restoring the incoming layout's
+    /// independent frame. Vertical presentation styles intentionally share one
+    /// frame because only the orientation changes the window's overall shape.
+    private func synchronizePanelOrientation() {
+        let newOrientation = loadPanelOrientation()
+        guard newOrientation != activeOrientation else { return }
+
+        persistCurrentPanelFrame(for: activeOrientation)
+        activeOrientation = newOrientation
+        restorePanelFrame(for: newOrientation)
+    }
+
+    private func persistCurrentPanelFrame(for orientation: PanelOrientation? = nil) {
+        guard let panel, !isApplyingProgrammaticFrame else { return }
+        let frameOrientation = orientation ?? activeOrientation
+        panel.saveFrame(usingName: MainPanelWindowLayout.frameAutosaveName(for: frameOrientation))
+    }
+
+    /// Restores the exact stored frame when possible, then constrains it to a
+    /// current visible screen so disconnected displays cannot strand the panel.
+    private func restorePanelFrame(for orientation: PanelOrientation) {
+        guard let panel else { return }
+
+        let defaultContentSize = MainPanelWindowLayout.defaultContentSize(for: orientation)
+        let visibleFrames = NSScreen.screens.map(\.visibleFrame)
+        isApplyingProgrammaticFrame = true
+
+        panel.contentMinSize = MainPanelWindowLayout.minimumContentSize(for: orientation)
+        let didRestoreStoredFrame = panel.setFrameUsingName(
+            MainPanelWindowLayout.frameAutosaveName(for: orientation),
+            force: true
+        )
+
+        if !didRestoreStoredFrame {
+            panel.setContentSize(defaultContentSize)
+            if let defaultVisibleFrame = NSScreen.main?.visibleFrame ?? visibleFrames.first {
+                let centeredFrame = MainPanelFrameGeometry.centeredFrame(
+                    size: panel.frame.size,
+                    in: defaultVisibleFrame
+                )
+                panel.setFrame(centeredFrame, display: false)
+            }
+        }
+
+        let minimumContentSize = MainPanelWindowLayout.minimumContentSize(for: orientation)
+        let minimumFrameSize = panel.frameRect(
+            forContentRect: NSRect(origin: .zero, size: minimumContentSize)
+        ).size
+        let constrainedFrame = MainPanelFrameGeometry.constrainedFrame(
+            panel.frame,
+            visibleFrames: visibleFrames,
+            minimumSize: minimumFrameSize,
+            fallbackVisibleFrame: NSScreen.main?.visibleFrame
+        )
+        if constrainedFrame != panel.frame {
+            panel.setFrame(constrainedFrame, display: false)
+        }
+
+        isApplyingProgrammaticFrame = false
+        persistCurrentPanelFrame(for: orientation)
+    }
+
     /// Establishes key-window focus immediately and confirms it once after the
     /// current AppKit event (such as status-menu tracking) has completed.
     private func establishPanelFocus() {
@@ -189,6 +457,7 @@ class MainPanelController: NSObject, NSWindowDelegate {
 
         focusRequestGeneration &+= 1
         let requestGeneration = focusRequestGeneration
+        pendingResignGeneration = nil
         isEstablishingFocus = true
         canCloseOnResignKey = false
 
@@ -210,6 +479,11 @@ class MainPanelController: NSObject, NSWindowDelegate {
               isVisible,
               let panel,
               panel.isVisible else { return }
+
+        // A resign callback may be queued before this confirmation. Let its
+        // next-turn resolver inspect the actual destination first so we never
+        // steal focus back from the settings window.
+        guard pendingResignGeneration != requestGeneration else { return }
 
         if hasPresentedAuxiliaryWindow {
             isEstablishingFocus = false
@@ -240,26 +514,78 @@ class MainPanelController: NSObject, NSWindowDelegate {
         return hasPreviewWindow || hasSheet
     }
 
-    private func centerPanel(_ panel: NSPanel) {
-        guard let screen = NSScreen.main else { return }
+    /// AppKit posts resign-key before the destination window is always final.
+    /// Waiting one main-loop turn lets us distinguish a settings-window handoff
+    /// from an external-app click without hiding every PasteDeck window.
+    private func resolvePanelResignKey(requestGeneration: UInt) {
+        guard requestGeneration == focusRequestGeneration,
+              isVisible,
+              let panel,
+              panel.isVisible else { return }
 
-        let screenFrame = screen.visibleFrame
-        let panelSize = panel.frame.size
+        if panel.isKeyWindow {
+            pendingResignGeneration = nil
+            if isEstablishingFocus {
+                confirmPanelFocus(requestGeneration: requestGeneration)
+            }
+            return
+        }
 
-        // Center horizontally, slightly above center vertically
-        let x = screenFrame.origin.x + (screenFrame.width - panelSize.width) / 2
-        let y = screenFrame.origin.y + (screenFrame.height - panelSize.height) / 2 + 100
+        if hasPresentedAuxiliaryWindow {
+            pendingResignGeneration = nil
+            isEstablishingFocus = false
+            canCloseOnResignKey = true
+            return
+        }
 
-        panel.setFrameOrigin(NSPoint(x: x, y: y))
+        let settingsWindow = settingsWindowProvider?()
+        let settingsWindowOwnsFocus = settingsWindow?.isVisible == true
+            && (NSApp.keyWindow === settingsWindow || NSApp.isActive)
+        if settingsWindowOwnsFocus {
+            pendingResignGeneration = nil
+            hidePanel(shouldHideApp: false)
+            return
+        }
+
+        // During the bounded initial handoff, a status-menu or protected-system
+        // surface can cause a transient resign before the panel is established.
+        // Only retry after the destination check above has ruled out settings.
+        if isEstablishingFocus {
+            pendingResignGeneration = nil
+            confirmPanelFocus(requestGeneration: requestGeneration)
+            return
+        }
+
+        pendingResignGeneration = nil
+        if canCloseOnResignKey {
+            hidePanel()
+        }
     }
 
     // MARK: - NSWindowDelegate
 
     func windowWillClose(_ notification: Notification) {
+        guard let closingPanel = notification.object as? NSWindow,
+              closingPanel === panel else { return }
+
+        persistCurrentPanelFrame()
         focusRequestGeneration &+= 1
+        pendingResignGeneration = nil
         isEstablishingFocus = false
         canCloseOnResignKey = false
         isVisible = false
+    }
+
+    func windowDidMove(_ notification: Notification) {
+        guard let movedPanel = notification.object as? NSWindow,
+              movedPanel === panel else { return }
+        persistCurrentPanelFrame()
+    }
+
+    func windowDidEndLiveResize(_ notification: Notification) {
+        guard let resizedPanel = notification.object as? NSWindow,
+              resizedPanel === panel else { return }
+        persistCurrentPanelFrame()
     }
 
     func windowDidBecomeKey(_ notification: Notification) {
@@ -267,6 +593,9 @@ class MainPanelController: NSObject, NSWindowDelegate {
               focusedPanel === panel,
               isVisible else { return }
 
+        if pendingResignGeneration == focusRequestGeneration {
+            pendingResignGeneration = nil
+        }
         requestCardFocus()
     }
 
@@ -275,13 +604,10 @@ class MainPanelController: NSObject, NSWindowDelegate {
               resignedPanel === panel,
               isVisible else { return }
 
-        // A transient resign during the bounded focus handoff is repaired by
-        // confirmPanelFocus on the next main-loop turn.
-        guard !isEstablishingFocus else { return }
-
-        // Only auto-close if no preview window or sheet is open.
-        if canCloseOnResignKey && !hasPresentedAuxiliaryWindow {
-            hidePanel()
+        let requestGeneration = focusRequestGeneration
+        pendingResignGeneration = requestGeneration
+        DispatchQueue.main.async { [weak self] in
+            self?.resolvePanelResignKey(requestGeneration: requestGeneration)
         }
     }
 }

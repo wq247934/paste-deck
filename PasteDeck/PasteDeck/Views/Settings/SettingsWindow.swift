@@ -146,7 +146,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .stats: return "使用洞察与趋势"
         case .filter: return "不记录指定来源"
         case .favorites: return "管理收藏夹名称和顺序"
-        case .appearance: return "主题和卡片展示密度"
+        case .appearance: return "主题和剪贴板面板布局"
         case .advanced: return "预览、翻译和数据维护"
         }
     }
@@ -167,11 +167,11 @@ enum SettingsPane: String, CaseIterable, Identifiable {
 
 private enum PasteDeckVersion {
     static var short: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.8.1"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.9.0"
     }
 
     static var build: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "181"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "190"
     }
 
     static var display: String {
@@ -2196,19 +2196,44 @@ struct AppearanceSettingsView: View {
                 }
             }
 
-            SettingsCard(title: "卡片", icon: "rectangle.grid.1x2") {
-                SettingsRow(title: "卡片大小", subtitle: "影响主面板中剪贴板卡片的展示尺寸") {
+            SettingsCard(title: "剪贴板面板", icon: "rectangle.split.2x1") {
+                SettingsRow(title: "布局方向", subtitle: "设置剪贴板历史在主面板中的排列方向") {
                     Picker("", selection: Binding(
-                        get: { appSettings.cardSize },
-                        set: { appSettings.cardSize = $0; try? modelContext.save() }
+                        get: { appSettings.panelOrientation },
+                        set: {
+                            appSettings.panelOrientation = $0
+                            try? modelContext.save()
+                            NotificationCenter.default.post(name: .panelLayoutDidChange, object: nil)
+                        }
                     )) {
-                        Text("小").tag(0)
-                        Text("中").tag(1)
-                        Text("大").tag(2)
+                        Text(PanelOrientation.horizontal.displayName).tag(PanelOrientation.horizontal)
+                        Text(PanelOrientation.vertical.displayName).tag(PanelOrientation.vertical)
                     }
                     .pickerStyle(.segmented)
                     .labelsHidden()
                     .frame(width: 160)
+                }
+
+                if appSettings.panelOrientation == .vertical {
+                    SettingsDivider()
+
+                    SettingsRow(title: "竖向样式", subtitle: "选择竖向面板中剪贴板内容的展示密度") {
+                        Picker("", selection: Binding(
+                            get: { appSettings.verticalPanelStyle },
+                            set: {
+                                appSettings.verticalPanelStyle = $0
+                                try? modelContext.save()
+                                NotificationCenter.default.post(name: .panelLayoutDidChange, object: nil)
+                            }
+                        )) {
+                            Text(VerticalPanelStyle.compactList.displayName).tag(VerticalPanelStyle.compactList)
+                            Text(VerticalPanelStyle.largeCards.displayName).tag(VerticalPanelStyle.largeCards)
+                            Text(VerticalPanelStyle.adaptiveGrid.displayName).tag(VerticalPanelStyle.adaptiveGrid)
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                        .frame(width: 280)
+                    }
                 }
             }
         }

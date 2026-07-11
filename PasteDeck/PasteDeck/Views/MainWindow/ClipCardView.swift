@@ -25,16 +25,19 @@ private final class ImageCache {
 struct AsyncLocalImage: View {
     let path: String
     @State private var image: NSImage?
+    @State private var loadedPath: String?
 
     init(path: String) {
         self.path = path
         // 缓存命中时首帧即显示，避免 .task 异步延迟造成的占位闪烁
-        _image = State(initialValue: ImageCache.shared.image(forPath: path))
+        let cachedImage = ImageCache.shared.image(forPath: path)
+        _image = State(initialValue: cachedImage)
+        _loadedPath = State(initialValue: cachedImage == nil ? nil : path)
     }
 
     var body: some View {
         Group {
-            if let image = image {
+            if loadedPath == path, let image {
                 Image(nsImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
@@ -44,15 +47,24 @@ struct AsyncLocalImage: View {
                     .foregroundColor(.secondary)
             }
         }
-        .task {
-            // init 已预填缓存命中项，仅处理未命中的后台解码
-            guard image == nil else { return }
-            if let loadedImage = await Task.detached(operation: { NSImage(contentsOfFile: path) }).value {
-                ImageCache.shared.set(loadedImage, forPath: path)
-                await MainActor.run {
-                    self.image = loadedImage
-                }
+        .task(id: path) {
+            if let cachedImage = ImageCache.shared.image(forPath: path) {
+                image = cachedImage
+                loadedPath = path
+                return
             }
+
+            image = nil
+            loadedPath = nil
+            let requestedPath = path
+            let loadedImage = await Task.detached {
+                NSImage(contentsOfFile: requestedPath)
+            }.value
+            guard !Task.isCancelled, let loadedImage else { return }
+
+            ImageCache.shared.set(loadedImage, forPath: requestedPath)
+            image = loadedImage
+            loadedPath = requestedPath
         }
     }
 }
@@ -62,6 +74,31 @@ enum CardContextMenuMode: Equatable {
     case cleanupQueue
 }
 
+/// 卡片的实际渲染尺寸。主面板会根据窗口和布局计算该值，清理预览仍可由旧版 `CardSize` 转换。
+struct ClipCardLayoutMetrics: Equatable {
+    /// 卡片总宽度，用于内容预览、元信息栏和选中描边保持一致。
+    let width: CGFloat
+    /// 内容预览区域高度，不包含底部元信息栏。
+    let previewHeight: CGFloat
+    /// 底部来源、大小和时间等元信息区域高度。
+    let metadataHeight: CGFloat
+
+    /// 卡片包含预览区和元信息栏后的总高度。
+    var totalHeight: CGFloat {
+        previewHeight + metadataHeight
+    }
+
+    init(width: CGFloat, previewHeight: CGFloat, metadataHeight: CGFloat = 26) {
+        self.width = width
+        self.previewHeight = previewHeight
+        self.metadataHeight = metadataHeight
+    }
+
+    init(cardSize: CardSize) {
+        self.init(width: cardSize.width, previewHeight: cardSize.height)
+    }
+}
+
 struct ClipCardView: View, Equatable {
     let item: ClipboardItemSnapshot
     let isSelected: Bool
@@ -69,6 +106,8 @@ struct ClipCardView: View, Equatable {
     var showPinOption: Bool = true
     var contextMenuMode: CardContextMenuMode = .history
     let cardSize: CardSize
+    /// 主面板的响应式尺寸；nil 时使用 `cardSize`，兼容清理预览等固定尺寸调用方。
+    var layoutMetrics: ClipCardLayoutMetrics? = nil
     let collections: [ClipboardCollectionSnapshot]
     let onCopy: () -> Void
     var onPastePlain: (() -> Void)? = nil
@@ -90,7 +129,7 @@ struct ClipCardView: View, Equatable {
             && lhs.isMultiSelected == rhs.isMultiSelected
             && lhs.showPinOption == rhs.showPinOption
             && lhs.contextMenuMode == rhs.contextMenuMode
-            && lhs.cardSize == rhs.cardSize
+            && lhs.resolvedLayoutMetrics == rhs.resolvedLayoutMetrics
             && lhs.item.contentType == rhs.item.contentType
             && lhs.item.textContent == rhs.item.textContent
             && lhs.item.linkWebsiteName == rhs.item.linkWebsiteName
@@ -108,12 +147,12 @@ struct ClipCardView: View, Equatable {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             contentPreview
-                .frame(width: cardSize.width, height: cardSize.height)
+                .frame(width: resolvedLayoutMetrics.width, height: resolvedLayoutMetrics.previewHeight)
                 .clipped()
 
             metadataBar
         }
-        .frame(width: cardSize.width)
+        .frame(width: resolvedLayoutMetrics.width)
         .background(
             RoundedRectangle(cornerRadius: 12)
                 .fill(isMultiSelected ? Color.accentColor.opacity(0.08) : Color.primary.opacity(0.03))
@@ -159,6 +198,10 @@ struct ClipCardView: View, Equatable {
         } message: {
             Text("原始剪贴板内容不会被修改。")
         }
+    }
+
+    private var resolvedLayoutMetrics: ClipCardLayoutMetrics {
+        layoutMetrics ?? ClipCardLayoutMetrics(cardSize: cardSize)
     }
 
     @ViewBuilder
@@ -219,7 +262,7 @@ struct ClipCardView: View, Equatable {
                 .foregroundColor(.secondary)
                 .lineLimit(1)
         }
-        .frame(height: 26)
+        .frame(height: resolvedLayoutMetrics.metadataHeight)
         .padding(.horizontal, 8)
         .background(Color.primary.opacity(0.035))
     }
@@ -372,7 +415,10 @@ struct ClipCardView: View, Equatable {
         VStack(spacing: 8) {
             RoundedRectangle(cornerRadius: 8)
                 .fill(Color(hex: item.colorHex ?? "") ?? .clear)
-                .frame(width: cardSize.width - 40, height: cardSize.height - 60)
+                .frame(
+                    width: max(44, resolvedLayoutMetrics.width - 40),
+                    height: max(36, resolvedLayoutMetrics.previewHeight - 60)
+                )
 
             Text(item.colorHex ?? "")
                 .font(.system(size: 11, weight: .medium, design: .monospaced))
@@ -383,19 +429,223 @@ struct ClipCardView: View, Equatable {
     }
 
     private var fileIcon: String {
-        guard let fileName = item.fileName else { return "doc" }
-        let ext = (fileName as NSString).pathExtension.lowercased()
+        clipFileIconName(item.fileName)
+    }
+}
 
-        switch ext {
-        case "pdf": return "doc.richtext"
-        case "zip", "rar", "7z", "tar", "gz": return "doc.zipper"
-        case "jpg", "jpeg", "png", "gif", "heic", "webp": return "photo"
-        case "mp3", "wav", "flac", "m4a": return "music.note"
-        case "mp4", "mov", "avi", "mkv": return "video"
-        case "swift", "js", "ts", "py", "java", "kt", "go", "rs", "cpp", "c", "h": return "chevron.left.forwardslash.chevron.right"
-        case "json", "xml", "yaml", "yml", "toml": return "doc.badge.gearshape"
-        default: return "doc"
+// MARK: - Compact Vertical Row
+
+/// 竖向紧凑模式的单条剪切板记录，在固定行高中保留预览、摘要和关键元信息。
+struct CompactClipRowView: View, Equatable {
+    /// 当前行展示的不可变剪切板快照。
+    let item: ClipboardItemSnapshot
+    /// 当前行是否为键盘主选项，用于绘制强调色边框。
+    let isSelected: Bool
+    /// 当前行是否属于多选集合，用于绘制多选背景。
+    var isMultiSelected = false
+    /// 当前筛选上下文是否允许显示置顶操作。
+    var showPinOption = true
+    /// 当前可用收藏夹快照，用于构建右键收藏菜单。
+    let collections: [ClipboardCollectionSnapshot]
+    /// 将原始内容写回剪切板的回调。
+    let onCopy: () -> Void
+    /// 以纯文本形式粘贴支持内容的回调；nil 表示当前入口不提供该操作。
+    var onPastePlain: (() -> Void)? = nil
+    /// 切换记录置顶状态的回调。
+    let onTogglePinned: () -> Void
+    /// 切换默认收藏状态的回调。
+    let onToggleFavorite: () -> Void
+    /// 切换指定收藏夹归属的回调。
+    let onToggleCollection: (UUID) -> Void
+    /// 保存或清除用户别名的回调；nil 表示清除别名。
+    let onSaveTitle: (String?) -> Void
+    /// 删除当前记录的回调。
+    let onDelete: () -> Void
+
+    @State private var isEditingTitle = false
+    @State private var titleDraft = ""
+
+    static func == (lhs: CompactClipRowView, rhs: CompactClipRowView) -> Bool {
+        lhs.item == rhs.item
+            && lhs.isSelected == rhs.isSelected
+            && lhs.isMultiSelected == rhs.isMultiSelected
+            && lhs.showPinOption == rhs.showPinOption
+            && lhs.collections == rhs.collections
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            thumbnail
+                .frame(width: 48, height: 48)
+                .background(RoundedRectangle(cornerRadius: 9).fill(Color.primary.opacity(0.045)))
+                .clipShape(RoundedRectangle(cornerRadius: 9))
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(item.displayTitle.isEmpty ? item.contentType.displayName : item.displayTitle)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+
+                Text(summaryText)
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+
+                HStack(spacing: 5) {
+                    Text(metadataText)
+                        .font(.system(size: 9))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+
+                    compactCollectionBadge
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            VStack(spacing: 7) {
+                if item.isPinned {
+                    Image(systemName: "pin.fill")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundColor(.accentColor)
+                }
+
+                Button(action: onToggleFavorite) {
+                    Image(systemName: item.isFavorite ? "star.fill" : "star")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(item.isFavorite ? .yellow : .secondary.opacity(0.65))
+                }
+                .buttonStyle(.plain)
+            }
+            .frame(width: 18)
         }
+        .padding(.horizontal, 10)
+        .frame(height: 72)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(isMultiSelected ? Color.accentColor.opacity(0.1) : Color.primary.opacity(0.035))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(isSelected ? Color.accentColor : Color.primary.opacity(0.04), lineWidth: isSelected ? 2 : 1)
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 10))
+        .contextMenu {
+            CardContextMenu(
+                item: item,
+                collections: collections,
+                showPinOption: showPinOption,
+                onEditTitle: {
+                    titleDraft = item.customTitle ?? ""
+                    isEditingTitle = true
+                },
+                onCopy: onCopy,
+                onPastePlain: onPastePlain,
+                onTogglePinned: onTogglePinned,
+                onToggleCollection: onToggleCollection,
+                onClearTitle: { onSaveTitle(nil) },
+                onDelete: onDelete
+            )
+        }
+        .alert("重命名", isPresented: $isEditingTitle) {
+            TextField("别名", text: $titleDraft)
+            Button("取消", role: .cancel) {}
+            Button("保存") {
+                let trimmedTitle = titleDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                onSaveTitle(trimmedTitle.isEmpty ? nil : trimmedTitle)
+            }
+        } message: {
+            Text("原始剪切板内容不会被修改。")
+        }
+    }
+
+    @ViewBuilder
+    private var thumbnail: some View {
+        switch item.contentType {
+        case .image:
+            if let imagePath = item.imagePath {
+                AsyncLocalImage(path: imagePath)
+            } else {
+                thumbnailIcon("photo")
+            }
+        case .file:
+            if let filePath = item.filePath,
+               ImageFilePreview.isSupportedImageFile(path: filePath) {
+                AsyncLocalImage(path: filePath)
+            } else {
+                thumbnailIcon(clipFileIconName(item.fileName))
+            }
+        case .color:
+            RoundedRectangle(cornerRadius: 9)
+                .fill(Color(hex: item.colorHex ?? "") ?? .clear)
+                .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.primary.opacity(0.1), lineWidth: 1))
+        default:
+            thumbnailIcon(item.contentType.icon)
+        }
+    }
+
+    private func thumbnailIcon(_ systemName: String) -> some View {
+        Image(systemName: systemName)
+            .font(.system(size: 19, weight: .medium))
+            .foregroundColor(.accentColor)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var summaryText: String {
+        switch item.contentType {
+        case .text, .markdown, .json, .link:
+            let normalizedText = (item.textContent ?? "")
+                .replacingOccurrences(of: "\n", with: " ")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return normalizedText.isEmpty ? item.displaySize : normalizedText
+        case .image:
+            return "\(item.imageWidth)×\(item.imageHeight) · \(item.displaySize)"
+        case .file:
+            return item.filePath ?? item.displaySize
+        case .color:
+            return item.colorHex ?? item.displaySize
+        }
+    }
+
+    private var metadataText: String {
+        [item.displaySourceApp, item.contentType.displayName, item.displaySize, item.displayTime]
+            .compactMap { value in
+                guard let value, !value.isEmpty else { return nil }
+                return value
+            }
+            .joined(separator: " · ")
+    }
+
+    @ViewBuilder
+    private var compactCollectionBadge: some View {
+        let collections = item.nonDefaultCollections
+        if let collection = collections.first {
+            Text(collections.count > 1 ? "\(collection.name) +\(collections.count - 1)" : collection.name)
+                .font(.system(size: 8, weight: .semibold))
+                .foregroundColor(.white)
+                .lineLimit(1)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 1)
+                .background(Capsule().fill(Color.accentColor.opacity(0.78)))
+        }
+    }
+}
+
+private func clipFileIconName(_ fileName: String?) -> String {
+    guard let fileName else { return "doc" }
+    let fileExtension = (fileName as NSString).pathExtension.lowercased()
+
+    switch fileExtension {
+    case "pdf": return "doc.richtext"
+    case "zip", "rar", "7z", "tar", "gz": return "doc.zipper"
+    case "jpg", "jpeg", "png", "gif", "heic", "webp": return "photo"
+    case "mp3", "wav", "flac", "m4a": return "music.note"
+    case "mp4", "mov", "avi", "mkv": return "video"
+    case "swift", "js", "ts", "py", "java", "kt", "go", "rs", "cpp", "c", "h":
+        return "chevron.left.forwardslash.chevron.right"
+    case "json", "xml", "yaml", "yml", "toml": return "doc.badge.gearshape"
+    default: return "doc"
     }
 }
 
