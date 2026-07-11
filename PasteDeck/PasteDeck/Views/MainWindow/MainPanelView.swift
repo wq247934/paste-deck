@@ -48,6 +48,31 @@ enum MainPanelCollectionLayout: Equatable {
     }
 }
 
+/// 卡片集合布局共享的间距，确保滚动、分页和网格计算使用同一度量。
+private enum MainPanelCollectionMetrics {
+    static let itemSpacing: CGFloat = 12
+}
+
+/// 根据卡片框和真实滚动视口判断键盘选中的卡片是否完整可见。
+///
+/// `NSCollectionView.indexPathsForVisibleItems()` 会把只露出少量像素的预加载卡片
+/// 也视为可见；键盘导航必须以完整可见为准，才能在窗口尺寸变化后及时滚动。
+enum MainPanelCollectionViewport {
+    static func contains(
+        itemFrame: NSRect,
+        viewport: NSRect,
+        isHorizontal: Bool
+    ) -> Bool {
+        guard !itemFrame.isNull, !viewport.isNull else { return false }
+
+        if isHorizontal {
+            return itemFrame.minX >= viewport.minX && itemFrame.maxX <= viewport.maxX
+        }
+
+        return itemFrame.minY >= viewport.minY && itemFrame.maxY <= viewport.maxY
+    }
+}
+
 /// 主面板键盘导航使用的四个物理方向。
 enum MainPanelNavigationDirection {
     case left
@@ -136,6 +161,8 @@ struct MainPanelView: View {
     @State private var cardFocusRequest = 0
     /// 自适应网格当前实际列数（1 或 2），用于让键盘上下移动与可见布局保持一致。
     @State private var adaptiveGridColumnCount = 1
+    /// 横向布局一屏完整可见的卡片数，用于上下方向键按当前面板尺寸翻页。
+    @State private var horizontalPageCardCount = 1
 
     /// 搜索栏焦点绑定
     @FocusState private var isSearchFocused: Bool
@@ -323,6 +350,7 @@ struct MainPanelView: View {
             showPinOption: selectedFilter != .all,
             layout: collectionLayout,
             onGridColumnCountChange: updateAdaptiveGridColumnCount,
+            onHorizontalPageCardCountChange: updateHorizontalPageCardCount,
             onItemTapped: handleItemTap,
             onItemDoubleTapped: { itemID in
                 pasteItem(id: itemID)
@@ -442,6 +470,12 @@ struct MainPanelView: View {
         let normalizedColumnCount = max(1, min(2, columnCount))
         guard adaptiveGridColumnCount != normalizedColumnCount else { return }
         adaptiveGridColumnCount = normalizedColumnCount
+    }
+
+    private func updateHorizontalPageCardCount(_ cardCount: Int) {
+        let normalizedCardCount = max(1, cardCount)
+        guard horizontalPageCardCount != normalizedCardCount else { return }
+        horizontalPageCardCount = normalizedCardCount
     }
 
     private func handleLeftArrow(_ extending: Bool) {
@@ -626,8 +660,8 @@ struct MainPanelView: View {
     private func scrollPage(direction: ScrollDirection) {
         let items = historyStore.filteredItems
         guard !items.isEmpty else { return }
-        // 每页大约显示的卡片数（根据卡片宽度和间距估算）
-        let cardsPerPage = 5
+        // 由 NSCollectionView 根据当前视口宽度和卡片尺寸计算，不能依赖固定面板宽度。
+        let cardsPerPage = horizontalPageCardCount
         let offset = direction == .up ? -cardsPerPage : cardsPerPage
         let newIndex = max(0, min(items.count - 1, selectedIndex + offset))
         if newIndex != selectedIndex {
@@ -916,6 +950,8 @@ struct VirtualizedCardList: NSViewRepresentable {
     let layout: MainPanelCollectionLayout
     /// 自适应网格列数变化回调，让键盘导航与 AppKit 实际布局使用同一列数。
     let onGridColumnCountChange: (Int) -> Void
+    /// 横向布局完整可见卡片数变化回调，让上下键翻页与当前面板宽度保持一致。
+    let onHorizontalPageCardCountChange: (Int) -> Void
     /// 单击单元格后的索引和稳定 ID 回调。
     let onItemTapped: (Int, UUID) -> Void
     /// 双击单元格后立即粘贴该记录的回调。
@@ -957,8 +993,8 @@ struct VirtualizedCardList: NSViewRepresentable {
 
     func makeNSView(context: Context) -> AdaptiveCardScrollView {
         let flowLayout = NSCollectionViewFlowLayout()
-        flowLayout.minimumInteritemSpacing = 12
-        flowLayout.minimumLineSpacing = 12
+        flowLayout.minimumInteritemSpacing = MainPanelCollectionMetrics.itemSpacing
+        flowLayout.minimumLineSpacing = MainPanelCollectionMetrics.itemSpacing
 
         let collectionView = NSCollectionView()
         collectionView.collectionViewLayout = flowLayout
@@ -1031,6 +1067,7 @@ struct VirtualizedCardList: NSViewRepresentable {
         weak var scrollView: AdaptiveCardScrollView?
         private var currentMetrics = CollectionLayoutMetrics.horizontalFallback
         private var lastReportedGridColumnCount = 0
+        private var lastReportedHorizontalPageCardCount = 0
         private var itemIndexPathsByID: [UUID: IndexPath] = [:]
 
         init(_ parent: VirtualizedCardList) {
@@ -1079,6 +1116,7 @@ struct VirtualizedCardList: NSViewRepresentable {
             flowLayout.invalidateLayout()
 
             reportGridColumnCountIfNeeded(nextMetrics.gridColumnCount)
+            reportHorizontalPageCardCountIfNeeded(nextMetrics.horizontalPageCardCount)
             reconfigureVisibleItems()
         }
 
@@ -1116,13 +1154,26 @@ struct VirtualizedCardList: NSViewRepresentable {
                 return
             }
 
-            if !force, collectionView.indexPathsForVisibleItems().contains(indexPath) {
+            if !force, isItemFullyVisible(at: indexPath) {
                 return
             }
 
             collectionView.scrollToItems(
                 at: Set([indexPath]),
                 scrollPosition: currentMetrics.isHorizontal ? .centeredHorizontally : .centeredVertically
+            )
+        }
+
+        /// 只露出部分的边缘卡片必须被当作不可见，以便方向键立即将其滚入当前视口。
+        private func isItemFullyVisible(at indexPath: IndexPath) -> Bool {
+            guard let layoutAttributes = collectionView.layoutAttributesForItem(at: indexPath) else {
+                return false
+            }
+
+            return MainPanelCollectionViewport.contains(
+                itemFrame: layoutAttributes.frame,
+                viewport: collectionView.visibleRect,
+                isHorizontal: currentMetrics.isHorizontal
             )
         }
 
@@ -1238,6 +1289,15 @@ struct VirtualizedCardList: NSViewRepresentable {
                 self?.parent.onGridColumnCountChange(columnCount)
             }
         }
+
+        private func reportHorizontalPageCardCountIfNeeded(_ cardCount: Int) {
+            guard cardCount != lastReportedHorizontalPageCardCount else { return }
+            lastReportedHorizontalPageCardCount = cardCount
+
+            DispatchQueue.main.async { [weak self] in
+                self?.parent.onHorizontalPageCardCountChange(cardCount)
+            }
+        }
     }
 
     /// AppKit flow layout 所需的固定度量。窗口 resize 只更新这些值并失效布局。
@@ -1248,6 +1308,8 @@ struct VirtualizedCardList: NSViewRepresentable {
         let cardMetrics: ClipCardLayoutMetrics?
         /// 自适应网格当前实际列数；非网格布局固定为 1。
         let gridColumnCount: Int
+        /// 横向布局一屏完整显示的卡片数；竖向布局固定为 1。
+        let horizontalPageCardCount: Int
         /// 是否使用横向滚动轴，同时控制滚轮轴转换。
         let isHorizontal: Bool
 
@@ -1255,6 +1317,7 @@ struct VirtualizedCardList: NSViewRepresentable {
             itemSize: NSSize(width: 160, height: 156),
             cardMetrics: ClipCardLayoutMetrics(cardSize: .medium),
             gridColumnCount: 1,
+            horizontalPageCardCount: 1,
             isHorizontal: true
         )
 
@@ -1275,10 +1338,18 @@ struct VirtualizedCardList: NSViewRepresentable {
                     metadataHeight: 26
                 )
                 let singleRowItemHeight = max(cardMetrics.totalHeight, viewportHeight - 16)
+                let horizontalPageCardCount = max(
+                    1,
+                    Int(
+                        (viewportWidth + MainPanelCollectionMetrics.itemSpacing)
+                            / (cardWidth + MainPanelCollectionMetrics.itemSpacing)
+                    )
+                )
                 return CollectionLayoutMetrics(
                     itemSize: NSSize(width: cardWidth, height: singleRowItemHeight),
                     cardMetrics: cardMetrics,
                     gridColumnCount: 1,
+                    horizontalPageCardCount: horizontalPageCardCount,
                     isHorizontal: true
                 )
             case .verticalCompactList:
@@ -1287,6 +1358,7 @@ struct VirtualizedCardList: NSViewRepresentable {
                     itemSize: NSSize(width: availableWidth, height: 72),
                     cardMetrics: nil,
                     gridColumnCount: 1,
+                    horizontalPageCardCount: 1,
                     isHorizontal: false
                 )
             case .verticalLargeCards:
@@ -1300,12 +1372,13 @@ struct VirtualizedCardList: NSViewRepresentable {
                     itemSize: NSSize(width: availableWidth, height: cardMetrics.totalHeight),
                     cardMetrics: cardMetrics,
                     gridColumnCount: 1,
+                    horizontalPageCardCount: 1,
                     isHorizontal: false
                 )
             case .verticalAdaptiveGrid:
                 let availableWidth = max(240, viewportWidth - 32)
                 let gridColumnCount = availableWidth >= 412 ? 2 : 1
-                let totalSpacing = CGFloat(gridColumnCount - 1) * 12
+                let totalSpacing = CGFloat(gridColumnCount - 1) * MainPanelCollectionMetrics.itemSpacing
                 let cardWidth = (availableWidth - totalSpacing) / CGFloat(gridColumnCount)
                 let cardMetrics = ClipCardLayoutMetrics(
                     width: cardWidth,
@@ -1316,6 +1389,7 @@ struct VirtualizedCardList: NSViewRepresentable {
                     itemSize: NSSize(width: cardWidth, height: cardMetrics.totalHeight),
                     cardMetrics: cardMetrics,
                     gridColumnCount: gridColumnCount,
+                    horizontalPageCardCount: 1,
                     isHorizontal: false
                 )
             }

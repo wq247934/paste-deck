@@ -18,6 +18,13 @@ final class MainPanelLayoutTests: XCTestCase {
         XCTAssertEqual(expandedMetrics.cardMetrics?.previewHeight, 200)
         XCTAssertEqual(expandedMetrics.cardMetrics?.width, 250)
         XCTAssertEqual(expandedMetrics.itemSize.height, 404)
+        XCTAssertEqual(expandedMetrics.horizontalPageCardCount, 3)
+
+        let widerMetrics = VirtualizedCardList.CollectionLayoutMetrics.make(
+            layout: .horizontal,
+            viewportSize: NSSize(width: 1_080, height: 420)
+        )
+        XCTAssertEqual(widerMetrics.horizontalPageCardCount, 4)
     }
 
     func testVerticalLayoutsUseStableHeightsAndAdaptiveGridColumns() {
@@ -67,6 +74,33 @@ final class MainPanelLayoutTests: XCTestCase {
                 direction: .down
             ),
             3
+        )
+    }
+
+    func testKeyboardNavigationRequiresSelectedCardToBeFullyVisible() {
+        let horizontalViewport = NSRect(x: 0, y: 0, width: 800, height: 320)
+        XCTAssertTrue(
+            MainPanelCollectionViewport.contains(
+                itemFrame: NSRect(x: 544, y: 8, width: 250, height: 304),
+                viewport: horizontalViewport,
+                isHorizontal: true
+            )
+        )
+        XCTAssertFalse(
+            MainPanelCollectionViewport.contains(
+                itemFrame: NSRect(x: 794, y: 8, width: 250, height: 304),
+                viewport: horizontalViewport,
+                isHorizontal: true
+            )
+        )
+
+        let verticalViewport = NSRect(x: 0, y: 0, width: 480, height: 600)
+        XCTAssertFalse(
+            MainPanelCollectionViewport.contains(
+                itemFrame: NSRect(x: 16, y: 520, width: 448, height: 120),
+                viewport: verticalViewport,
+                isHorizontal: false
+            )
         )
     }
 

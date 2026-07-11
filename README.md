@@ -10,7 +10,7 @@ PasteDeck is a native macOS clipboard manager for quickly searching, previewing,
 - Shows website names for link cards and lets link history be searched by site name. Automatically fetches webpage titles for copied links.
 - Opens from the menu bar or the global shortcut `Command + Shift + V`.
 - Menu bar dropdown includes a stats overview header showing today's copies, total items, and cache size.
-- Provides fast keyboard navigation, favorite filters, custom collections, pinning, deletion, and batch paste.
+- Provides fast keyboard navigation that keeps the selected card fully visible at every panel size, plus favorite filters, custom collections, pinning, deletion, and batch paste.
 - Supports horizontal and vertical panel layouts with vertical styles: compact list, large cards, and adaptive grid.
 - Preserves RTF data for rich text paste and supports plain-text paste with `Shift + Enter`.
 - Renders Markdown, JSON, code snippets, images, image files, file metadata, links, and colors in the preview window.
@@ -172,7 +172,7 @@ PasteDeck 是一个原生 macOS 剪贴板管理器，用浮动面板快速搜索
 - 链接卡片会显示网站名称，并支持按网站名搜索链接历史。自动抓取复制链接的网页标题。
 - 支持菜单栏打开，也支持全局快捷键 `Command + Shift + V`。
 - 菜单栏下拉菜单内嵌统计概览，展示今日复制次数、总条数和缓存占用。
-- 支持键盘导航、收藏筛选、自定义收藏夹、置顶、删除和批量粘贴。
+- 支持键盘导航，并会按当前面板可视区域自动滚动选中卡片；同时支持收藏筛选、自定义收藏夹、置顶、删除和批量粘贴。
 - 支持横向和竖向面板布局，竖向提供紧凑列表、大卡片和自适应网格三种样式。
 - 保留 RTF 富文本数据，并支持 `Shift + Enter` 纯文本粘贴。
 - 预览窗口支持 Markdown、JSON、代码片段、图片、图片文件、文件信息、链接和颜色。
