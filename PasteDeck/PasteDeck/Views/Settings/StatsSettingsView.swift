@@ -10,6 +10,9 @@ import Charts
 
 struct StatsSettingsView: View {
     @StateObject private var viewModel = StatsViewModel()
+    @State private var hoveredTrendDate: Date?
+    @State private var hoveredTrendLocation: CGPoint?
+    @State private var hoveredType: ClipboardContentType?
 
     var body: some View {
         SettingsContentStack {
@@ -29,6 +32,15 @@ struct StatsSettingsView: View {
             viewModel.handleClipboardChanged()
         }
     }
+
+    // MARK: - Hover Animation Helpers
+
+    private var hoverAnimation: Animation {
+        .easeOut(duration: 0.15)
+    }
+
+    private let tooltipWidth: CGFloat = 100
+    private let tooltipHeight: CGFloat = 36
 
     // MARK: - Loading
 
@@ -135,7 +147,13 @@ struct StatsSettingsView: View {
                 x: .value("日期", point.date, unit: .day),
                 y: .value("次数", point.count)
             )
-            .foregroundStyle(Color.accentColor.gradient)
+            .foregroundStyle(
+                hoveredTrendDate == point.date
+                    ? Color.accentColor.opacity(1.0).gradient
+                    : (hoveredTrendDate == nil
+                        ? Color.accentColor.gradient
+                        : Color.accentColor.opacity(0.25).gradient)
+            )
             .cornerRadius(2)
         }
         .chartXAxis {
@@ -153,7 +171,80 @@ struct StatsSettingsView: View {
             }
         }
         .chartYScale(domain: 0...max(maxValue, 5))
+        .chartOverlay { proxy in
+            GeometryReader { geo in
+                Rectangle()
+                    .fill(.clear)
+                    .contentShape(Rectangle())
+                    .onContinuousHover { phase in
+                        switch phase {
+                        case .active(let location):
+                            handleTrendHover(location: location, proxy: proxy, geo: geo)
+                            hoveredTrendLocation = location
+                        case .ended:
+                            hoveredTrendDate = nil
+                            hoveredTrendLocation = nil
+                        }
+                    }
+
+                if let date = hoveredTrendDate,
+                   let point = viewModel.trend.first(where: { $0.date == date }),
+                   let loc = hoveredTrendLocation,
+                   let plotAnchor = proxy.plotFrame {
+                    let plotFrame = geo[plotAnchor]
+                    let tipX = min(max(loc.x, tooltipWidth / 2), plotFrame.width - tooltipWidth / 2)
+                    let tipY = max(loc.y - tooltipHeight - 6, 4)
+                    trendTooltip(for: point)
+                        .frame(width: tooltipWidth)
+                        .position(x: tipX, y: tipY)
+                        .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                }
+            }
+        }
         .frame(height: 180)
+        .animation(hoverAnimation, value: hoveredTrendDate)
+        .animation(hoverAnimation, value: hoveredTrendLocation)
+    }
+
+    private func handleTrendHover(location: CGPoint, proxy: ChartProxy, geo: GeometryProxy) {
+        guard let plotFrame = proxy.plotFrame else {
+            hoveredTrendDate = nil
+            hoveredTrendLocation = nil
+            return
+        }
+        let origin = geo[plotFrame].origin
+        let relX = location.x - origin.x
+        guard relX >= 0, relX <= geo[plotFrame].width else {
+            hoveredTrendDate = nil
+            hoveredTrendLocation = nil
+            return
+        }
+        if let date: Date = proxy.value(atX: relX, as: Date.self) {
+            let calendar = Calendar.current
+            let dayStart = calendar.startOfDay(for: date)
+            if viewModel.trend.contains(where: { $0.date == dayStart }) {
+                hoveredTrendDate = dayStart
+            } else {
+                hoveredTrendDate = nil
+            }
+        } else {
+            hoveredTrendDate = nil
+        }
+    }
+
+    private func trendTooltip(for point: DailyTrendPoint) -> some View {
+        VStack(spacing: 2) {
+            Text(StatsService.formatDate(point.date))
+                .font(.system(size: 11, weight: .medium))
+            Text("\(point.count) 次复制")
+                .font(.system(size: 12, weight: .semibold))
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(.regularMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .shadow(color: .black.opacity(0.1), radius: 3, y: 1)
+        .padding(.top, 4)
     }
 
     private var emptyChartPlaceholder: some View {
@@ -189,21 +280,102 @@ struct StatsSettingsView: View {
                     pieChart
                     typeLegend
                 }
+                .animation(hoverAnimation, value: hoveredType)
             }
         }
     }
 
     private var pieChart: some View {
-        Chart(viewModel.typeDistribution) { item in
+        let total = viewModel.typeDistribution.reduce(0) { $0 + $1.count }
+
+        return Chart(viewModel.typeDistribution) { item in
             SectorMark(
                 angle: .value("数量", item.count),
                 innerRadius: .ratio(0.5),
+                outerRadius: hoveredType == item.type ? .ratio(1.0) : .ratio(0.92),
                 angularInset: 1.5
             )
-            .foregroundStyle(typeColor(for: item.type))
+            .foregroundStyle(
+                typeColor(for: item.type)
+                    .opacity(hoveredType == nil || hoveredType == item.type ? 1.0 : 0.3)
+            )
         }
         .chartLegend(.hidden)
+        .chartOverlay { proxy in
+            GeometryReader { geo in
+                Rectangle()
+                    .fill(.clear)
+                    .contentShape(Rectangle())
+                    .onContinuousHover { phase in
+                        switch phase {
+                        case .active(let location):
+                            handlePieHover(location: location, proxy: proxy, geo: geo, total: total)
+                        case .ended:
+                            hoveredType = nil
+                        }
+                    }
+            }
+        }
         .frame(width: 140, height: 140)
+        .overlay {
+            if let hovered = hoveredType,
+               let item = viewModel.typeDistribution.first(where: { $0.type == hovered }) {
+                pieTooltip(for: item)
+                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
+            }
+        }
+        .animation(hoverAnimation, value: hoveredType)
+    }
+
+    private func handlePieHover(location: CGPoint, proxy: ChartProxy, geo: GeometryProxy, total: Int) {
+        guard total > 0,
+              let plotFrame = proxy.plotFrame else {
+            hoveredType = nil
+            return
+        }
+        let frame = geo[plotFrame]
+        let center = CGPoint(x: frame.midX, y: frame.midY)
+        let dx = location.x - center.x
+        let dy = location.y - center.y
+        let dist = sqrt(dx * dx + dy * dy)
+        let outerR = min(frame.width, frame.height) / 2
+        let innerR = outerR * 0.5
+
+        guard dist >= innerR, dist <= outerR else {
+            hoveredType = nil
+            return
+        }
+
+        // Compute angle: 0 at top (12 o'clock), clockwise
+        var angle = atan2(dx, -dy)
+        if angle < 0 { angle += 2 * .pi }
+
+        // Find which sector this angle falls into
+        var cumulative: Double = 0
+        for item in viewModel.typeDistribution {
+            let fraction = Double(item.count) / Double(total)
+            let sectorAngle = fraction * 2 * .pi
+            if angle >= cumulative && angle < cumulative + sectorAngle {
+                hoveredType = item.type
+                return
+            }
+            cumulative += sectorAngle
+        }
+        hoveredType = nil
+    }
+
+    private func pieTooltip(for item: TypeDistributionItem) -> some View {
+        VStack(spacing: 2) {
+            Text(item.type.displayName)
+                .font(.system(size: 11, weight: .medium))
+            Text("\(item.count) · \(String(format: "%.1f%%", item.percentage))")
+                .font(.system(size: 12, weight: .semibold))
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(.regularMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .shadow(color: .black.opacity(0.1), radius: 3, y: 1)
     }
 
     private var typeLegend: some View {
@@ -223,6 +395,20 @@ struct StatsSettingsView: View {
                         .font(.system(size: 12, design: .monospaced))
                         .foregroundColor(.secondary)
                         .frame(width: 48, alignment: .trailing)
+                }
+                .padding(.horizontal, 4)
+                .padding(.vertical, 2)
+                .background(
+                    hoveredType == item.type
+                        ? Color.primary.opacity(0.06)
+                        : Color.clear
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .contentShape(Rectangle())
+                .onHover { isHovered in
+                    withAnimation(hoverAnimation) {
+                        hoveredType = isHovered ? item.type : nil
+                    }
                 }
             }
         }
