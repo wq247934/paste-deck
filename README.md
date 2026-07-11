@@ -7,8 +7,9 @@ PasteDeck is a native macOS clipboard manager for quickly searching, previewing,
 ## Highlights
 
 - Records clipboard history for text, rich text, links, Markdown, JSON, images, files, and colors.
-- Shows website names for link cards and lets link history be searched by site name.
+- Shows website names for link cards and lets link history be searched by site name. Automatically fetches webpage titles for copied links.
 - Opens from the menu bar or the global shortcut `Command + Shift + V`.
+- Menu bar dropdown includes a stats overview header showing today's copies, total items, and cache size.
 - Provides fast keyboard navigation, favorite filters, custom collections, pinning, deletion, and batch paste.
 - Supports horizontal and vertical panel layouts with vertical styles: compact list, large cards, and adaptive grid.
 - Preserves RTF data for rich text paste and supports plain-text paste with `Shift + Enter`.
@@ -16,6 +17,8 @@ PasteDeck is a native macOS clipboard manager for quickly searching, previewing,
 - Runs OCR for copied images so recognized text can be searched later.
 - Supports editable previews for text, code, and colors.
 - Includes optional Baidu Translate support in the preview window.
+- Statistics panel with daily/30-day trends, type distribution, source app insights, and extreme records.
+- Theme support: light, dark, or follow system appearance.
 - Stores history locally with SwiftData and caches images under `~/Library/Caches/PasteDeck/images/`.
 
 ## Installation
@@ -88,16 +91,54 @@ Clipboard polling uses `NSPasteboard`; it does not require Accessibility by itse
 
 ## Architecture
 
-- `PasteDeck/PasteDeck/App/PasteDeckApp.swift` starts the SwiftUI app and seeds the default favorite collection.
+### Entry Point
+- `PasteDeckApp.swift` starts the SwiftUI app and seeds the default favorite collection.
 - `AppDelegate` owns the status bar item, app lifecycle, settings window, hotkey registration, and lazy main panel creation.
-- SwiftData models: `ClipboardItem`, `AppSettings`, and `FavoriteCollection`.
-- `AppSettings` stores panel orientation (horizontal/vertical) and vertical panel style (compact list, large cards, adaptive grid).
+- `StatusMenuBuilder` builds the custom status bar dropdown menu with an embedded stats overview header.
+
+### Data Layer (SwiftData)
+- `ClipboardItem` — clipboard history entries.
+- `ClipboardContentType` — enum: text, link, markdown, json, image, file, color.
+- `AppSettings` — user preferences including panel orientation (horizontal/vertical), vertical panel style (compact list, large cards, adaptive grid), theme mode, and translate settings.
+- `FavoriteCollection` — favorite collection storage and default favorite grouping.
+- `DailyStatsSnapshot` — per-day aggregated statistics snapshot for the stats panel, avoiding full-table scans.
+
+### Services
 - `ClipboardMonitor` polls `NSPasteboard`, parses content, deduplicates entries, saves history, schedules OCR, and runs cleanup.
 - `ClipboardHistoryStore` loads and filters history for the main panel, manages selection, favorites, collections, deletion, and batch paste.
-- `MainPanelController` and `MainPanelView` render the floating panel with configurable layout direction and vertical styles.
 - `HotKeyManager` uses Carbon `RegisterEventHotKey` for the global shortcut.
 - `PasteService` writes selected content back to the pasteboard and simulates paste through `CGEvent`.
-- `PreviewWindow` renders text, Markdown, JSON/code, image, file, color, and translation previews.
+- `CacheManager` manages image cache at `~/Library/Caches/PasteDeck/images/` with configurable size limits.
+- `ImageOCRService` runs Vision OCR for copied images and persists searchable text.
+- `LinkTitleService` fetches webpage titles for copied links asynchronously without blocking UI.
+- `TranslateService` provides optional Baidu Translate integration in the preview window.
+- `StatsService` computes aggregated statistics (overview, trends, type distribution, insights) on background threads.
+- `DailyStatsUpdater` handles incremental upsert and one-time backfill of `DailyStatsSnapshot`.
+- `PreviewConfig` manages preview sizing and mode preferences.
+
+### UI Layer
+- `MainPanelController` — `NSPanel` controller for the floating window (centered, popUpMenu level, vibrancy effect).
+- `MainPanelView` — main SwiftUI view with search, favorite filters, virtualized horizontal/vertical cards, and keyboard handling.
+- `KeyboardFocusPanel` — dedicated keyboard focus management component.
+- `SearchBarView` — search field component.
+- `ClipCardView` — individual clipboard item card.
+- `PreviewWindow` — large preview for text, Markdown, JSON/code, image, file, color, and translation.
+- `CodeHighlightView` — editable code preview with syntax highlighting.
+- `MarkdownRenderedText` — Markdown rendering support.
+- `SettingsWindow` — 8 settings tabs: General, Hotkey, History, Stats, Filter, Favorites, Appearance, Advanced.
+- `StatsSettingsView` / `StatsViewModel` — statistics panel with trend charts, type distribution, and usage insights.
+
+### Utilities
+- `AppearanceManager` centralizes theme → `NSAppearance` resolution for the main panel, preview window, and settings window.
+- `ImageFilePreview` handles image file preview rendering.
+
+## Testing
+
+Unit tests cover panel layout geometry, card sizing, and settings layout:
+
+```bash
+swift test
+```
 
 ## Release Packaging
 
@@ -128,8 +169,9 @@ PasteDeck 是一个原生 macOS 剪贴板管理器，用浮动面板快速搜索
 ## 功能亮点
 
 - 记录文本、富文本、链接、Markdown、JSON、图片、文件和颜色。
-- 链接卡片会显示网站名称，并支持按网站名搜索链接历史。
+- 链接卡片会显示网站名称，并支持按网站名搜索链接历史。自动抓取复制链接的网页标题。
 - 支持菜单栏打开，也支持全局快捷键 `Command + Shift + V`。
+- 菜单栏下拉菜单内嵌统计概览，展示今日复制次数、总条数和缓存占用。
 - 支持键盘导航、收藏筛选、自定义收藏夹、置顶、删除和批量粘贴。
 - 支持横向和竖向面板布局，竖向提供紧凑列表、大卡片和自适应网格三种样式。
 - 保留 RTF 富文本数据，并支持 `Shift + Enter` 纯文本粘贴。
@@ -137,6 +179,8 @@ PasteDeck 是一个原生 macOS 剪贴板管理器，用浮动面板快速搜索
 - 图片复制后会进行 OCR，识别出的文字可以参与搜索。
 - 文本、代码和颜色可以在预览窗口中编辑。
 - 预览窗口支持可选的百度翻译。
+- 统计面板：展示每日/近 30 天趋势、类型分布、来源 App 洞察和极值记录。
+- 主题支持：亮色、暗色或跟随系统外观。
 - 历史记录使用 SwiftData 本地存储，图片缓存位于 `~/Library/Caches/PasteDeck/images/`。
 
 ## 安装
@@ -189,6 +233,14 @@ PasteDeck 需要辅助功能权限来注册全局快捷键并模拟 `Command + V
 | `Space` | 预览选中项目 |
 | `Delete` | 删除选中项目 |
 | `Esc` | 关闭预览或面板 |
+
+## 测试
+
+单元测试覆盖面板布局几何、卡片尺寸和设置布局：
+
+```bash
+swift test
+```
 
 ## 发布打包
 
