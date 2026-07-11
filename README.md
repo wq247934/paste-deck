@@ -10,6 +10,7 @@ PasteDeck is a native macOS clipboard manager for quickly searching, previewing,
 - Shows website names for link cards and lets link history be searched by site name.
 - Opens from the menu bar or the global shortcut `Command + Shift + V`.
 - Provides fast keyboard navigation, favorite filters, custom collections, pinning, deletion, and batch paste.
+- Supports horizontal and vertical panel layouts with vertical styles: compact list, large cards, and adaptive grid.
 - Preserves RTF data for rich text paste and supports plain-text paste with `Shift + Enter`.
 - Renders Markdown, JSON, code snippets, images, image files, file metadata, links, and colors in the preview window.
 - Runs OCR for copied images so recognized text can be searched later.
@@ -21,7 +22,7 @@ PasteDeck is a native macOS clipboard manager for quickly searching, previewing,
 
 ### Download
 
-1. Download `PasteDeck-1.2.5.dmg` from [Releases](https://github.com/wq247934/paste-deck/releases).
+1. Download the latest `PasteDeck-*.dmg` from [Releases](https://github.com/wq247934/paste-deck/releases).
 2. Open the DMG.
 3. Drag `PasteDeck.app` into Applications.
 4. Launch PasteDeck from Applications.
@@ -90,8 +91,10 @@ Clipboard polling uses `NSPasteboard`; it does not require Accessibility by itse
 - `PasteDeck/PasteDeck/App/PasteDeckApp.swift` starts the SwiftUI app and seeds the default favorite collection.
 - `AppDelegate` owns the status bar item, app lifecycle, settings window, hotkey registration, and lazy main panel creation.
 - SwiftData models: `ClipboardItem`, `AppSettings`, and `FavoriteCollection`.
+- `AppSettings` stores panel orientation (horizontal/vertical) and vertical panel style (compact list, large cards, adaptive grid).
 - `ClipboardMonitor` polls `NSPasteboard`, parses content, deduplicates entries, saves history, schedules OCR, and runs cleanup.
 - `ClipboardHistoryStore` loads and filters history for the main panel, manages selection, favorites, collections, deletion, and batch paste.
+- `MainPanelController` and `MainPanelView` render the floating panel with configurable layout direction and vertical styles.
 - `HotKeyManager` uses Carbon `RegisterEventHotKey` for the global shortcut.
 - `PasteService` writes selected content back to the pasteboard and simulates paste through `CGEvent`.
 - `PreviewWindow` renders text, Markdown, JSON/code, image, file, color, and translation previews.
@@ -128,6 +131,7 @@ PasteDeck 是一个原生 macOS 剪贴板管理器，用浮动面板快速搜索
 - 链接卡片会显示网站名称，并支持按网站名搜索链接历史。
 - 支持菜单栏打开，也支持全局快捷键 `Command + Shift + V`。
 - 支持键盘导航、收藏筛选、自定义收藏夹、置顶、删除和批量粘贴。
+- 支持横向和竖向面板布局，竖向提供紧凑列表、大卡片和自适应网格三种样式。
 - 保留 RTF 富文本数据，并支持 `Shift + Enter` 纯文本粘贴。
 - 预览窗口支持 Markdown、JSON、代码片段、图片、图片文件、文件信息、链接和颜色。
 - 图片复制后会进行 OCR，识别出的文字可以参与搜索。
@@ -137,7 +141,7 @@ PasteDeck 是一个原生 macOS 剪贴板管理器，用浮动面板快速搜索
 
 ## 安装
 
-1. 从 [Releases](https://github.com/wq247934/paste-deck/releases) 下载 `PasteDeck-1.2.5.dmg`。
+1. 从 [Releases](https://github.com/wq247934/paste-deck/releases) 下载最新的 `PasteDeck-*.dmg`。
 2. 打开 DMG。
 3. 将 `PasteDeck.app` 拖入“应用程序”。
 4. 从“应用程序”启动 PasteDeck。
