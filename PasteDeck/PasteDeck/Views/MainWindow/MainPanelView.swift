@@ -15,6 +15,7 @@ extension Notification.Name {
     static let clearSearchText = Notification.Name("clearSearchText")
     static let clearSelection = Notification.Name("clearSelection")
     static let panelDidShow = Notification.Name("panelDidShow")
+    static let panelDidRequestCardFocus = Notification.Name("panelDidRequestCardFocus")
     static let toggleMainPanel = Notification.Name("toggleMainPanel")
     static let openSettingsWindow = Notification.Name("openSettingsWindow")
     /// 既有项目的置顶/收藏夹归属被就地修改（不改变 @Query 数组成员），需要刷新过滤缓存
@@ -291,6 +292,10 @@ struct MainPanelView: View {
             selectDefaultCard()
             focusCards()
             clearMultiSelection()
+        }
+        // AppKit 在面板真正成为 key window 后再次确认卡片区 first responder。
+        .onReceive(NotificationCenter.default.publisher(for: .panelDidRequestCardFocus)) { _ in
+            focusCards()
         }
         // 使用 NSEvent 监听键盘
         .background(
@@ -973,12 +978,17 @@ struct KeyboardEventMonitorView: NSViewRepresentable {
 
     private func requestCardFocus(for view: NSView) {
         DispatchQueue.main.async {
-            view.window?.makeFirstResponder(view)
+            guard let window = view.window,
+                  window.isVisible,
+                  window.isKeyWindow else { return }
+
+            window.makeFirstResponder(view)
         }
     }
 
     final class CardFocusNSView: NSView {
         override var acceptsFirstResponder: Bool { true }
+        override var needsPanelToBecomeKey: Bool { true }
     }
 
     class Coordinator {
@@ -1007,10 +1017,11 @@ struct KeyboardEventMonitorView: NSViewRepresentable {
             let keyCode = event.keyCode
             let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
 
-            // Esc 特殊处理：如果预览窗口是 keyWindow，关闭预览窗口
+            // Esc 特殊处理：只处理实际收到该事件的 PasteDeck 弹窗。
             if keyCode == 53 {
-                guard let keyWindow = NSApp.keyWindow,
-                      keyWindow.level == .popUpMenu else {
+                guard let eventWindow = event.window,
+                      eventWindow.isKeyWindow,
+                      eventWindow.level == .popUpMenu else {
                     return event
                 }
                 parent.onEscape?()
@@ -1018,9 +1029,10 @@ struct KeyboardEventMonitorView: NSViewRepresentable {
             }
 
             // 其余按键只在主面板窗口激活时拦截，避免影响设置窗口和预览窗口
-            guard let keyWindow = NSApp.keyWindow,
-                  keyWindow.level == .popUpMenu,
-                  keyWindow.delegate == nil || keyWindow.delegate is MainPanelController else {
+            guard let eventWindow = event.window,
+                  eventWindow.isKeyWindow,
+                  eventWindow.level == .popUpMenu,
+                  eventWindow.delegate is MainPanelController else {
                 return event
             }
 

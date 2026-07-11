@@ -1432,7 +1432,9 @@ private struct PreviewKeyboardMonitorView: NSViewRepresentable {
         }
 
         private func handleKey(_ event: NSEvent) -> NSEvent? {
-            guard NSApp.keyWindow?.identifier == previewWindowIdentifier else {
+            guard let eventWindow = event.window,
+                  eventWindow.isKeyWindow,
+                  eventWindow.identifier == previewWindowIdentifier else {
                 return event
             }
 
@@ -1486,17 +1488,24 @@ class PreviewWindowController: NSObject, NSWindowDelegate {
         })
         let hostingController = NSHostingController(rootView: previewView)
 
-        let window = NSWindow(contentViewController: hostingController)
-        window.identifier = previewWindowIdentifier
         var styleMask: NSWindow.StyleMask = [.titled, .closable, .fullSizeContentView]
         if allowsResizing {
             styleMask.insert(.resizable)
+        }
+        let window = KeyboardFocusPanel(
+            keyboardContentRect: NSRect(origin: .zero, size: windowSize),
+            styleMask: styleMask,
+            backing: .buffered,
+            defer: false
+        )
+        window.contentViewController = hostingController
+        window.identifier = previewWindowIdentifier
+        if allowsResizing {
             window.minSize = NSSize(
                 width: PreviewWindowLayout.minimumWindowSize.width,
                 height: PreviewWindowLayout.minimumWindowSize.height
             )
         }
-        window.styleMask = styleMask
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         // 使用与主面板相同的层级，确保预览窗口显示在主面板前面
@@ -1504,8 +1513,6 @@ class PreviewWindowController: NSObject, NSWindowDelegate {
         window.setContentSize(windowSize)
         window.setFrame(PreviewWindowLayout.centeredFrame(size: windowSize, on: screen), display: false)
         window.isReleasedWhenClosed = false
-        window.makeKeyAndOrderFront(nil)
-        window.hidesOnDeactivate = false
         window.delegate = self
 
         // 按当前外观模式渲染顶/底栏、内容区与代码预览。
@@ -1520,8 +1527,7 @@ class PreviewWindowController: NSObject, NSWindowDelegate {
         )
 
         self.window = window
-
-        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
     }
 
     /// 预览窗口是否可见
@@ -1556,15 +1562,15 @@ class PreviewWindowController: NSObject, NSWindowDelegate {
     private func restoreMainPanelFocus() {
         guard let previousWindow = MainWindowReference.window, previousWindow.isVisible else { return }
 
-        // 临时禁用主面板的 resignKey 自动关闭
+        // 通过主面板自己的非激活聚焦流程恢复，避免再次依赖应用激活请求。
         if let panelController = NSApp.windows
             .compactMap({ $0.delegate as? MainPanelController })
             .first {
-            panelController.suspendAutoClose()
+            panelController.restorePanelFocus()
+            return
         }
 
         previousWindow.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
     }
 
     // MARK: - Appearance

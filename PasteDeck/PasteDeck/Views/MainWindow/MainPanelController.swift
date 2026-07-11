@@ -15,11 +15,17 @@ import SwiftData
 
 /// Manages the main floating panel for clipboard history display
 class MainPanelController: NSObject, NSWindowDelegate {
-    private var panel: NSPanel?
+    private var panel: KeyboardFocusPanel?
     private var isVisible = false
 
     /// Prevents auto-close when opening preview window
     private var canCloseOnResignKey = false
+
+    /// Identifies the latest focus request so queued work from an older show/hide cycle cannot steal focus.
+    private var focusRequestGeneration: UInt = 0
+
+    /// Keeps transient menu or window changes from closing the panel while its key status is being established.
+    private var isEstablishingFocus = false
 
     /// Debounce timer to prevent rapid toggle from key repeat
     private var lastToggleTime: Date = Date.distantPast
@@ -35,8 +41,8 @@ class MainPanelController: NSObject, NSWindowDelegate {
 
     private func setupPanel() {
         // Create floating panel with transparent title bar
-        let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 800, height: 400),
+        let panel = KeyboardFocusPanel(
+            keyboardContentRect: NSRect(x: 0, y: 0, width: 800, height: 400),
             styleMask: [.titled, .closable, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -53,7 +59,6 @@ class MainPanelController: NSObject, NSWindowDelegate {
         panel.titleVisibility = .hidden
         panel.delegate = self
         panel.acceptsMouseMovedEvents = true
-        panel.hidesOnDeactivate = false
 
         // Add blur background effect
         // 使用能跟随 window.appearance 的材质；.hudWindow 会强制暗色，
@@ -104,36 +109,39 @@ class MainPanelController: NSObject, NSWindowDelegate {
 
     // MARK: - Public Methods
 
-    /// 临时禁用 resignKey 自动关闭（预览窗口关闭恢复焦点时调用）
-    func suspendAutoClose() {
-        canCloseOnResignKey = false
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            self?.canCloseOnResignKey = true
-        }
+    /// 预览窗口关闭后，通过与快捷键呼出相同的路径恢复主面板键盘焦点。
+    func restorePanelFocus() {
+        guard isVisible, panel?.isVisible == true else { return }
+        establishPanelFocus()
     }
 
     func showPanel() {
         guard let panel = panel else { return }
 
+        // A previous settings/paste flow may have hidden PasteDeck. Unhide the
+        // windows without activating the app that owns this non-activating panel.
+        if NSApp.isHidden {
+            NSApp.unhideWithoutActivation()
+        }
+
         canCloseOnResignKey = false
-        centerPanel(panel)
-        panel.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
         isVisible = true
+        centerPanel(panel)
 
         // 通知 MainPanelView 重置焦点和选中状态
         NotificationCenter.default.post(name: .panelDidShow, object: nil)
 
-        // Delay enabling auto-close to prevent immediate dismissal
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            self?.canCloseOnResignKey = true
-        }
+        establishPanelFocus()
     }
 
     func hidePanel(shouldHideApp: Bool = true) {
+        let shouldHideActiveApplication = shouldHideApp && NSApp.isActive
+
+        focusRequestGeneration &+= 1
+        isEstablishingFocus = false
         canCloseOnResignKey = false
-        panel?.orderOut(nil)
         isVisible = false
+        panel?.orderOut(nil)
 
         // 隐藏面板时清空搜索框、多选和筛选状态
         NotificationCenter.default.post(name: .clearSearchText, object: nil)
@@ -143,7 +151,9 @@ class MainPanelController: NSObject, NSWindowDelegate {
 
         // 隐藏 app 自身，让之前的 app 重新获得焦点
         // 这对后续 simulatePaste(Cmd+V) 至关重要
-        if shouldHideApp {
+        // A non-activating panel leaves the source app active, so hiding
+        // PasteDeck is only needed when one of its regular windows was active.
+        if shouldHideActiveApplication {
             NSApp.hide(nil)
         }
     }
@@ -155,7 +165,10 @@ class MainPanelController: NSObject, NSWindowDelegate {
         if elapsed < 0.3 { return }
         lastToggleTime = now
 
-        if isVisible {
+        // If the panel is visible but failed to become key (for example after a
+        // menu, AutoFill popover, or stale show cycle), the shortcut repairs
+        // focus instead of treating the panel as successfully open and hiding it.
+        if isVisible, panel?.isVisible == true, panel?.isKeyWindow == true {
             hidePanel()
         } else {
             showPanel()
@@ -168,6 +181,64 @@ class MainPanelController: NSObject, NSWindowDelegate {
     }
 
     // MARK: - Private Methods
+
+    /// Establishes key-window focus immediately and confirms it once after the
+    /// current AppKit event (such as status-menu tracking) has completed.
+    private func establishPanelFocus() {
+        guard let panel, isVisible else { return }
+
+        focusRequestGeneration &+= 1
+        let requestGeneration = focusRequestGeneration
+        isEstablishingFocus = true
+        canCloseOnResignKey = false
+
+        panel.makeKeyAndOrderFront(nil)
+        if panel.isKeyWindow {
+            requestCardFocus()
+        }
+
+        DispatchQueue.main.async { [weak self] in
+            self?.confirmPanelFocus(requestGeneration: requestGeneration)
+        }
+    }
+
+    /// Completes one bounded focus attempt. A protected system surface may
+    /// legitimately refuse key status; in that case do not leave a misleading,
+    /// visible panel that cannot receive the user's arrow keys.
+    private func confirmPanelFocus(requestGeneration: UInt) {
+        guard requestGeneration == focusRequestGeneration,
+              isVisible,
+              let panel,
+              panel.isVisible else { return }
+
+        if hasPresentedAuxiliaryWindow {
+            isEstablishingFocus = false
+            canCloseOnResignKey = true
+            return
+        }
+
+        panel.makeKeyAndOrderFront(nil)
+        guard panel.isKeyWindow else {
+            hidePanel(shouldHideApp: false)
+            return
+        }
+
+        isEstablishingFocus = false
+        canCloseOnResignKey = true
+        requestCardFocus()
+    }
+
+    private func requestCardFocus() {
+        NotificationCenter.default.post(name: .panelDidRequestCardFocus, object: panel)
+    }
+
+    private var hasPresentedAuxiliaryWindow: Bool {
+        let hasPreviewWindow = NSApp.windows.contains { window in
+            window.isVisible && window.contentViewController?.view is NSHostingView<PreviewWindow>
+        }
+        let hasSheet = panel?.attachedSheet != nil
+        return hasPreviewWindow || hasSheet
+    }
 
     private func centerPanel(_ panel: NSPanel) {
         guard let screen = NSScreen.main else { return }
@@ -185,20 +256,31 @@ class MainPanelController: NSObject, NSWindowDelegate {
     // MARK: - NSWindowDelegate
 
     func windowWillClose(_ notification: Notification) {
+        focusRequestGeneration &+= 1
+        isEstablishingFocus = false
+        canCloseOnResignKey = false
         isVisible = false
     }
 
+    func windowDidBecomeKey(_ notification: Notification) {
+        guard let focusedPanel = notification.object as? NSWindow,
+              focusedPanel === panel,
+              isVisible else { return }
+
+        requestCardFocus()
+    }
+
     func windowDidResignKey(_ notification: Notification) {
-        // Check if preview window is open - don't close main panel if so
-        let hasPreviewWindow = NSApp.windows.contains { window in
-            window.contentViewController?.view is NSHostingView<PreviewWindow>
-        }
+        guard let resignedPanel = notification.object as? NSWindow,
+              resignedPanel === panel,
+              isVisible else { return }
 
-        // Check if a sheet is attached to the panel (e.g. new collection sheet)
-        let hasSheet = panel?.attachedSheet != nil
+        // A transient resign during the bounded focus handoff is repaired by
+        // confirmPanelFocus on the next main-loop turn.
+        guard !isEstablishingFocus else { return }
 
-        // Only auto-close if no preview window or sheet is open
-        if canCloseOnResignKey && !hasPreviewWindow && !hasSheet {
+        // Only auto-close if no preview window or sheet is open.
+        if canCloseOnResignKey && !hasPresentedAuxiliaryWindow {
             hidePanel()
         }
     }

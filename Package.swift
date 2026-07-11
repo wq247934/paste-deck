@@ -17,6 +17,11 @@ let package = Package(
             name: "PasteDeck",
             dependencies: ["Highlightr"],
             path: "PasteDeck/PasteDeck"
+        ),
+        .testTarget(
+            name: "PasteDeckTests",
+            dependencies: ["PasteDeck"],
+            path: "PasteDeck/Tests"
         )
     ]
 )

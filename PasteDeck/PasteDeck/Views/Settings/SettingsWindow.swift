@@ -539,6 +539,30 @@ struct GeneralSettingsView: View {
                 }
             }
 
+            SettingsCard(title: "链接", icon: "link") {
+                SettingsRow(
+                    title: "自动获取网页标题",
+                    subtitle: "复制公共网页链接后在后台获取标题，可能向目标网站发起网络请求"
+                ) {
+                    Toggle("", isOn: Binding(
+                        get: {
+                            appSettings.fetchLinkTitles ?? false
+                        },
+                        set: { enabled in
+                            appSettings.fetchLinkTitles = enabled
+                            try? modelContext.save()
+                            NotificationCenter.default.post(
+                                name: .linkTitleFetchingPreferenceChanged,
+                                object: nil,
+                                userInfo: [LinkTitleNotification.enabledKey: enabled]
+                            )
+                        }
+                    ))
+                    .toggleStyle(.switch)
+                    .labelsHidden()
+                }
+            }
+
             SettingsCard(title: "权限", icon: "lock.shield") {
                 SettingsRow(title: "辅助功能", subtitle: "用于全局快捷键和模拟粘贴") {
                     HStack(spacing: 8) {
