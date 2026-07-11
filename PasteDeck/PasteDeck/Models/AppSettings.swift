@@ -33,6 +33,9 @@ final class AppSettings {
     /// 统计面板历史数据回填完成时间，nil 表示尚未回填。
     var statsBackfilledAt: Date?
 
+    /// 是否在复制公共网页链接后后台获取网页标题；nil 兼容旧版本并按关闭处理。
+    var fetchLinkTitles: Bool?
+
     init() {
         self.launchAtLogin = true
         self.hotkeyKeyCode = 9
@@ -49,6 +52,7 @@ final class AppSettings {
         self.baiduTranslateSecretKey = ""
         self.baiduTranslateIsAdvanced = false
         self.statsBackfilledAt = nil
+        self.fetchLinkTitles = false
     }
 }
 

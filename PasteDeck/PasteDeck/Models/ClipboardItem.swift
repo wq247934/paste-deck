@@ -31,6 +31,15 @@ final class ClipboardItem {
     var isPinned: Bool
     var customTitle: String?
 
+    /// 网页元数据返回的代表性标题；nil 表示尚未成功获取或网页没有标题。
+    var linkPageTitle: String?
+
+    /// 标题抓取任务创建时间；nil 表示该链接未请求过后台标题抓取。
+    var linkTitleRequestedAt: Date?
+
+    /// 标题抓取完成时间；失败也会记录，用于避免短时间内重复请求。
+    var linkTitleFetchedAt: Date?
+
     /// RTF 富文本数据（字体、颜色、样式等）
     var rtfData: Data?
 
@@ -59,7 +68,7 @@ final class ClipboardItem {
         case .text, .markdown, .json:
             return String((textContent?.prefix(50) ?? "").replacingOccurrences(of: "\n", with: " "))
         case .link:
-            return linkWebsiteName ?? textContent ?? ""
+            return linkDisplayTitle
         case .image:
             return "图片 \(imageWidth)x\(imageHeight)"
         case .file:
@@ -108,21 +117,22 @@ final class ClipboardItem {
 
     var linkWebsiteName: String? {
         guard contentType == .link else { return nil }
-        return Self.makeLinkWebsiteName(from: textContent)
+        return linkPageTitle ?? Self.makeLinkWebsiteName(from: textContent)
+    }
+
+    /// 网页标题未获取时使用完整 host，避免通过不完整公共后缀表猜错网站名称。
+    var linkDisplayTitle: String {
+        linkWebsiteName ?? textContent ?? ""
     }
 
     static func makeLinkWebsiteName(from textContent: String?) -> String? {
         guard let host = normalizedLinkHost(from: textContent) else { return nil }
-        guard let label = primaryDomainLabel(from: host) else { return host }
-        return prettifyWebsiteName(label)
+        return host
     }
 
     static func makeLinkSearchText(from textContent: String?) -> String? {
         guard let host = normalizedLinkHost(from: textContent) else { return nil }
-        let label = primaryDomainLabel(from: host)
         let parts = [
-            label.map { prettifyWebsiteName($0) },
-            label,
             host,
             host.replacingOccurrences(of: ".", with: " ")
         ]
@@ -168,6 +178,9 @@ final class ClipboardItem {
         self.createdAt = Date()
         self.isPinned = false
         self.customTitle = nil
+        self.linkPageTitle = nil
+        self.linkTitleRequestedAt = nil
+        self.linkTitleFetchedAt = nil
         self.rtfData = rtfData
     }
 
@@ -206,69 +219,6 @@ final class ClipboardItem {
         return trimmedHost
     }
 
-    private static func primaryDomainLabel(from host: String) -> String? {
-        let labels = host
-            .split(separator: ".")
-            .map(String.init)
-
-        guard labels.count >= 2 else {
-            return host.isEmpty ? nil : host
-        }
-
-        let suffix = labels.suffix(2).joined(separator: ".")
-        if labels.count >= 3, compoundPublicSuffixes.contains(suffix) {
-            return labels[labels.count - 3]
-        }
-
-        return labels[labels.count - 2]
-    }
-
-    private static func prettifyWebsiteName(_ label: String) -> String {
-        let normalizedLabel = label.lowercased()
-        if let override = websiteNameOverrides[normalizedLabel] {
-            return override
-        }
-
-        return label
-            .split { $0 == "-" || $0 == "_" }
-            .map { $0.capitalized }
-            .joined(separator: " ")
-    }
-
-    private static let compoundPublicSuffixes: Set<String> = [
-        "co.jp",
-        "co.kr",
-        "co.uk",
-        "com.au",
-        "com.br",
-        "com.cn",
-        "com.hk",
-        "com.sg",
-        "com.tw",
-        "github.io",
-        "gov.cn",
-        "net.cn",
-        "org.cn"
-    ]
-
-    private static let websiteNameOverrides: [String: String] = [
-        "apple": "Apple",
-        "baidu": "Baidu",
-        "bilibili": "Bilibili",
-        "figma": "Figma",
-        "github": "GitHub",
-        "google": "Google",
-        "linkedin": "LinkedIn",
-        "medium": "Medium",
-        "notion": "Notion",
-        "openai": "OpenAI",
-        "reddit": "Reddit",
-        "stackoverflow": "Stack Overflow",
-        "twitter": "Twitter",
-        "x": "X",
-        "youtube": "YouTube",
-        "zhihu": "Zhihu"
-    ]
 }
 
 // MARK: - Color Extension for Hex

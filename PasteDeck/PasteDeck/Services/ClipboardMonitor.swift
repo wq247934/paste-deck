@@ -22,6 +22,7 @@ class ClipboardMonitor {
     private var startupMaintenanceWorkItem: DispatchWorkItem?
     private var cacheManager: CacheManager
     private var isPaused = false
+    private var linkTitlePreferenceObserver: NSObjectProtocol?
 
     private struct PendingImageOCRJob: Sendable {
         let itemID: UUID
@@ -40,6 +41,26 @@ class ClipboardMonitor {
         self.modelContext = modelContext
         self.changeCount = NSPasteboard.general.changeCount
         self.cacheManager = CacheManager()
+        self.linkTitlePreferenceObserver = NotificationCenter.default.addObserver(
+            forName: .linkTitleFetchingPreferenceChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            Task { @MainActor in
+                let isEnabled = notification.userInfo?[LinkTitleNotification.enabledKey] as? Bool ?? false
+                if isEnabled {
+                    self?.schedulePendingLinkTitles()
+                } else {
+                    LinkTitleService.shared.cancelAll()
+                }
+            }
+        }
+    }
+
+    deinit {
+        if let linkTitlePreferenceObserver {
+            NotificationCenter.default.removeObserver(linkTitlePreferenceObserver)
+        }
     }
 
     // MARK: - Public Methods
@@ -47,6 +68,7 @@ class ClipboardMonitor {
     /// Starts monitoring clipboard changes at regular intervals
     func startMonitoring() {
         scheduleStartupMaintenance()
+        schedulePendingLinkTitles()
 
         timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             self?.checkForChanges()
@@ -65,6 +87,9 @@ class ClipboardMonitor {
         cleanupTimer = nil
         startupMaintenanceWorkItem?.cancel()
         startupMaintenanceWorkItem = nil
+        Task { @MainActor in
+            LinkTitleService.shared.cancelAll()
+        }
     }
 
     /// Temporarily pauses monitoring (used during paste operations)
@@ -361,11 +386,111 @@ class ClipboardMonitor {
     }
 
     private func saveItem(_ item: ClipboardItem) {
+        prepareLinkTitle(for: item)
         modelContext.insert(item)
         try? modelContext.save()
         DailyStatsUpdater.upsert(for: item, context: modelContext)
         postClipboardDataChanged(itemID: item.id, kind: .inserted)
         scheduleOCRIfNeeded(for: item)
+        scheduleLinkTitleIfNeeded(for: item)
+    }
+
+    private func prepareLinkTitle(for item: ClipboardItem) {
+        guard item.contentType == .link,
+              let textContent = item.textContent,
+              let url = URL(string: textContent) else {
+            return
+        }
+
+        if let cachedItem = cachedLinkItem(for: textContent),
+           let fetchedAt = cachedItem.linkTitleFetchedAt,
+           Date().timeIntervalSince(fetchedAt) < cachedLinkTitleLifetime(for: cachedItem) {
+            item.linkPageTitle = cachedItem.linkPageTitle
+            item.linkTitleFetchedAt = fetchedAt
+            return
+        }
+
+        guard isLinkTitleFetchingEnabled(), LinkTitleService.isEligible(url) else { return }
+        item.linkTitleRequestedAt = Date()
+    }
+
+    private func scheduleLinkTitleIfNeeded(for item: ClipboardItem) {
+        guard item.contentType == .link,
+              item.linkTitleRequestedAt != nil,
+              item.linkTitleFetchedAt == nil,
+              let textContent = item.textContent,
+              let url = URL(string: textContent),
+              isLinkTitleFetchingEnabled() else {
+            return
+        }
+
+        let itemID = item.id
+        Task { @MainActor [weak self] in
+            LinkTitleService.shared.fetchTitle(for: url) { result in
+                guard let self else { return }
+                Task { @MainActor in
+                    self.completeLinkTitle(result, for: itemID, urlText: textContent)
+                }
+            }
+        }
+    }
+
+    private func completeLinkTitle(_ result: LinkTitleFetchResult, for itemID: UUID, urlText: String) {
+        if case .cancelled = result { return }
+        guard isLinkTitleFetchingEnabled() else { return }
+        let descriptor = FetchDescriptor<ClipboardItem>(
+            predicate: #Predicate { item in
+                item.id == itemID
+            }
+        )
+        guard let item = try? modelContext.fetch(descriptor).first,
+              item.textContent == urlText,
+              item.linkTitleFetchedAt == nil else {
+            return
+        }
+
+        if case .success(let title) = result {
+            item.linkPageTitle = title
+        }
+        item.linkTitleFetchedAt = Date()
+        try? modelContext.save()
+        if case .success = result {
+            postClipboardDataChanged(itemID: itemID, kind: .updated)
+        }
+    }
+
+    private func schedulePendingLinkTitles() {
+        guard isLinkTitleFetchingEnabled() else { return }
+
+        var descriptor = FetchDescriptor<ClipboardItem>(
+            predicate: #Predicate { item in
+                item.linkTitleRequestedAt != nil && item.linkTitleFetchedAt == nil
+            },
+            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+        )
+        descriptor.fetchLimit = 20
+        let pendingItems = (try? modelContext.fetch(descriptor)) ?? []
+        pendingItems.forEach { scheduleLinkTitleIfNeeded(for: $0) }
+    }
+
+    private func isLinkTitleFetchingEnabled() -> Bool {
+        let descriptor = FetchDescriptor<AppSettings>()
+        return (try? modelContext.fetch(descriptor).first?.fetchLinkTitles) ?? false
+    }
+
+    private func cachedLinkItem(for urlText: String) -> ClipboardItem? {
+        var descriptor = FetchDescriptor<ClipboardItem>(
+            predicate: #Predicate { item in
+                item.textContent == urlText && item.linkTitleFetchedAt != nil
+            },
+            sortBy: [SortDescriptor(\.linkTitleFetchedAt, order: .reverse)]
+        )
+        descriptor.fetchLimit = 1
+        return try? modelContext.fetch(descriptor).first
+    }
+
+    private func cachedLinkTitleLifetime(for item: ClipboardItem) -> TimeInterval {
+        item.linkPageTitle == nil ? 60 * 60 : 7 * 24 * 60 * 60
     }
 
     private func postClipboardDataChanged(itemID: UUID? = nil, kind: ClipboardDataChangeKind? = nil) {
