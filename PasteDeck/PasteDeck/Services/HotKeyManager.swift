@@ -2,134 +2,130 @@
 //  HotKeyManager.swift
 //  PasteDeck
 //
-//  Manages global hotkey registration using Carbon API.
-//  Carbon intercepts hotkey at system level, preventing key event from passing through to other apps.
-//  Requires accessibility permission for global key event capture.
-//
-//  Created on 2026-05-23.
+//  Registers multiple independent global hotkeys with Carbon.
 //
 
-import Foundation
 import AppKit
 import Carbon
+import Foundation
 
-/// Manages global hotkey registration using Carbon.
-/// Carbon 可以在系统底层拦截快捷键，防止按键透传到其他应用触发意外操作。
-class HotKeyManager {
-    // 使用单例，因为 Carbon 的事件回调是一个全局 C 函数指针
+/// PasteDeck 可独立注册的全局快捷键；raw value 直接作为 Carbon hotkey id，已有值不可复用。
+enum HotKeyIdentifier: UInt32, CaseIterable {
+    /// 打开或关闭剪贴板主面板。
+    case mainPanel = 1
+    /// 翻译当前前台应用中的选中文本。
+    case selectionTranslation = 2
+    /// 启动区域截图、OCR 并翻译。
+    case screenshotTranslation = 3
+    /// 打开可输入原文的翻译窗口。
+    case inputTranslation = 4
+}
+
+/// 使用 Carbon 注册多组全局快捷键；快捷键注册本身不依赖辅助功能权限。
+final class HotKeyManager {
     static let shared = HotKeyManager()
 
-    private var hotKeyRef: EventHotKeyRef?
-    private var hotKeyCallback: (() -> Void)?
-    private var isRegistered = false
+    private struct Registration {
+        /// Carbon 返回的注册引用；nil 表示配置已保存但尚未成功注册。
+        var reference: EventHotKeyRef?
+        /// macOS 虚拟键码，例如 V 为 9、D 为 2。
+        let keyCode: UInt32
+        /// AppKit 修饰键集合，注册前转换为 Carbon flags。
+        let modifiers: NSEvent.ModifierFlags
+        /// 系统触发该快捷键后在主线程执行的业务动作。
+        let callback: () -> Void
+    }
 
-    /// 保存注册参数，以便权限恢复后重新注册
-    private var registeredKeyCode: UInt32?
-    private var registeredModifiers: NSEvent.ModifierFlags?
-
-    /// 定时检查权限恢复
-    private var permissionCheckTimer: Timer?
-
+    private var registrations: [HotKeyIdentifier: Registration] = [:]
     private init() {
         setupEventHandler()
     }
 
     deinit {
         unregister()
-        permissionCheckTimer?.invalidate()
     }
 
-    // MARK: - Public Methods
-
-    /// Registers a global hotkey with the specified key code and modifiers
-    /// - Parameters:
-    ///   - keyCode: The virtual key code (e.g., 9 for 'V')
-    ///   - modifiers: Modifier flags (e.g., .command, .shift)
-    ///   - callback: Action to execute when hotkey is triggered
-    func registerHotKey(keyCode: UInt32, modifiers: NSEvent.ModifierFlags, callback: @escaping () -> Void) {
-        unregister()
-        hotKeyCallback = callback
-        registeredKeyCode = keyCode
-        registeredModifiers = modifiers
-
-        tryRegister()
+    /// 兼容旧调用方：注册主面板快捷键，不影响已经注册的翻译快捷键。
+    func registerHotKey(
+        keyCode: UInt32,
+        modifiers: NSEvent.ModifierFlags,
+        callback: @escaping () -> Void
+    ) {
+        register(identifier: .mainPanel, keyCode: keyCode, modifiers: modifiers, callback: callback)
     }
 
-    /// 尝试注册 hotkey，如果权限不足则启动定时检查
-    private func tryRegister() {
-        let trusted = AXIsProcessTrusted()
+    /// 注册或替换指定业务快捷键；每个业务标识只保留一组 Carbon 注册。
+    func register(
+        identifier: HotKeyIdentifier,
+        keyCode: UInt32,
+        modifiers: NSEvent.ModifierFlags,
+        callback: @escaping () -> Void
+    ) {
+        unregister(identifier: identifier)
+        registrations[identifier] = Registration(
+            reference: nil,
+            keyCode: keyCode,
+            modifiers: modifiers,
+            callback: callback
+        )
+        registerWithCarbon(identifier: identifier)
+    }
 
-        if trusted {
-            doRegister()
-            stopPermissionCheck()
-        } else {
-            // 请求权限
-            let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
-            _ = AXIsProcessTrustedWithOptions(options as CFDictionary)
-            // 启动定时检查，等用户授权后自动注册
-            startPermissionCheck()
+    /// 仅注销指定业务快捷键，其他快捷键继续工作。
+    func unregister(identifier: HotKeyIdentifier) {
+        if let reference = registrations[identifier]?.reference {
+            UnregisterEventHotKey(reference)
         }
+        registrations.removeValue(forKey: identifier)
     }
 
-    /// 实际注册全局事件监听 (使用 Carbon API)
-    private func doRegister() {
-        guard let keyCode = registeredKeyCode,
-              let modifiers = registeredModifiers else { return }
+    /// 注销 PasteDeck 当前持有的全部全局快捷键。
+    func unregister() {
+        for registration in registrations.values {
+            if let reference = registration.reference {
+                UnregisterEventHotKey(reference)
+            }
+        }
+        registrations.removeAll()
+    }
 
-        var hotKeyID = EventHotKeyID()
-        hotKeyID.signature = OSType(0x5044534B) // 'PDSK' - PasteDeck HotKey
-        hotKeyID.id = UInt32(1)
+    func isHotKeyRegistered(identifier: HotKeyIdentifier = .mainPanel) -> Bool {
+        registrations[identifier]?.reference != nil
+    }
 
-        // 转换修饰键 (将 NSEvent 修饰键转换为 Carbon 修饰键)
+    /// Carbon 全局快捷键不依赖辅助功能权限；辅助功能仅用于读取选区和模拟按键。
+    private func registerWithCarbon(identifier: HotKeyIdentifier) {
+        guard var registration = registrations[identifier], registration.reference == nil else { return }
+        let hotKeyID = EventHotKeyID(signature: OSType(0x5044534B), id: identifier.rawValue)
         var carbonModifiers: UInt32 = 0
-        if modifiers.contains(.command) { carbonModifiers |= UInt32(cmdKey) }
-        if modifiers.contains(.option)  { carbonModifiers |= UInt32(optionKey) }
-        if modifiers.contains(.shift)   { carbonModifiers |= UInt32(shiftKey) }
-        if modifiers.contains(.control) { carbonModifiers |= UInt32(controlKey) }
+        if registration.modifiers.contains(.command) { carbonModifiers |= UInt32(cmdKey) }
+        if registration.modifiers.contains(.option) { carbonModifiers |= UInt32(optionKey) }
+        if registration.modifiers.contains(.shift) { carbonModifiers |= UInt32(shiftKey) }
+        if registration.modifiers.contains(.control) { carbonModifiers |= UInt32(controlKey) }
 
-        // 使用 Carbon 注册全局快捷键
+        var reference: EventHotKeyRef?
         let status = RegisterEventHotKey(
-            keyCode,
+            registration.keyCode,
             carbonModifiers,
             hotKeyID,
             GetApplicationEventTarget(),
             0,
-            &hotKeyRef
+            &reference
         )
-
-        isRegistered = (status == noErr)
-
-        if !isRegistered {
-            NSLog("[PasteDeck] HotKeyManager: RegisterEventHotKey failed with status \(status)")
-        }
+        guard status == noErr else { return }
+        registration.reference = reference
+        registrations[identifier] = registration
     }
 
-    func unregister() {
-        if let ref = hotKeyRef {
-            UnregisterEventHotKey(ref)
-            hotKeyRef = nil
-            isRegistered = false
-        }
-    }
-
-    func isHotKeyRegistered() -> Bool {
-        return isRegistered
-    }
-
-    // MARK: - Private Methods
-
-    /// 设置 Carbon 事件监听器
     private func setupEventHandler() {
         var eventType = EventTypeSpec(
             eventClass: OSType(kEventClassKeyboard),
             eventKind: UInt32(kEventHotKeyPressed)
         )
-
-        // C 语言风格的回调
-        let handler: EventHandlerUPP = { (_, theEvent, _) -> OSStatus in
+        let handler: EventHandlerUPP = { _, event, _ in
             var hotKeyID = EventHotKeyID()
             let status = GetEventParameter(
-                theEvent,
+                event,
                 EventParamName(kEventParamDirectObject),
                 EventParamType(typeEventHotKeyID),
                 nil,
@@ -137,18 +133,14 @@ class HotKeyManager {
                 nil,
                 &hotKeyID
             )
-
-            if status == noErr && hotKeyID.id == 1 {
-                // 触发回调
-                DispatchQueue.main.async {
-                    HotKeyManager.shared.hotKeyCallback?()
-                }
+            guard status == noErr,
+                  let identifier = HotKeyIdentifier(rawValue: hotKeyID.id),
+                  let callback = HotKeyManager.shared.registrations[identifier]?.callback else {
+                return OSStatus(eventNotHandledErr)
             }
-            // 返回 noErr 告诉系统：这个按键事件已被处理，请不要再传给其他 App
+            DispatchQueue.main.async(execute: callback)
             return noErr
         }
-
-        // InstallApplicationEventHandler 是宏，Swift 中使用 InstallEventHandler
         InstallEventHandler(
             GetApplicationEventTarget(),
             handler,
@@ -159,28 +151,4 @@ class HotKeyManager {
         )
     }
 
-    // MARK: - Permission Check
-
-    /// 启动定时检查辅助功能权限
-    private func startPermissionCheck() {
-        guard permissionCheckTimer == nil else { return }
-        permissionCheckTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
-            self?.checkPermissionAndRegister()
-        }
-    }
-
-    /// 停止定时检查
-    private func stopPermissionCheck() {
-        permissionCheckTimer?.invalidate()
-        permissionCheckTimer = nil
-    }
-
-    /// 检查权限并尝试注册
-    private func checkPermissionAndRegister() {
-        let trusted = AXIsProcessTrusted()
-        if trusted && !isRegistered {
-            doRegister()
-            stopPermissionCheck()
-        }
-    }
 }

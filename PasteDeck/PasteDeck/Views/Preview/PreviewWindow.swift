@@ -410,23 +410,22 @@ struct PreviewWindow: View {
             return
         }
 
-        // 检查 API 配置
+        // 检查独立翻译设置中的默认常规 API 配置。
         let context = ModelContext(AppModelContainer.container)
         let descriptor = FetchDescriptor<AppSettings>()
-        guard let settings = try? context.fetch(descriptor).first,
-              settings.baiduTranslateEnabled,
-              !settings.baiduTranslateAppId.isEmpty,
-              !settings.baiduTranslateSecretKey.isEmpty else {
-            translateError = "请先在设置中启用并配置百度翻译 API"
+        guard let settings = try? context.fetch(descriptor).first else {
+            translateError = "请先在设置 -> 翻译中配置常规翻译 API"
+            showTranslation = true
+            return
+        }
+        let providerConfiguration = settings.translationProviderConfiguration
+        guard providerConfiguration.isConfigured else {
+            translateError = "请先在设置 -> 翻译中启用并配置常规翻译 API"
             showTranslation = true
             return
         }
 
-        let service = TranslateService(
-            appId: settings.baiduTranslateAppId,
-            secretKey: settings.baiduTranslateSecretKey,
-            isAdvanced: settings.baiduTranslateIsAdvanced
-        )
+        let service = TranslateService(configuration: providerConfiguration)
 
         // 自动检测目标语言
         targetLanguage = TranslateService.detectTargetLanguage(for: text)
@@ -441,7 +440,7 @@ struct PreviewWindow: View {
         translateError = nil
 
         // 串行/并行翻译
-        if settings.baiduTranslateIsAdvanced {
+        if providerConfiguration.allowsConcurrentRequests {
             // 高级版：并发（最多 5 个并发）
             translateParallel(service: service, maxConcurrent: 5)
         } else {

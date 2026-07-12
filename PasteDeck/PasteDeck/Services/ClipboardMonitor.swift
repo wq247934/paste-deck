@@ -106,6 +106,13 @@ class ClipboardMonitor {
         }
     }
 
+    /// 选区探测已经同步恢复了原剪贴板，不需要粘贴流程的 0.3 秒缓冲；
+    /// 立即恢复可确保用户随后按下的真实 Command+C 会正常进入历史记录。
+    func resumeImmediatelyAfterSelectionProbe() {
+        changeCount = NSPasteboard.general.changeCount
+        isPaused = false
+    }
+
     // MARK: - Private Methods
 
     private func checkForChanges() {

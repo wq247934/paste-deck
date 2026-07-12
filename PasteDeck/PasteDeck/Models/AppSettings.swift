@@ -35,6 +35,37 @@ final class AppSettings {
     var baiduTranslateSecretKey: String
     var baiduTranslateIsAdvanced: Bool
 
+    /// 是否启用划词后自动弹出翻译气泡；nil 兼容旧数据并按关闭处理，避免升级后打扰用户。
+    var automaticSelectionTranslationEnabled: Bool?
+    /// 是否启用“翻译所选文本”全局快捷键；nil 兼容旧数据并按开启处理。
+    var selectionTranslationShortcutEnabled: Bool?
+    /// “翻译所选文本”快捷键的 macOS 虚拟键码；nil 时使用 D 键（2）。
+    var selectionTranslationKeyCode: Int?
+    /// “翻译所选文本”快捷键的 NSEvent 修饰键原始值；nil 时使用 Option。
+    var selectionTranslationModifiers: Int?
+    /// “翻译所选文本”快捷键的用户可读按键名称；nil 时显示 D。
+    var selectionTranslationDisplay: String?
+    /// 是否启用截图 OCR 翻译全局快捷键；nil 兼容旧数据并按开启处理。
+    var screenshotTranslationShortcutEnabled: Bool?
+    /// 截图 OCR 翻译快捷键的 macOS 虚拟键码；nil 时使用 S 键（1）。
+    var screenshotTranslationKeyCode: Int?
+    /// 截图 OCR 翻译快捷键的 NSEvent 修饰键原始值；nil 时使用 Option。
+    var screenshotTranslationModifiers: Int?
+    /// 截图 OCR 翻译快捷键的用户可读按键名称；nil 时显示 S。
+    var screenshotTranslationDisplay: String?
+    /// 是否启用输入翻译全局快捷键；nil 兼容旧数据并按开启处理。
+    var inputTranslationShortcutEnabled: Bool?
+    /// 输入翻译快捷键的 macOS 虚拟键码；nil 时使用 A 键（0）。
+    var inputTranslationKeyCode: Int?
+    /// 输入翻译快捷键的 NSEvent 修饰键原始值；nil 时使用 Option。
+    var inputTranslationModifiers: Int?
+    /// 输入翻译快捷键的用户可读按键名称；nil 时显示 A。
+    var inputTranslationDisplay: String?
+    /// 当前常规翻译服务商配置的 JSON；nil 时从旧版百度字段生成兼容配置。
+    var translationProviderConfigurationJSON: String?
+    /// 可配置多套 OpenAI-compatible 大模型端点的 JSON；nil 表示尚未配置大模型。
+    var llmTranslationConfigurationsJSON: String?
+
     /// 统计面板历史数据回填完成时间，nil 表示尚未回填。
     var statsBackfilledAt: Date?
 
@@ -58,6 +89,21 @@ final class AppSettings {
         self.baiduTranslateAppId = ""
         self.baiduTranslateSecretKey = ""
         self.baiduTranslateIsAdvanced = false
+        self.automaticSelectionTranslationEnabled = false
+        self.selectionTranslationShortcutEnabled = true
+        self.selectionTranslationKeyCode = 2
+        self.selectionTranslationModifiers = Int(NSEvent.ModifierFlags.option.rawValue)
+        self.selectionTranslationDisplay = "D"
+        self.screenshotTranslationShortcutEnabled = true
+        self.screenshotTranslationKeyCode = 1
+        self.screenshotTranslationModifiers = Int(NSEvent.ModifierFlags.option.rawValue)
+        self.screenshotTranslationDisplay = "S"
+        self.inputTranslationShortcutEnabled = true
+        self.inputTranslationKeyCode = 0
+        self.inputTranslationModifiers = Int(NSEvent.ModifierFlags.option.rawValue)
+        self.inputTranslationDisplay = "A"
+        self.translationProviderConfigurationJSON = nil
+        self.llmTranslationConfigurationsJSON = nil
         self.statsBackfilledAt = nil
         self.fetchLinkTitles = false
     }
@@ -89,6 +135,56 @@ final class AppSettings {
         }
         set {
             verticalPanelStyleRawValue = newValue.rawValue
+        }
+    }
+
+    /// 当前常规翻译服务商；优先读取新版 JSON，旧用户则无损沿用百度凭据。
+    var translationProviderConfiguration: TranslationProviderConfiguration {
+        get {
+            if let data = translationProviderConfigurationJSON?.data(using: .utf8),
+               let typed = try? JSONDecoder().decode(TranslationProviderConfiguration.self, from: data) {
+                return typed
+            }
+
+            return TranslationProviderConfiguration(
+                kind: .baidu,
+                name: "百度翻译",
+                enabled: baiduTranslateEnabled,
+                credentialId: baiduTranslateAppId,
+                credentialSecret: baiduTranslateSecretKey,
+                region: "ap-guangzhou",
+                allowsConcurrentRequests: baiduTranslateIsAdvanced
+            )
+        }
+        set {
+            translationProviderConfigurationJSON = try? String(
+                data: JSONEncoder().encode(newValue),
+                encoding: .utf8
+            )
+            if newValue.kind == .baidu {
+                baiduTranslateEnabled = newValue.enabled
+                baiduTranslateAppId = newValue.credentialId
+                baiduTranslateSecretKey = newValue.credentialSecret
+                baiduTranslateIsAdvanced = newValue.allowsConcurrentRequests
+            }
+        }
+    }
+
+    /// 所有已配置的大模型端点；损坏或缺失的 JSON 安全回退为空数组。
+    var llmTranslationConfigurations: [LLMTranslationConfiguration] {
+        get {
+            guard let data = llmTranslationConfigurationsJSON?.data(using: .utf8),
+                  let typed = try? JSONDecoder().decode([LLMTranslationConfiguration].self, from: data) else {
+                return []
+            }
+
+            return typed
+        }
+        set {
+            llmTranslationConfigurationsJSON = try? String(
+                data: JSONEncoder().encode(newValue),
+                encoding: .utf8
+            )
         }
     }
 }

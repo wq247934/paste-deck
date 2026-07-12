@@ -124,12 +124,20 @@ enum StatusMenuBuilder {
     static func buildMenu(
         openMainPanel: @escaping () -> Void,
         openStats: @escaping () -> Void,
+        translateSelection: @escaping () -> Void,
+        translateScreenshot: @escaping () -> Void,
+        translateInput: @escaping () -> Void,
+        openTranslationSettings: @escaping () -> Void,
         openSettings: @escaping () -> Void,
         quit: @escaping () -> Void
     ) -> (menu: NSMenu, delegate: MenuRefreshDelegate) {
         let delegate = MenuRefreshDelegate(
             onOpenMainPanel: openMainPanel,
             onOpenStats: openStats,
+            onTranslateSelection: translateSelection,
+            onTranslateScreenshot: translateScreenshot,
+            onTranslateInput: translateInput,
+            onOpenTranslationSettings: openTranslationSettings,
             onOpenSettings: openSettings,
             onQuit: quit
         )
@@ -167,6 +175,49 @@ enum StatusMenuBuilder {
             .withSymbolConfiguration(.init(pointSize: 14, weight: .regular))
         menu.addItem(statsItem)
 
+        let translationItem = NSMenuItem(title: "翻译", action: nil, keyEquivalent: "")
+        translationItem.image = NSImage(systemSymbolName: "character.book.closed", accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 14, weight: .regular))
+        let translationMenu = NSMenu(title: "翻译")
+
+        let selectionItem = NSMenuItem(
+            title: "翻译所选文本",
+            action: #selector(MenuRefreshDelegate.performTranslateSelection(_:)),
+            keyEquivalent: "d"
+        )
+        selectionItem.keyEquivalentModifierMask = [.option]
+        selectionItem.target = delegate
+        translationMenu.addItem(selectionItem)
+
+        let screenshotItem = NSMenuItem(
+            title: "截图 OCR 翻译",
+            action: #selector(MenuRefreshDelegate.performTranslateScreenshot(_:)),
+            keyEquivalent: "s"
+        )
+        screenshotItem.keyEquivalentModifierMask = [.option]
+        screenshotItem.target = delegate
+        translationMenu.addItem(screenshotItem)
+
+        let inputItem = NSMenuItem(
+            title: "输入翻译",
+            action: #selector(MenuRefreshDelegate.performTranslateInput(_:)),
+            keyEquivalent: "a"
+        )
+        inputItem.keyEquivalentModifierMask = [.option]
+        inputItem.target = delegate
+        translationMenu.addItem(inputItem)
+        translationMenu.addItem(NSMenuItem.separator())
+
+        let translationSettingsItem = NSMenuItem(
+            title: "翻译设置…",
+            action: #selector(MenuRefreshDelegate.performOpenTranslationSettings(_:)),
+            keyEquivalent: ""
+        )
+        translationSettingsItem.target = delegate
+        translationMenu.addItem(translationSettingsItem)
+        translationItem.submenu = translationMenu
+        menu.addItem(translationItem)
+
         menu.addItem(NSMenuItem.separator())
 
         let settingsItem = NSMenuItem(
@@ -199,17 +250,29 @@ enum StatusMenuBuilder {
 final class MenuRefreshDelegate: NSObject, NSMenuDelegate {
     let onOpenMainPanel: () -> Void
     let onOpenStats: () -> Void
+    let onTranslateSelection: () -> Void
+    let onTranslateScreenshot: () -> Void
+    let onTranslateInput: () -> Void
+    let onOpenTranslationSettings: () -> Void
     let onOpenSettings: () -> Void
     let onQuit: () -> Void
 
     init(
         onOpenMainPanel: @escaping () -> Void,
         onOpenStats: @escaping () -> Void,
+        onTranslateSelection: @escaping () -> Void,
+        onTranslateScreenshot: @escaping () -> Void,
+        onTranslateInput: @escaping () -> Void,
+        onOpenTranslationSettings: @escaping () -> Void,
         onOpenSettings: @escaping () -> Void,
         onQuit: @escaping () -> Void
     ) {
         self.onOpenMainPanel = onOpenMainPanel
         self.onOpenStats = onOpenStats
+        self.onTranslateSelection = onTranslateSelection
+        self.onTranslateScreenshot = onTranslateScreenshot
+        self.onTranslateInput = onTranslateInput
+        self.onOpenTranslationSettings = onOpenTranslationSettings
         self.onOpenSettings = onOpenSettings
         self.onQuit = onQuit
         super.init()
@@ -229,6 +292,22 @@ final class MenuRefreshDelegate: NSObject, NSMenuDelegate {
 
     @objc func performOpenStats(_ sender: NSMenuItem) {
         onOpenStats()
+    }
+
+    @objc func performTranslateSelection(_ sender: NSMenuItem) {
+        onTranslateSelection()
+    }
+
+    @objc func performTranslateScreenshot(_ sender: NSMenuItem) {
+        onTranslateScreenshot()
+    }
+
+    @objc func performTranslateInput(_ sender: NSMenuItem) {
+        onTranslateInput()
+    }
+
+    @objc func performOpenTranslationSettings(_ sender: NSMenuItem) {
+        onOpenTranslationSettings()
     }
 
     @objc func performOpenSettings(_ sender: NSMenuItem) {

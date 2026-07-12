@@ -49,6 +49,7 @@ final class ImageOCRService {
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
         request.usesLanguageCorrection = true
+        request.automaticallyDetectsLanguage = true
         request.recognitionLanguages = ["zh-Hans", "zh-Hant", "en-US"]
 
         let handler = VNImageRequestHandler(url: url, options: [:])
@@ -59,10 +60,21 @@ final class ImageOCRService {
             return nil
         }
 
+        // Vision 不保证 observations 的返回顺序；按屏幕阅读顺序排序，避免不同渲染框架下译文行序错乱。
         let lines = (request.results ?? [])
-            .compactMap { $0.topCandidates(1).first?.string }
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
+            .compactMap { observation -> (text: String, boundingBox: CGRect)? in
+                guard let candidate = observation.topCandidates(1).first else { return nil }
+                let text = candidate.string.trimmingCharacters(in: .whitespacesAndNewlines)
+                return text.isEmpty ? nil : (text: text, boundingBox: observation.boundingBox)
+            }
+            .sorted { first, second in
+                let verticalDifference = abs(first.boundingBox.midY - second.boundingBox.midY)
+                if verticalDifference < 0.02 {
+                    return first.boundingBox.minX < second.boundingBox.minX
+                }
+                return first.boundingBox.midY > second.boundingBox.midY
+            }
+            .map(\.text)
 
         guard !lines.isEmpty else { return nil }
         return lines.joined(separator: "\n")

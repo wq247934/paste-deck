@@ -16,7 +16,11 @@ PasteDeck is a native macOS clipboard manager for quickly searching, previewing,
 - Renders Markdown, JSON, code snippets, images, image files, file metadata, links, and colors in the preview window.
 - Runs OCR for copied images so recognized text can be searched later.
 - Supports editable previews for text, code, and colors.
-- Includes optional Baidu Translate support in the preview window.
+- Includes a dedicated translation center with opt-in automatic selected-text tooltips, `Option + D` selected-text translation, `Option + S` screenshot OCR translation, and `Option + A` input translation; shortcuts are customizable.
+- Supports Baidu, Tencent Cloud, Youdao, and Alibaba Cloud translation APIs, plus multiple OpenAI-compatible LLM endpoints for optional retranslation. Connection tests report availability and latency.
+- `Option + D` fallback probes are globally serialized and restore the original multi-format clipboard; automatic translation never enters this clipboard-writing path.
+- Automatic selected-text translation first uses read-only Accessibility and browser/WebView text markers. Mouse selections may use a serialized copy fallback capped at about 140 ms; clipboard monitoring resumes immediately after restoration so a subsequent real `Command + C` is retained.
+- A low-frequency read-only selection observer covers apps that do not deliver global mouse events and also supports keyboard-created selections.
 - Statistics panel with daily/30-day trends, type distribution, source app insights, and extreme records.
 - Theme support: light, dark, or follow system appearance.
 - Stores history locally with SwiftData and caches images under `~/Library/Caches/PasteDeck/images/`.
@@ -46,10 +50,9 @@ swift build
 
 ## Permissions
 
-PasteDeck requests Accessibility permission for:
+PasteDeck requests Accessibility permission for reading selected text and simulating `Command + C` / `Command + V`. Carbon global shortcut registration itself does not require Accessibility permission.
 
-- Registering and handling the global shortcut.
-- Simulating paste with `Command + V`.
+Screenshot OCR translation also requires Screen Recording permission when macOS prompts for it.
 
 Clipboard polling uses `NSPasteboard`; it does not require Accessibility by itself. Enable the permission in System Settings -> Privacy & Security -> Accessibility.
 
@@ -66,6 +69,9 @@ Clipboard polling uses `NSPasteboard`; it does not require Accessibility by itse
 | Shortcut | Action |
 | --- | --- |
 | `Command + Shift + V` | Toggle PasteDeck |
+| `Option + D` | Translate selected text (customizable) |
+| `Option + S` | Capture a screen region, OCR, and translate (customizable) |
+| `Option + A` | Open the input translation window (customizable) |
 | `Command + F` | Focus search |
 | `Left` / `Right` | Move between cards |
 | `Shift + Left` / `Shift + Right` | Extend multi-selection |
@@ -106,12 +112,13 @@ Clipboard polling uses `NSPasteboard`; it does not require Accessibility by itse
 ### Services
 - `ClipboardMonitor` polls `NSPasteboard`, parses content, deduplicates entries, saves history, schedules OCR, and runs cleanup.
 - `ClipboardHistoryStore` loads and filters history for the main panel, manages selection, favorites, collections, deletion, and batch paste.
-- `HotKeyManager` uses Carbon `RegisterEventHotKey` for the global shortcut.
+- `HotKeyManager` uses Carbon `RegisterEventHotKey` for independent clipboard and translation shortcuts.
 - `PasteService` writes selected content back to the pasteboard and simulates paste through `CGEvent`.
 - `CacheManager` manages image cache at `~/Library/Caches/PasteDeck/images/` with configurable size limits.
 - `ImageOCRService` runs Vision OCR for copied images and persists searchable text.
 - `LinkTitleService` fetches webpage titles for copied links asynchronously without blocking UI.
-- `TranslateService` provides optional Baidu Translate integration in the preview window.
+- `TranslateService` provides Baidu, Tencent Cloud, Youdao, and Alibaba Cloud translation adapters plus OpenAI-compatible LLM retranslation.
+- `TranslationCoordinator` manages selected-text monitoring, nonactivating tooltips, screenshot OCR, translation shortcuts, and translation windows.
 - `StatsService` computes aggregated statistics (overview, trends, type distribution, insights) on background threads.
 - `DailyStatsUpdater` handles incremental upsert and one-time backfill of `DailyStatsSnapshot`.
 - `PreviewConfig` manages preview sizing and mode preferences.
@@ -125,7 +132,7 @@ Clipboard polling uses `NSPasteboard`; it does not require Accessibility by itse
 - `PreviewWindow` — large preview for text, Markdown, JSON/code, image, file, color, and translation.
 - `CodeHighlightView` — editable code preview with syntax highlighting.
 - `MarkdownRenderedText` — Markdown rendering support.
-- `SettingsWindow` — 8 settings tabs: General, Hotkey, History, Stats, Filter, Favorites, Appearance, Advanced.
+- `SettingsWindow` — 9 settings tabs: General, Hotkey, History, Stats, Filter, Favorites, Appearance, Translation, Advanced.
 - `StatsSettingsView` / `StatsViewModel` — statistics panel with trend charts, type distribution, and usage insights.
 
 ### Utilities
@@ -178,7 +185,11 @@ PasteDeck 是一个原生 macOS 剪贴板管理器，用浮动面板快速搜索
 - 预览窗口支持 Markdown、JSON、代码片段、图片、图片文件、文件信息、链接和颜色。
 - 图片复制后会进行 OCR，识别出的文字可以参与搜索。
 - 文本、代码和颜色可以在预览窗口中编辑。
-- 预览窗口支持可选的百度翻译。
+- 新增独立翻译中心：划词自动翻译默认关闭；`Option + D` 翻译所选文本、`Option + S` 截图 OCR 翻译、`Option + A` 输入翻译默认开启，三组快捷键均可自定义。
+- 常规翻译支持百度、腾讯云、网易有道、阿里云；可配置多套 OpenAI-compatible 大模型 API，并在对默认译文不满意时手动选择大模型重译。API 检测同时显示可用性与延迟。
+- `Option + D` 的跨应用复制兜底全局串行执行并恢复原多格式剪贴板；自动划词不会进入这条会改写剪贴板的路径。
+- 自动划词优先使用只读 Accessibility 与浏览器/WebView text marker；鼠标划词必要时使用最长约 140ms 的串行复制兜底，恢复原剪贴板后立即恢复监控，用户随后执行的真实 `Command + C` 会正常记录。
+- 增加低频只读选区观察器，兼容不投递全局鼠标事件的应用，也可识别键盘创建的选区。
 - 统计面板：展示每日/近 30 天趋势、类型分布、来源 App 洞察和极值记录。
 - 主题支持：亮色、暗色或跟随系统外观。
 - 历史记录使用 SwiftData 本地存储，图片缓存位于 `~/Library/Caches/PasteDeck/images/`。
@@ -206,7 +217,7 @@ swift build
 
 ## 权限
 
-PasteDeck 需要辅助功能权限来注册全局快捷键并模拟 `Command + V` 粘贴。剪贴板轮询使用 `NSPasteboard`，本身不依赖辅助功能权限。
+PasteDeck 需要辅助功能权限来读取前台应用选中文字，并模拟 `Command + C` / `Command + V`。Carbon 全局快捷键注册本身不依赖辅助功能权限。剪贴板轮询使用 `NSPasteboard`，本身不依赖辅助功能权限。首次使用截图 OCR 翻译时，macOS 还可能请求“屏幕录制”权限。
 
 授权路径：系统设置 -> 隐私与安全性 -> 辅助功能。
 
@@ -223,6 +234,9 @@ PasteDeck 需要辅助功能权限来注册全局快捷键并模拟 `Command + V
 | 快捷键 | 操作 |
 | --- | --- |
 | `Command + Shift + V` | 打开或关闭 PasteDeck |
+| `Option + D` | 翻译当前选中文字（可自定义） |
+| `Option + S` | 区域截图、OCR 并翻译（可自定义） |
+| `Option + A` | 打开输入翻译窗口（可自定义） |
 | `Command + F` | 聚焦搜索框 |
 | `Left` / `Right` | 在卡片间移动 |
 | `Shift + Left` / `Shift + Right` | 扩展多选 |

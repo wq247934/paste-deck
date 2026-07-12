@@ -49,6 +49,7 @@ struct PasteDeckApp: App {
 // MARK: - App Delegate
 
 /// Main application delegate handling lifecycle, status bar, and services
+@MainActor
 class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var statusItem: NSStatusItem?
     private var statusMenuDelegate: MenuRefreshDelegate?
@@ -69,6 +70,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         mainPanelController?.savePanelFrame()
+        TranslationCoordinator.shared.stop()
         hotKeyManager?.unregister()
         removeSettingsAppearanceObserver()
         if let settingsKeyMonitor {
@@ -95,6 +97,24 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             },
             openStats: { [weak self] in
                 self?.openSettings(pane: .stats)
+            },
+            translateSelection: {
+                Task { @MainActor in
+                    TranslationCoordinator.shared.translateSelectedText()
+                }
+            },
+            translateScreenshot: {
+                Task { @MainActor in
+                    TranslationCoordinator.shared.captureAndTranslate()
+                }
+            },
+            translateInput: {
+                Task { @MainActor in
+                    TranslationCoordinator.shared.openInputTranslation()
+                }
+            },
+            openTranslationSettings: { [weak self] in
+                self?.openSettings(pane: .translation)
             },
             openSettings: { [weak self] in
                 self?.openSettings(pane: .general)
@@ -136,6 +156,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 self?.toggleMainPanel()
             }
         }
+
+        // 翻译协调器独立注册 Option+D / Option+S / Option+A，并按设置启停划词监听。
+        TranslationCoordinator.shared.start()
 
         // 监听快捷键变更通知（设置页修改快捷键后发送）
         NotificationCenter.default.addObserver(
@@ -287,7 +310,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.settingsWindow?.appearance = AppearanceResolver.currentAppearance
+            Task { @MainActor in
+                self?.settingsWindow?.appearance = AppearanceResolver.currentAppearance
+            }
         }
     }
 

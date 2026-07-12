@@ -107,6 +107,8 @@ struct SettingsWindow: View {
             FavoritesSettingsView()
         case .appearance:
             AppearanceSettingsView()
+        case .translation:
+            TranslationSettingsView()
         case .advanced:
             AdvancedSettingsView()
         }
@@ -121,6 +123,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
     case filter
     case favorites
     case appearance
+    case translation
     case advanced
 
     var id: String { rawValue }
@@ -134,6 +137,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .filter: return "过滤"
         case .favorites: return "收藏夹"
         case .appearance: return "外观"
+        case .translation: return "翻译"
         case .advanced: return "高级"
         }
     }
@@ -147,7 +151,8 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .filter: return "不记录指定来源"
         case .favorites: return "管理收藏夹名称和顺序"
         case .appearance: return "主题和剪贴板面板布局"
-        case .advanced: return "预览、翻译和数据维护"
+        case .translation: return "划词、截图、快捷键与翻译服务"
+        case .advanced: return "预览配置和数据维护"
         }
     }
 
@@ -160,6 +165,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .filter: return "line.3.horizontal.decrease"
         case .favorites: return "star"
         case .appearance: return "paintpalette"
+        case .translation: return "character.book.closed"
         case .advanced: return "slider.horizontal.3"
         }
     }
@@ -564,7 +570,7 @@ struct GeneralSettingsView: View {
             }
 
             SettingsCard(title: "权限", icon: "lock.shield") {
-                SettingsRow(title: "辅助功能", subtitle: "用于全局快捷键和模拟粘贴") {
+                SettingsRow(title: "辅助功能", subtitle: "用于读取选中文字，以及模拟复制和粘贴") {
                     HStack(spacing: 8) {
                         SettingsStatusPill(
                             text: accessibilityGranted ? "已开启" : "未开启",
@@ -643,7 +649,7 @@ struct HotkeySettingsView: View {
                                 isRecording = false
                                 reregisterHotkey()
                             } else {
-                                HotKeyManager.shared.unregister()
+                                HotKeyManager.shared.unregister(identifier: .mainPanel)
                                 isRecording = true
                             }
                         } label: {
@@ -694,7 +700,7 @@ struct HotkeySettingsView: View {
     // MARK: - Helper
 
     private func reregisterHotkey() {
-        HotKeyManager.shared.unregister()
+        HotKeyManager.shared.unregister(identifier: .mainPanel)
         HotKeyManager.shared.registerHotKey(
             keyCode: UInt32(appSettings.hotkeyKeyCode),
             modifiers: NSEvent.ModifierFlags(rawValue: UInt(appSettings.hotkeyModifiers))
@@ -2252,8 +2258,6 @@ struct AdvancedSettingsView: View {
     @State private var newPlainExt = ""
     @State private var showingClearHistoryAlert = false
     @State private var showingClearCacheAlert = false
-    @State private var isVerifyingBaidu = false
-    @State private var baiduVerifyResult: (isSuccess: Bool, message: String)?
     private var appSettings: AppSettings {
         if let existing = settings.first {
             return existing
@@ -2388,88 +2392,6 @@ struct AdvancedSettingsView: View {
                 }
             }
 
-            SettingsCard(title: "百度翻译", icon: "character.book.closed") {
-                SettingsRow(title: "启用百度翻译", subtitle: "预览窗口中的翻译能力") {
-                    Toggle("", isOn: Binding(
-                        get: { appSettings.baiduTranslateEnabled },
-                        set: { appSettings.baiduTranslateEnabled = $0; try? modelContext.save() }
-                    ))
-                    .toggleStyle(.switch)
-                    .labelsHidden()
-                }
-
-                SettingsDivider()
-
-                HStack {
-                    Text("免费额度：5万字/月")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
-                    Spacer()
-                    Link("注册百度翻译开放平台", destination: URL(string: "https://fanyi-api.baidu.com/")!)
-                        .font(.system(size: 11))
-                }
-            }
-
-            if appSettings.baiduTranslateEnabled {
-                SettingsCard(title: "翻译配置", icon: "key") {
-                    VStack(alignment: .leading, spacing: 10) {
-                        TextField("App ID", text: Binding(
-                            get: { appSettings.baiduTranslateAppId },
-                            set: { appSettings.baiduTranslateAppId = $0; try? modelContext.save() }
-                        ))
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 13))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 8)
-                        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.045)))
-
-                        SecureField("密钥", text: Binding(
-                            get: { appSettings.baiduTranslateSecretKey },
-                            set: { appSettings.baiduTranslateSecretKey = $0; try? modelContext.save() }
-                        ))
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 13))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 8)
-                        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.045)))
-
-                        SettingsRow(title: "高级版", subtitle: "支持并发请求") {
-                            Toggle("", isOn: Binding(
-                                get: { appSettings.baiduTranslateIsAdvanced },
-                                set: { appSettings.baiduTranslateIsAdvanced = $0; try? modelContext.save() }
-                            ))
-                            .toggleStyle(.switch)
-                            .labelsHidden()
-                        }
-
-                        HStack(spacing: 10) {
-                            Button {
-                                verifyBaiduApi()
-                            } label: {
-                                Label("验证配置", systemImage: "checkmark.seal")
-                            }
-                            .buttonStyle(SettingsActionButtonStyle(tone: .primary))
-                            .disabled(appSettings.baiduTranslateAppId.isEmpty || appSettings.baiduTranslateSecretKey.isEmpty)
-
-                            if isVerifyingBaidu {
-                                ProgressView()
-                                    .controlSize(.small)
-                            }
-
-                            if let result = baiduVerifyResult {
-                                HStack(spacing: 4) {
-                                    Image(systemName: result.isSuccess ? "checkmark.circle.fill" : "xmark.circle.fill")
-                                        .foregroundColor(result.isSuccess ? .green : .red)
-                                    Text(result.message)
-                                        .font(.system(size: 12))
-                                        .foregroundColor(result.isSuccess ? .green : .secondary)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
             SettingsCard(title: "清除数据", icon: "trash") {
                 HStack(spacing: 10) {
                     Button(role: .destructive) {
@@ -2507,29 +2429,6 @@ struct AdvancedSettingsView: View {
             Button("取消", role: .cancel) {}
             Button("清除", role: .destructive) {
                 CacheManager().clearAllCache()
-            }
-        }
-    }
-
-    private func verifyBaiduApi() {
-        isVerifyingBaidu = true
-        baiduVerifyResult = nil
-
-        let service = TranslateService(
-            appId: appSettings.baiduTranslateAppId,
-            secretKey: appSettings.baiduTranslateSecretKey,
-            isAdvanced: appSettings.baiduTranslateIsAdvanced
-        )
-
-        service.translateSegment("hello", from: "en", to: "zh") { result in
-            DispatchQueue.main.async {
-                isVerifyingBaidu = false
-                switch result {
-                case .success:
-                    baiduVerifyResult = (isSuccess: true, message: "验证成功")
-                case .failure(let error):
-                    baiduVerifyResult = (isSuccess: false, message: error.localizedDescription)
-                }
             }
         }
     }
