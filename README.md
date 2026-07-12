@@ -18,10 +18,9 @@ PasteDeck is a native macOS clipboard manager for quickly searching, previewing,
 - Supports editable previews for text, code, and colors.
 - Includes a dedicated translation center with opt-in automatic selected-text translation windows, `Option + D` selected-text translation, `Option + S` screenshot OCR translation, and `Option + A` input translation; shortcuts are customizable.
 - Supports Baidu, Tencent Cloud, Youdao, and Alibaba Cloud translation APIs, plus multiple OpenAI-compatible LLM endpoints for optional retranslation. Connection tests report availability and latency.
-- `Option + D` fallback probes are globally serialized and restore the original multi-format clipboard. Automatic translation may use this bounded fallback only after a real mouse selection; polling never simulates `Command + C` or rewrites the clipboard.
+- `Option + D` fallback probes are globally serialized and restore the original multi-format clipboard. Automatic translation may use this bounded fallback only after a real mouse selection; keyboard-created selections never trigger automatic translation.
 - Automatic selected-text translation requires both Accessibility and Input Monitoring. The settings page reports Input Monitoring status and opens the matching System Settings page; with permission, a recoverable event tap reliably observes mouse selections in other apps.
 - Closing an automatic translation window does not reopen it while the original text remains selected. A new mouse selection opens translation again, even when it contains the same text.
-- A low-frequency read-only selection observer still covers apps that publish selections through Accessibility and supports keyboard-created selections without affecting clipboard history.
 - Statistics panel with daily/30-day trends, type distribution, source app insights, and extreme records.
 - Theme support: light, dark, or follow system appearance.
 - Stores history locally with SwiftData and caches images under `~/Library/Caches/PasteDeck/images/`.
@@ -188,10 +187,9 @@ PasteDeck 是一个原生 macOS 剪贴板管理器，用浮动面板快速搜索
 - 文本、代码和颜色可以在预览窗口中编辑。
 - 新增独立翻译中心：划词后自动打开翻译窗口（默认关闭）；`Option + D` 翻译所选文本、`Option + S` 截图 OCR 翻译、`Option + A` 输入翻译默认开启，三组快捷键均可自定义。
 - 常规翻译支持百度、腾讯云、网易有道、阿里云；可配置多套 OpenAI-compatible 大模型 API，并在对默认译文不满意时手动选择大模型重译。API 检测同时显示可用性与延迟。
-- `Option + D` 的跨应用复制兜底全局串行执行并恢复原多格式剪贴板。自动划词仅在一次真实鼠标划词后才可能使用这条受限兜底；轮询观察不会模拟 `Command + C` 或改写剪贴板。
+- `Option + D` 的跨应用复制兜底全局串行执行并恢复原多格式剪贴板。自动划词仅在一次真实鼠标划词后才可能使用这条受限兜底；键盘创建的选区不会自动触发翻译。
 - 自动划词需要“辅助功能”和“输入监控”权限。设置页会显示输入监控状态并可直达系统设置；获得权限后通过可恢复的事件 tap 可靠识别其他应用的鼠标划词。
 - 关闭自动翻译窗口后，原文本仍处于选中状态也不会再次弹窗；重新鼠标划选时，即使文本相同也会重新触发。
-- 低频只读选区观察器继续覆盖支持 Accessibility 的应用及键盘创建的选区，不会影响剪贴板历史。
 - 统计面板：展示每日/近 30 天趋势、类型分布、来源 App 洞察和极值记录。
 - 主题支持：亮色、暗色或跟随系统外观。
 - 历史记录使用 SwiftData 本地存储，图片缓存位于 `~/Library/Caches/PasteDeck/images/`。

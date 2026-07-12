@@ -35,7 +35,6 @@ final class TranslationCoordinator {
     private var automaticSelectionMonitor: Any?
     private var automaticSelectionEventTap: CFMachPort?
     private var automaticSelectionEventTapRunLoopSource: CFRunLoopSource?
-    private var automaticSelectionPollingTimer: Timer?
     private var settingsObserver: NSObjectProtocol?
     private var lastObservedAutomaticSelectionText: String?
     private var automaticSelectionStartPoint: NSPoint?
@@ -195,17 +194,6 @@ final class TranslationCoordinator {
         } else {
             requestInputMonitoringPermissionIfNeeded()
         }
-
-        if automaticSelectionPollingTimer == nil {
-            let timer = Timer(timeInterval: 0.7, repeats: true) { [weak self] _ in
-                Task { @MainActor in
-                    self?.pollAutomaticSelectionIfNeeded()
-                }
-            }
-            timer.tolerance = 0.12
-            RunLoop.main.add(timer, forMode: .common)
-            automaticSelectionPollingTimer = timer
-        }
     }
 
     private func installAutomaticSelectionEventTap() {
@@ -356,8 +344,6 @@ final class TranslationCoordinator {
             NSEvent.removeMonitor(automaticSelectionMonitor)
             self.automaticSelectionMonitor = nil
         }
-        automaticSelectionPollingTimer?.invalidate()
-        automaticSelectionPollingTimer = nil
         lastObservedAutomaticSelectionText = nil
         automaticSelectionEventSource = nil
     }
@@ -390,21 +376,6 @@ final class TranslationCoordinator {
                 self.windowController.show(text: text, mode: .immediate)
             }
         }
-    }
-
-    private func pollAutomaticSelectionIfNeeded() {
-        guard AXIsProcessTrusted(),
-              !isReadingAutomaticSelection,
-              Date() >= automaticSelectionSuppressedUntil,
-              Date().timeIntervalSince(lastAutomaticMouseInteractionDate) >= 0.35,
-              NSEvent.pressedMouseButtons == 0,
-              NSWorkspace.shared.frontmostApplication?.bundleIdentifier != Bundle.main.bundleIdentifier else {
-            return
-        }
-        // This only covers keyboard-created selections and apps that expose
-        // selected text through Accessibility. It must never simulate Command+C
-        // repeatedly, because that would unexpectedly rewrite the user's clipboard.
-        handleAutomaticSelection(allowsClipboardFallback: false)
     }
 
     private static func fetchSettings() -> AppSettings {
