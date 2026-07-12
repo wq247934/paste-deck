@@ -35,7 +35,7 @@ final class AppSettings {
     var baiduTranslateSecretKey: String
     var baiduTranslateIsAdvanced: Bool
 
-    /// 是否启用划词后自动弹出翻译气泡；nil 兼容旧数据并按关闭处理，避免升级后打扰用户。
+    /// 是否启用划词后自动打开翻译窗口；nil 兼容旧数据并按关闭处理，避免升级后打扰用户。
     var automaticSelectionTranslationEnabled: Bool?
     /// 是否启用“翻译所选文本”全局快捷键；nil 兼容旧数据并按开启处理。
     var selectionTranslationShortcutEnabled: Bool?

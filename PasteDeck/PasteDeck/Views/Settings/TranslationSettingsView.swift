@@ -41,6 +41,9 @@ struct TranslationSettingsView: View {
     @State private var providerTesting = false
     @State private var llmTestMessages: [UUID: String] = [:]
     @State private var testingLLMIds: Set<UUID> = []
+    @State private var inputMonitoringGranted = CGPreflightListenEventAccess()
+
+    private let permissionStatusTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     private var appSettings: AppSettings {
         if let existing = settings.first {
@@ -57,7 +60,7 @@ struct TranslationSettingsView: View {
             SettingsCard(title: "翻译入口", icon: "character.cursor.ibeam") {
                 SettingsRow(
                     title: "划词自动翻译",
-                    subtitle: "鼠标划词后在选中内容附近自动显示翻译气泡；默认关闭"
+                    subtitle: "鼠标划词后自动打开翻译窗口；默认关闭"
                 ) {
                     Toggle("", isOn: Binding(
                         get: { appSettings.automaticSelectionTranslationEnabled ?? false },
@@ -68,6 +71,32 @@ struct TranslationSettingsView: View {
                     ))
                     .toggleStyle(.switch)
                     .labelsHidden()
+                }
+
+                if appSettings.automaticSelectionTranslationEnabled ?? false {
+                    SettingsDivider()
+                    SettingsRow(
+                        title: "输入监控",
+                        subtitle: inputMonitoringGranted
+                            ? "已授权，可可靠识别其他应用中的鼠标划词"
+                            : "未授权时，浏览器和多数第三方应用无法触发划词翻译"
+                    ) {
+                        HStack(spacing: 8) {
+                            Label(
+                                inputMonitoringGranted ? "已开启" : "未开启",
+                                systemImage: inputMonitoringGranted ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
+                            )
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(inputMonitoringGranted ? .green : .orange)
+
+                            if !inputMonitoringGranted {
+                                Button("打开系统设置") {
+                                    requestInputMonitoringPermission()
+                                }
+                                .buttonStyle(.bordered)
+                            }
+                        }
+                    }
                 }
 
                 SettingsDivider()
@@ -116,14 +145,14 @@ struct TranslationSettingsView: View {
                 )
 
                 SettingsDivider()
-                Text("划词读取需要“辅助功能”权限；首次使用截图 OCR 时，macOS 可能请求“屏幕录制”权限。")
+                Text("划词读取需要“辅助功能”和“输入监控”权限；首次使用截图 OCR 时，macOS 可能请求“屏幕录制”权限。")
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             SettingsCard(title: "常规翻译 API", icon: "network") {
-                SettingsRow(title: "默认翻译服务", subtitle: "翻译气泡和翻译窗口优先使用该服务") {
+                SettingsRow(title: "默认翻译服务", subtitle: "翻译窗口优先使用该服务") {
                     HStack(spacing: 10) {
                         Picker("", selection: Binding(
                             get: { providerConfiguration.kind },
@@ -256,6 +285,15 @@ struct TranslationSettingsView: View {
         .onAppear {
             providerConfiguration = appSettings.translationProviderConfiguration
             llmConfigurations = appSettings.llmTranslationConfigurations
+            inputMonitoringGranted = CGPreflightListenEventAccess()
+        }
+        .onReceive(permissionStatusTimer) { _ in
+            let currentPermission = CGPreflightListenEventAccess()
+            guard currentPermission != inputMonitoringGranted else { return }
+            inputMonitoringGranted = currentPermission
+            if appSettings.automaticSelectionTranslationEnabled ?? false {
+                NotificationCenter.default.post(name: .translationSettingsDidChange, object: nil)
+            }
         }
         .onDisappear {
             recordingAction = nil
@@ -365,6 +403,15 @@ struct TranslationSettingsView: View {
     private func saveAndReload() {
         try? modelContext.save()
         NotificationCenter.default.post(name: .translationSettingsDidChange, object: nil)
+    }
+
+    private func requestInputMonitoringPermission() {
+        if !CGPreflightListenEventAccess() {
+            _ = CGRequestListenEventAccess()
+        }
+        if let settingsURL = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent") {
+            NSWorkspace.shared.open(settingsURL)
+        }
     }
 
     private func testProvider() {

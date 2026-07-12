@@ -22,22 +22,31 @@ enum TranslationWindowMode {
     case input
 }
 
+/// 鼠标事件来源用于确保一次划词的按下和抬起坐标来自同一坐标系。
+private enum AutomaticSelectionEventSource: Equatable {
+    case eventTap
+    case globalMonitor
+}
+
 @MainActor
 final class TranslationCoordinator {
     static let shared = TranslationCoordinator()
 
     private var automaticSelectionMonitor: Any?
+    private var automaticSelectionEventTap: CFMachPort?
+    private var automaticSelectionEventTapRunLoopSource: CFRunLoopSource?
     private var automaticSelectionPollingTimer: Timer?
     private var settingsObserver: NSObjectProtocol?
     private var lastObservedAutomaticSelectionText: String?
     private var automaticSelectionStartPoint: NSPoint?
+    private var automaticSelectionEventSource: AutomaticSelectionEventSource?
     private var lastAutomaticMouseInteractionDate = Date.distantPast
     private var isReadingAutomaticSelection = false
     private var automaticSelectionReadGeneration: UInt64 = 0
     private var automaticSelectionSuppressedUntil = Date.distantPast
     private var isCapturingScreenshot = false
+    private var hasRequestedInputMonitoringPermission = false
     private let windowController = TranslationWindowController()
-    private let tooltipController = TranslationTooltipController()
 
     private init() {}
 
@@ -74,7 +83,6 @@ final class TranslationCoordinator {
         automaticSelectionReadGeneration &+= 1
         automaticSelectionSuppressedUntil = Date().addingTimeInterval(1)
         isReadingAutomaticSelection = false
-        tooltipController.close()
         guard AXIsProcessTrusted() else {
             Self.requestAccessibilityPermission()
             windowController.showError("读取选中文字需要“辅助功能”权限。请授权 PasteDeck 后重新触发快捷键。")
@@ -148,10 +156,13 @@ final class TranslationCoordinator {
             if !AXIsProcessTrusted() {
                 Self.requestAccessibilityPermission()
             }
+            // Rebuild the monitor whenever settings or privacy permissions change.
+            // In particular, this swaps the temporary NSEvent fallback for the
+            // reliable event tap as soon as Input Monitoring is granted.
+            removeAutomaticSelectionMonitor()
             installAutomaticSelectionMonitor()
         } else {
             removeAutomaticSelectionMonitor()
-            tooltipController.close()
         }
     }
 
@@ -175,34 +186,16 @@ final class TranslationCoordinator {
     }
 
     private func installAutomaticSelectionMonitor() {
-        if automaticSelectionMonitor == nil {
-            automaticSelectionMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp]) { [weak self] event in
-                guard let self else { return }
-                if event.type == .leftMouseDown {
-                    self.automaticSelectionStartPoint = NSEvent.mouseLocation
-                    self.lastAutomaticMouseInteractionDate = Date()
-                    self.lastObservedAutomaticSelectionText = nil
-                    return
-                }
-
-                let endPoint = NSEvent.mouseLocation
-                self.lastAutomaticMouseInteractionDate = Date()
-                let startPoint = self.automaticSelectionStartPoint ?? endPoint
-                self.automaticSelectionStartPoint = nil
-                let draggedDistance = hypot(endPoint.x - startPoint.x, endPoint.y - startPoint.y)
-                guard draggedDistance >= 3 || event.clickCount >= 2 else { return }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) {
-                    guard Date() >= self.automaticSelectionSuppressedUntil else { return }
-                    self.handleAutomaticSelection(
-                        near: endPoint,
-                        allowsClipboardFallback: true
-                    )
-                }
-            }
+        // Keep both event sources. In practice, different macOS releases and
+        // applications can suppress one of them even after permission is granted.
+        // The read-in-progress guard coalesces duplicate mouse-up notifications.
+        installNSEventGlobalMonitor()
+        if CGPreflightListenEventAccess() {
+            installAutomaticSelectionEventTap()
+        } else {
+            requestInputMonitoringPermissionIfNeeded()
         }
 
-        // 部分应用或权限状态不会投递全局鼠标事件；低频只读轮询同时覆盖键盘选区，
-        // 且不会调用 Command+C、不会暂停 ClipboardMonitor。
         if automaticSelectionPollingTimer == nil {
             let timer = Timer(timeInterval: 0.7, repeats: true) { [weak self] _ in
                 Task { @MainActor in
@@ -215,7 +208,150 @@ final class TranslationCoordinator {
         }
     }
 
+    private func installAutomaticSelectionEventTap() {
+        guard automaticSelectionEventTap == nil else { return }
+        let eventMask = CGEventMask(1 << CGEventType.leftMouseDown.rawValue)
+            | CGEventMask(1 << CGEventType.leftMouseUp.rawValue)
+        let eventTap = CGEvent.tapCreate(
+            tap: .cgSessionEventTap,
+            place: .headInsertEventTap,
+            options: .listenOnly,
+            eventsOfInterest: eventMask,
+            callback: { eventTap, eventType, event, userInfo in
+                guard let userInfo else { return Unmanaged.passUnretained(event) }
+                let coordinator = Unmanaged<TranslationCoordinator>.fromOpaque(userInfo).takeUnretainedValue()
+                if eventType == .tapDisabledByTimeout || eventType == .tapDisabledByUserInput {
+                    DispatchQueue.main.async {
+                        coordinator.reenableAutomaticSelectionEventTap()
+                    }
+                    return Unmanaged.passUnretained(event)
+                }
+                let eventLocation = event.location
+                let clickCount = event.getIntegerValueField(.mouseEventClickState)
+                DispatchQueue.main.async {
+                    switch eventType {
+                    case .leftMouseDown:
+                        coordinator.recordAutomaticMouseDown(
+                            at: eventLocation,
+                            source: .eventTap
+                        )
+                    case .leftMouseUp:
+                        coordinator.recordAutomaticMouseUp(
+                            at: eventLocation,
+                            clickCount: clickCount,
+                            source: .eventTap
+                        )
+                    default:
+                        break
+                    }
+                }
+                return Unmanaged.passUnretained(event)
+            },
+            userInfo: Unmanaged.passUnretained(self).toOpaque()
+        )
+        guard let eventTap else {
+            // The preflight check can pass before macOS finishes applying a
+            // permission change, so retain the NSEvent fallback in this case.
+            installNSEventGlobalMonitor()
+            return
+        }
+        let runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, eventTap, 0)
+        CFRunLoopAddSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
+        CGEvent.tapEnable(tap: eventTap, enable: true)
+        automaticSelectionEventTap = eventTap
+        automaticSelectionEventTapRunLoopSource = runLoopSource
+    }
+
+    private func reenableAutomaticSelectionEventTap() {
+        guard let automaticSelectionEventTap else { return }
+        CGEvent.tapEnable(tap: automaticSelectionEventTap, enable: true)
+    }
+
+    private func requestInputMonitoringPermissionIfNeeded() {
+        guard !hasRequestedInputMonitoringPermission else { return }
+        hasRequestedInputMonitoringPermission = true
+        _ = CGRequestListenEventAccess()
+    }
+
+    private func installNSEventGlobalMonitor() {
+        if automaticSelectionMonitor == nil {
+            automaticSelectionMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp]) { [weak self] event in
+                let eventLocation = event.locationInWindow
+                let clickCount = Int64(event.clickCount)
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    if event.type == .leftMouseDown {
+                        self.recordAutomaticMouseDown(
+                            at: eventLocation,
+                            source: .globalMonitor
+                        )
+                    } else if event.type == .leftMouseUp {
+                        self.recordAutomaticMouseUp(
+                            at: eventLocation,
+                            clickCount: clickCount,
+                            source: .globalMonitor
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private func recordAutomaticMouseDown(
+        at point: NSPoint,
+        source: AutomaticSelectionEventSource
+    ) {
+        // Event taps also receive clicks inside PasteDeck. Closing the
+        // translation window must not be treated as a new external selection,
+        // otherwise the still-selected source text would reopen it in a loop.
+        guard NSWorkspace.shared.frontmostApplication?.bundleIdentifier != Bundle.main.bundleIdentifier else {
+            automaticSelectionStartPoint = nil
+            automaticSelectionEventSource = nil
+            return
+        }
+        automaticSelectionStartPoint = point
+        automaticSelectionEventSource = source
+        lastAutomaticMouseInteractionDate = Date()
+    }
+
+    private func recordAutomaticMouseUp(
+        at point: NSPoint,
+        clickCount: Int64,
+        source: AutomaticSelectionEventSource
+    ) {
+        guard automaticSelectionEventSource == source else { return }
+        lastAutomaticMouseInteractionDate = Date()
+        let startPoint = automaticSelectionStartPoint ?? point
+        automaticSelectionStartPoint = nil
+        automaticSelectionEventSource = nil
+        let draggedDistance = hypot(point.x - startPoint.x, point.y - startPoint.y)
+        guard draggedDistance >= 2 || clickCount >= 2 else { return }
+        // A completed external drag is deliberate user intent, even when its
+        // text is the same as the previous selection. Plain clicks must retain
+        // the last value so returning focus cannot reopen a closed window.
+        lastObservedAutomaticSelectionText = nil
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) { [weak self] in
+            guard let self,
+                  Date() >= self.automaticSelectionSuppressedUntil else {
+                return
+            }
+            self.handleAutomaticSelection(allowsClipboardFallback: true)
+        }
+    }
+
     private func removeAutomaticSelectionMonitor() {
+        if let automaticSelectionEventTap {
+            CGEvent.tapEnable(tap: automaticSelectionEventTap, enable: false)
+        }
+        if let automaticSelectionEventTapRunLoopSource {
+            CFRunLoopRemoveSource(
+                CFRunLoopGetMain(),
+                automaticSelectionEventTapRunLoopSource,
+                .commonModes
+            )
+        }
+        self.automaticSelectionEventTapRunLoopSource = nil
+        self.automaticSelectionEventTap = nil
         if let automaticSelectionMonitor {
             NSEvent.removeMonitor(automaticSelectionMonitor)
             self.automaticSelectionMonitor = nil
@@ -223,10 +359,10 @@ final class TranslationCoordinator {
         automaticSelectionPollingTimer?.invalidate()
         automaticSelectionPollingTimer = nil
         lastObservedAutomaticSelectionText = nil
+        automaticSelectionEventSource = nil
     }
 
     private func handleAutomaticSelection(
-        near point: NSPoint,
         allowsClipboardFallback: Bool
     ) {
         guard AXIsProcessTrusted(),
@@ -237,7 +373,7 @@ final class TranslationCoordinator {
         isReadingAutomaticSelection = true
         SelectedTextReader.readSelectedText(
             allowsClipboardFallback: allowsClipboardFallback,
-            fallbackMaximumWait: allowsClipboardFallback ? 0.14 : 0.4
+            fallbackMaximumWait: allowsClipboardFallback ? 0.25 : 0.4
         ) { [weak self] text in
             Task { @MainActor in
                 guard let self else { return }
@@ -245,13 +381,13 @@ final class TranslationCoordinator {
                 guard readGeneration == self.automaticSelectionReadGeneration,
                       Date() >= self.automaticSelectionSuppressedUntil else { return }
                 guard let text, text.count <= 12_000 else {
-                    self.lastObservedAutomaticSelectionText = nil
-                    self.tooltipController.close()
                     return
                 }
                 guard text != self.lastObservedAutomaticSelectionText else { return }
                 self.lastObservedAutomaticSelectionText = text
-                self.tooltipController.show(text: text, near: point)
+                // Reuse the same AppKit window as the manual shortcut so both
+                // entry points share one reliable presentation path.
+                self.windowController.show(text: text, mode: .immediate)
             }
         }
     }
@@ -260,15 +396,15 @@ final class TranslationCoordinator {
         guard AXIsProcessTrusted(),
               !isReadingAutomaticSelection,
               Date() >= automaticSelectionSuppressedUntil,
-              Date().timeIntervalSince(lastAutomaticMouseInteractionDate) >= 0.55,
+              Date().timeIntervalSince(lastAutomaticMouseInteractionDate) >= 0.35,
               NSEvent.pressedMouseButtons == 0,
               NSWorkspace.shared.frontmostApplication?.bundleIdentifier != Bundle.main.bundleIdentifier else {
             return
         }
-        handleAutomaticSelection(
-            near: NSEvent.mouseLocation,
-            allowsClipboardFallback: false
-        )
+        // This only covers keyboard-created selections and apps that expose
+        // selected text through Accessibility. It must never simulate Command+C
+        // repeatedly, because that would unexpectedly rewrite the user's clipboard.
+        handleAutomaticSelection(allowsClipboardFallback: false)
     }
 
     private static func fetchSettings() -> AppSettings {
@@ -765,87 +901,5 @@ private struct TranslationWorkspaceView: View {
         .onChange(of: model.mode) { _, mode in
             sourceFocused = mode == .input
         }
-    }
-}
-
-// MARK: - Nonactivating Tooltip
-
-@MainActor
-private final class TranslationTooltipController {
-    private var panel: NSPanel?
-    private var viewModel: TranslationViewModel?
-
-    func show(text: String, near point: NSPoint) {
-        close()
-        let model = TranslationViewModel(sourceText: text, mode: .immediate)
-        let hostingController = NSHostingController(rootView: TranslationTooltipView(model: model))
-        let panel = NSPanel(contentViewController: hostingController)
-        panel.styleMask = [.borderless, .nonactivatingPanel]
-        panel.level = .popUpMenu
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
-        panel.hasShadow = true
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
-        panel.setContentSize(NSSize(width: 360, height: 190))
-        let visibleFrame = NSScreen.screens.first(where: { $0.frame.contains(point) })?.visibleFrame ?? NSScreen.main?.visibleFrame ?? .zero
-        let xPosition = min(max(point.x + 14, visibleFrame.minX + 8), visibleFrame.maxX - 368)
-        let yPosition = min(max(point.y - 204, visibleFrame.minY + 8), visibleFrame.maxY - 198)
-        panel.setFrameOrigin(NSPoint(x: xPosition, y: yPosition))
-        self.panel = panel
-        self.viewModel = model
-        panel.orderFrontRegardless()
-        model.translateUsingAPI()
-    }
-
-    func close() {
-        panel?.orderOut(nil)
-        panel?.contentViewController = nil
-        panel = nil
-        viewModel = nil
-    }
-}
-
-private struct TranslationTooltipView: View {
-    @ObservedObject var model: TranslationViewModel
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Label("翻译", systemImage: "character.book.closed.fill")
-                    .font(.system(size: 13, weight: .semibold))
-                Spacer()
-                if model.isTranslating {
-                    ProgressView().controlSize(.small)
-                }
-                if !model.translatedText.isEmpty {
-                    Button {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(model.translatedText, forType: .string)
-                    } label: {
-                        Image(systemName: "doc.on.doc")
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            Divider()
-            Text(model.translatedText.isEmpty ? (model.errorMessage ?? "正在翻译…") : model.translatedText)
-                .font(.system(size: 15))
-                .foregroundColor(model.errorMessage == nil ? .primary : .orange)
-                .textSelection(.enabled)
-                .lineLimit(6)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            if !model.llmConfigurations.isEmpty && !model.translatedText.isEmpty {
-                Menu("使用大模型重译") {
-                    ForEach(model.llmConfigurations) { configuration in
-                        Button(configuration.name) { model.translateUsingLLM(configuration) }
-                    }
-                }
-                .font(.system(size: 11))
-            }
-        }
-        .padding(14)
-        .frame(width: 360, height: 190)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.primary.opacity(0.12)))
     }
 }

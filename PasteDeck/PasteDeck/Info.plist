@@ -17,9 +17,9 @@
 	<key>CFBundlePackageType</key>
 	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.10.0</string>
+	<string>1.10.1</string>
 	<key>CFBundleVersion</key>
-	<string>197</string>
+	<string>198</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
 	<key>LSUIElement</key>
@@ -32,6 +32,10 @@
 	<string>PasteDeck 需要访问下载文件夹以预览和粘贴您复制的文件内容。</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © 2026 PasteDeck. All rights reserved.</string>
+	<key>NSInputMonitoringUsageDescription</key>
+	<string>PasteDeck 需要输入监控权限来检测鼠标选中操作，以实现划词翻译功能。应用不会记录或传输您的键盘输入。</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>PasteDeck 需要发送 Apple 事件以在其他应用中执行粘贴操作。</string>
 	<key>NSMainStoryboardFile</key>
 	<string></string>
 	<key>NSPrincipalClass</key>
