@@ -50,12 +50,35 @@ struct TranslationSettingsView: View {
         return created
     }
 
+    /// 当前可用于自动划词气泡的已启用服务；设置顺序只影响气泡，不改变完整翻译工作区的并行策略。
+    private var availableAutomaticSelectionServices: [AutomaticSelectionTranslationService] {
+        providerConfigurations.filter(\.isConfigured).map(AutomaticSelectionTranslationService.api)
+            + llmConfigurations.filter(\.isConfigured).map(AutomaticSelectionTranslationService.llm)
+    }
+
+    /// 设置页展示顺序为已选服务在前、未选服务在后；旧数据默认选中全部可用服务。
+    private var displayedAutomaticSelectionServices: [AutomaticSelectionTranslationService] {
+        let services = availableAutomaticSelectionServices
+        guard appSettings.automaticSelectionTranslationServiceOrderJSON != nil else {
+            return services
+        }
+
+        let servicesByReference = Dictionary(
+            uniqueKeysWithValues: services.map { ($0.reference, $0) }
+        )
+        let selectedServices = appSettings.automaticSelectionTranslationServiceOrder.compactMap { reference in
+            servicesByReference[reference]
+        }
+        let selectedReferences = Set(selectedServices.map(\.reference))
+        return selectedServices + services.filter { !selectedReferences.contains($0.reference) }
+    }
+
     var body: some View {
         SettingsContentStack {
             SettingsCard(title: "翻译入口", icon: "character.cursor.ibeam") {
                 SettingsRow(
                     title: "划词自动翻译",
-                    subtitle: "鼠标划词后自动打开翻译窗口；默认关闭"
+                    subtitle: "鼠标划词后在选区旁显示轻量译文气泡；默认关闭"
                 ) {
                     Toggle("", isOn: Binding(
                         get: { appSettings.automaticSelectionTranslationEnabled ?? false },
@@ -69,6 +92,9 @@ struct TranslationSettingsView: View {
                 }
 
                 if appSettings.automaticSelectionTranslationEnabled ?? false {
+                    SettingsDivider()
+                    automaticSelectionServicesSection
+
                     SettingsDivider()
                     SettingsRow(
                         title: "输入监控",
@@ -265,6 +291,147 @@ struct TranslationSettingsView: View {
         } message: {
             Text(credentialStorageError ?? "请稍后重试。")
         }
+    }
+
+    @ViewBuilder
+    private var automaticSelectionServicesSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("气泡翻译服务")
+                        .font(.system(size: 13, weight: .medium))
+                    Text("可选择多个 API 或大模型；第一个为默认服务，气泡内可随时切换")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                }
+
+                Spacer()
+
+                Text("\(automaticSelectionServiceOrderForEditing.count) 个")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.primary.opacity(0.06), in: Capsule())
+            }
+
+            if displayedAutomaticSelectionServices.isEmpty {
+                Label("请先启用并完成至少一套常规 API 或大模型配置", systemImage: "exclamationmark.triangle")
+                    .font(.system(size: 11))
+                    .foregroundColor(.orange)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(10)
+                    .background(Color.orange.opacity(0.07), in: RoundedRectangle(cornerRadius: 10))
+            } else {
+                ForEach(displayedAutomaticSelectionServices, id: \.reference.id) { service in
+                    automaticSelectionServiceRow(service)
+                }
+            }
+        }
+    }
+
+    private var automaticSelectionServiceOrderForEditing: [AutomaticSelectionTranslationServiceReference] {
+        if appSettings.automaticSelectionTranslationServiceOrderJSON == nil {
+            return availableAutomaticSelectionServices.map(\.reference)
+        }
+
+        let availableReferences = Set(availableAutomaticSelectionServices.map(\.reference))
+        return appSettings.automaticSelectionTranslationServiceOrder.filter(availableReferences.contains)
+    }
+
+    private func automaticSelectionServiceRow(_ service: AutomaticSelectionTranslationService) -> some View {
+        let reference = service.reference
+        let selectedOrder = automaticSelectionServiceOrderForEditing
+        let selectedIndex = selectedOrder.firstIndex(of: reference)
+
+        return HStack(spacing: 10) {
+            Toggle("", isOn: Binding(
+                get: { automaticSelectionServiceOrderForEditing.contains(reference) },
+                set: { setAutomaticSelectionService(reference, enabled: $0) }
+            ))
+            .toggleStyle(.checkbox)
+            .labelsHidden()
+
+            automaticSelectionServiceLogo(service)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(service.displayName)
+                    .font(.system(size: 12, weight: .semibold))
+                Text(service.detail)
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer()
+
+            if let selectedIndex {
+                Text(selectedIndex == 0 ? "默认" : "\(selectedIndex + 1)")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(selectedIndex == 0 ? .accentColor : .secondary)
+                    .frame(minWidth: 30)
+
+                Button {
+                    moveAutomaticSelectionService(reference, offset: -1)
+                } label: {
+                    Image(systemName: "chevron.up")
+                }
+                .buttonStyle(.borderless)
+                .disabled(selectedIndex == 0)
+                .help("上移")
+
+                Button {
+                    moveAutomaticSelectionService(reference, offset: 1)
+                } label: {
+                    Image(systemName: "chevron.down")
+                }
+                .buttonStyle(.borderless)
+                .disabled(selectedIndex == selectedOrder.count - 1)
+                .help("下移")
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    @ViewBuilder
+    private func automaticSelectionServiceLogo(_ service: AutomaticSelectionTranslationService) -> some View {
+        switch service {
+        case .api(let configuration):
+            TranslationBrandLogoView(brand: configuration.kind.translationBrand, size: 22)
+        case .llm(let configuration):
+            TranslationBrandLogoView(brand: configuration.translationBrand, size: 22)
+        }
+    }
+
+    private func setAutomaticSelectionService(
+        _ reference: AutomaticSelectionTranslationServiceReference,
+        enabled: Bool
+    ) {
+        var order = automaticSelectionServiceOrderForEditing
+        if enabled {
+            if !order.contains(reference) {
+                order.append(reference)
+            }
+        } else {
+            order.removeAll { $0 == reference }
+        }
+        appSettings.automaticSelectionTranslationServiceOrder = order
+        saveAndReload()
+    }
+
+    private func moveAutomaticSelectionService(
+        _ reference: AutomaticSelectionTranslationServiceReference,
+        offset: Int
+    ) {
+        var order = automaticSelectionServiceOrderForEditing
+        guard let sourceIndex = order.firstIndex(of: reference) else { return }
+        let destinationIndex = sourceIndex + offset
+        guard order.indices.contains(destinationIndex) else { return }
+        order.swapAt(sourceIndex, destinationIndex)
+        appSettings.automaticSelectionTranslationServiceOrder = order
+        saveAndReload()
     }
 
     @ViewBuilder
@@ -607,6 +774,7 @@ struct TranslationSettingsView: View {
                         }
                     }
                 }
+
             }
 
             if let message = llmModelFetchMessages[configuration.id] {

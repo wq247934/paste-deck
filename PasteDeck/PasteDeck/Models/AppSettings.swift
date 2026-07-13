@@ -9,6 +9,77 @@ import Foundation
 import AppKit
 import SwiftData
 
+/// 自动划词气泡使用的翻译服务类别；原始值作为 SwiftData 持久化协议，不应修改已有候选值。
+enum AutomaticSelectionTranslationServiceKind: String, CaseIterable, Codable {
+    /// 使用一套已启用且配置完整的常规机器翻译 API。
+    case api
+    /// 使用一套已启用且配置完整的 OpenAI-compatible 大模型配置。
+    case llm
+}
+
+/// 自动划词气泡候选服务的持久化引用；设置页可保存多个引用并通过数组顺序决定默认项。
+struct AutomaticSelectionTranslationServiceReference: Codable, Equatable, Hashable, Identifiable {
+    /// 服务类别；候选值为 api、llm。
+    let kind: AutomaticSelectionTranslationServiceKind
+    /// 对应 TranslationProviderConfiguration 或 LLMTranslationConfiguration 的稳定标识。
+    let configurationID: UUID
+
+    /// 同时包含类别和配置标识，避免不同类别的配置标识在界面 diff 时发生碰撞。
+    var id: String {
+        "\(kind.rawValue):\(configurationID.uuidString)"
+    }
+}
+
+/// 自动划词气泡解析后的单个候选翻译服务；候选值为 api、llm。
+enum AutomaticSelectionTranslationService {
+    /// 已解析完整凭据的常规机器翻译 API 配置。
+    case api(TranslationProviderConfiguration)
+    /// 已解析完整凭据的 OpenAI-compatible 大模型配置。
+    case llm(LLMTranslationConfiguration)
+
+    /// 配置稳定标识，用于设置页单选状态与运行时请求关联。
+    var configurationID: UUID {
+        switch self {
+        case .api(let configuration): return configuration.id
+        case .llm(let configuration): return configuration.id
+        }
+    }
+
+    /// 服务类别，用于在常规 API 与大模型配置之间恢复唯一选择。
+    var kind: AutomaticSelectionTranslationServiceKind {
+        switch self {
+        case .api: return .api
+        case .llm: return .llm
+        }
+    }
+
+    /// 可持久化的服务引用，用于气泡切换、结果缓存与设置排序。
+    var reference: AutomaticSelectionTranslationServiceReference {
+        AutomaticSelectionTranslationServiceReference(
+            kind: kind,
+            configurationID: configurationID
+        )
+    }
+
+    /// 气泡标题中展示的用户可识别服务名称。
+    var displayName: String {
+        switch self {
+        case .api(let configuration):
+            return configuration.name.isEmpty ? configuration.kind.displayName : configuration.name
+        case .llm(let configuration):
+            return configuration.name.isEmpty ? "大模型" : configuration.name
+        }
+    }
+
+    /// 气泡标题中展示的服务类型或具体模型名称。
+    var detail: String {
+        switch self {
+        case .api(let configuration): return configuration.kind.displayName
+        case .llm(let configuration): return configuration.model
+        }
+    }
+}
+
 /// 应用设置模型
 @Model
 final class AppSettings {
@@ -31,6 +102,8 @@ final class AppSettings {
 
     /// 是否启用划词后自动打开翻译窗口；nil 兼容旧数据并按关闭处理，避免升级后打扰用户。
     var automaticSelectionTranslationEnabled: Bool?
+    /// 自动划词气泡候选服务的有序引用 JSON；首项是默认服务，nil 表示旧数据尚未配置并回退到全部可用服务。
+    var automaticSelectionTranslationServiceOrderJSON: String?
     /// 是否启用“翻译所选文本”全局快捷键；nil 兼容旧数据并按开启处理。
     var selectionTranslationShortcutEnabled: Bool?
     /// “翻译所选文本”快捷键的 macOS 虚拟键码；nil 时使用 D 键（2）。
@@ -80,6 +153,7 @@ final class AppSettings {
         self.panelOrientationRawValue = nil
         self.verticalPanelStyleRawValue = nil
         self.automaticSelectionTranslationEnabled = false
+        self.automaticSelectionTranslationServiceOrderJSON = nil
         self.selectionTranslationShortcutEnabled = true
         self.selectionTranslationKeyCode = 2
         self.selectionTranslationModifiers = Int(NSEvent.ModifierFlags.option.rawValue)
@@ -227,6 +301,48 @@ final class AppSettings {
                 data: JSONEncoder().encode(configurationsForStorage),
                 encoding: .utf8
             )
+        }
+    }
+
+    /// 自动划词气泡候选服务的持久化顺序；空数组表示用户明确不使用任何服务。
+    var automaticSelectionTranslationServiceOrder: [AutomaticSelectionTranslationServiceReference] {
+        get {
+            guard let data = automaticSelectionTranslationServiceOrderJSON?.data(using: .utf8),
+                  let typed = try? JSONDecoder().decode(
+                    [AutomaticSelectionTranslationServiceReference].self,
+                    from: data
+                  ) else {
+                return []
+            }
+
+            return typed
+        }
+        set {
+            var seenReferences = Set<AutomaticSelectionTranslationServiceReference>()
+            let uniqueReferences = newValue.filter { seenReferences.insert($0).inserted }
+            automaticSelectionTranslationServiceOrderJSON = try? String(
+                data: JSONEncoder().encode(uniqueReferences),
+                encoding: .utf8
+            )
+        }
+    }
+
+    /// 解析自动划词气泡的有序候选服务；首项默认展示，已删除或不再可用的配置会被跳过。
+    func resolvedAutomaticSelectionTranslationServices() -> [AutomaticSelectionTranslationService] {
+        let configuredProviders = translationProviderConfigurations.filter(\.isConfigured)
+        let configuredLLMs = llmTranslationConfigurations.filter(\.isConfigured)
+        let availableServices = configuredProviders.map(AutomaticSelectionTranslationService.api)
+            + configuredLLMs.map(AutomaticSelectionTranslationService.llm)
+
+        guard automaticSelectionTranslationServiceOrderJSON != nil else {
+            return availableServices
+        }
+
+        let servicesByReference = Dictionary(
+            uniqueKeysWithValues: availableServices.map { ($0.reference, $0) }
+        )
+        return automaticSelectionTranslationServiceOrder.compactMap { reference in
+            servicesByReference[reference]
         }
     }
 

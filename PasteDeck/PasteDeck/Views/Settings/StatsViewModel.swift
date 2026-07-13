@@ -21,9 +21,47 @@ final class StatsViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var trendDays: Int = 7
     @Published var translationUsageDays: Int = 7
+    @Published var translationUsageFilter: TranslationUsageFilter = .all
 
     private var hasLoaded = false
     private var reloadTask: Task<Void, Never>?
+
+    /// 当前筛选范围内的翻译明细；切换范围只做内存聚合，不重复读取 SwiftData。
+    var filteredTranslationUsage: [TranslationUsageStat] {
+        StatsService.filterTranslationUsage(translationUsage, by: translationUsageFilter)
+    }
+
+    /// 当前筛选范围内的请求、成功率、字符与 Token 用量摘要。
+    var translationUsageSummary: TranslationUsageSummary {
+        StatsService.makeTranslationUsageSummary(from: filteredTranslationUsage)
+    }
+
+    /// 当前时间范围内常规 API 的字符用量摘要；“全部”视图用它避免把大模型字符数混入 API 指标。
+    var translationAPIUsageSummary: TranslationUsageSummary {
+        StatsService.makeTranslationUsageSummary(
+            from: StatsService.filterTranslationUsage(translationUsage, by: .api)
+        )
+    }
+
+    /// 当前时间范围内大模型的 Token 用量摘要；“全部”视图用它与 API 字符数分开呈现。
+    var translationLLMUsageSummary: TranslationUsageSummary {
+        StatsService.makeTranslationUsageSummary(
+            from: StatsService.filterTranslationUsage(translationUsage, by: .llm)
+        )
+    }
+
+    /// 当前筛选范围内按日期与调用类别聚合的趋势图数据。
+    var translationUsageDailyPoints: [TranslationUsageDailyPoint] {
+        StatsService.makeTranslationUsageDailyPoints(
+            from: filteredTranslationUsage,
+            days: translationUsageDays
+        )
+    }
+
+    /// 当前筛选范围内调用次数最多的服务排行。
+    var translationUsageServicePoints: [TranslationUsageServicePoint] {
+        StatsService.makeTranslationUsageServicePoints(from: filteredTranslationUsage)
+    }
 
     func loadIfNeeded() {
         guard !hasLoaded else { return }

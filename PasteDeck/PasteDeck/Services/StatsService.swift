@@ -79,6 +79,99 @@ struct TranslationUsageStat: Identifiable, Equatable, Sendable {
     let completionTokenCount: Int
 }
 
+/// 翻译统计的查看范围；候选值为 all、api、llm。
+enum TranslationUsageFilter: String, CaseIterable, Identifiable, Sendable {
+    /// 同时查看常规 API 与大模型调用。
+    case all
+    /// 只查看常规机器翻译 API。
+    case api
+    /// 只查看 OpenAI-compatible 大模型。
+    case llm
+
+    /// SwiftUI Picker 使用的稳定标识。
+    var id: String { rawValue }
+
+    /// 统计页筛选器展示名称。
+    var displayName: String {
+        switch self {
+        case .all: return "全部"
+        case .api: return "API"
+        case .llm: return "大模型"
+        }
+    }
+}
+
+/// 当前筛选范围内的翻译统计摘要。
+struct TranslationUsageSummary: Equatable, Sendable {
+    /// 总请求数，包含失败请求。
+    let requestCount: Int
+    /// 成功请求数。
+    let successCount: Int
+    /// 失败请求数。
+    let failedCount: Int
+    /// 原文字符总数；常规 API 统计页以字符作为输入用量单位。
+    let sourceCharacterCount: Int
+    /// 译文字符总数；常规 API 统计页以字符作为输出用量单位。
+    let translatedCharacterCount: Int
+    /// 大模型输入 token 总数。
+    let promptTokenCount: Int
+    /// 大模型输出 token 总数。
+    let completionTokenCount: Int
+
+    /// 成功率；没有请求时为零。
+    var successRate: Double {
+        requestCount > 0 ? Double(successCount) / Double(requestCount) : 0
+    }
+}
+
+/// 翻译调用趋势图中的单日、单类别数据点。
+struct TranslationUsageDailyPoint: Identifiable, Equatable, Sendable {
+    /// 日期与调用类别组成的稳定图表标识。
+    let id: String
+    /// 数据点所属日期零点。
+    let date: Date
+    /// 调用种类；候选值为 api、llm。
+    let usageKind: String
+    /// 当日该类别的请求数。
+    let requestCount: Int
+    /// 当日该类别的成功请求数，用于悬停详情。
+    let successCount: Int
+    /// 当日该类别的失败请求数，用于悬停详情。
+    let failedCount: Int
+    /// 当日原文字符总数；常规 API 的悬停详情以此表示输入用量。
+    let sourceCharacterCount: Int
+    /// 当日译文字符总数；常规 API 的悬停详情以此表示输出用量。
+    let translatedCharacterCount: Int
+    /// 当日大模型输入 token 总数；服务未返回 usage 时为零。
+    let promptTokenCount: Int
+    /// 当日大模型输出 token 总数；服务未返回 usage 时为零。
+    let completionTokenCount: Int
+}
+
+/// 服务调用排行图中的聚合数据点。
+struct TranslationUsageServicePoint: Identifiable, Equatable, Sendable {
+    /// 调用类别、服务名称和模型组成的稳定图表标识。
+    let id: String
+    /// 图表展示名称；大模型会包含模型标识。
+    let displayName: String
+    /// 调用种类；候选值为 api、llm。
+    let usageKind: String
+    /// 所选时段内的请求总数。
+    let requestCount: Int
+    /// 所选时段内的成功请求数，用于悬停详情。
+    let successCount: Int
+    /// 所选时段内的失败请求数，用于悬停详情。
+    let failedCount: Int
+    /// 所选时段内的原文字符总数；常规 API 的悬停详情以此表示输入用量。
+    let sourceCharacterCount: Int
+    /// 所选时段内的译文字符总数；常规 API 的悬停详情以此表示输出用量。
+    let translatedCharacterCount: Int
+    /// 所选时段内的大模型输入 token 总数；服务未返回 usage 时为零。
+    let promptTokenCount: Int
+    /// 所选时段内的大模型输出 token 总数；服务未返回 usage 时为零。
+    let completionTokenCount: Int
+}
+
 // MARK: - StatsService
 
 enum StatsService {
@@ -285,6 +378,115 @@ enum StatsService {
             }
     }
 
+    /// 按“全部、常规 API、大模型”筛选本地聚合结果，不触发新的 SwiftData 查询。
+    nonisolated static func filterTranslationUsage(
+        _ usage: [TranslationUsageStat],
+        by filter: TranslationUsageFilter
+    ) -> [TranslationUsageStat] {
+        switch filter {
+        case .all:
+            return usage
+        case .api:
+            return usage.filter { $0.usageKind == TranslationUsageKind.api.rawValue }
+        case .llm:
+            return usage.filter { $0.usageKind == TranslationUsageKind.llm.rawValue }
+        }
+    }
+
+    /// 汇总当前筛选范围内的请求、成功率、字符与 Token 用量。
+    nonisolated static func makeTranslationUsageSummary(
+        from usage: [TranslationUsageStat]
+    ) -> TranslationUsageSummary {
+        TranslationUsageSummary(
+            requestCount: usage.reduce(0) { $0 + $1.requestCount },
+            successCount: usage.reduce(0) { $0 + $1.successCount },
+            failedCount: usage.reduce(0) { $0 + $1.failedCount },
+            sourceCharacterCount: usage.reduce(0) { $0 + $1.sourceCharacterCount },
+            translatedCharacterCount: usage.reduce(0) { $0 + $1.translatedCharacterCount },
+            promptTokenCount: usage.reduce(0) { $0 + $1.promptTokenCount },
+            completionTokenCount: usage.reduce(0) { $0 + $1.completionTokenCount }
+        )
+    }
+
+    /// 将明细聚合为“日期 + API/大模型”的趋势数据点。
+    nonisolated static func makeTranslationUsageDailyPoints(
+        from usage: [TranslationUsageStat],
+        days: Int,
+        endingAt endDate: Date = Date()
+    ) -> [TranslationUsageDailyPoint] {
+        let calendar = Calendar.current
+        let normalizedDayCount = max(1, days)
+        let endDay = calendar.startOfDay(for: endDate)
+        guard let startDay = calendar.date(
+            byAdding: .day,
+            value: -(normalizedDayCount - 1),
+            to: endDay
+        ) else {
+            return []
+        }
+        let usageKinds = Set(usage.map(\.usageKind)).sorted()
+        guard !usageKinds.isEmpty else { return [] }
+        let usageByDate = Dictionary(grouping: usage) { calendar.startOfDay(for: $0.date) }
+        var points: [TranslationUsageDailyPoint] = []
+
+        for dayOffset in 0..<normalizedDayCount {
+            guard let date = calendar.date(byAdding: .day, value: dayOffset, to: startDay) else { continue }
+            let usageByKind = Dictionary(grouping: usageByDate[date] ?? [], by: \.usageKind)
+            for usageKind in usageKinds {
+                let dailyUsage = usageByKind[usageKind] ?? []
+                points.append(TranslationUsageDailyPoint(
+                    id: "\(date.timeIntervalSince1970):\(usageKind)",
+                    date: date,
+                    usageKind: usageKind,
+                    requestCount: dailyUsage.reduce(0) { $0 + $1.requestCount },
+                    successCount: dailyUsage.reduce(0) { $0 + $1.successCount },
+                    failedCount: dailyUsage.reduce(0) { $0 + $1.failedCount },
+                    sourceCharacterCount: dailyUsage.reduce(0) { $0 + $1.sourceCharacterCount },
+                    translatedCharacterCount: dailyUsage.reduce(0) { $0 + $1.translatedCharacterCount },
+                    promptTokenCount: dailyUsage.reduce(0) { $0 + $1.promptTokenCount },
+                    completionTokenCount: dailyUsage.reduce(0) { $0 + $1.completionTokenCount }
+                ))
+            }
+        }
+
+        return points
+    }
+
+    /// 聚合服务调用排行；大模型按“配置名称 + 模型”区分，避免不同模型被合并。
+    nonisolated static func makeTranslationUsageServicePoints(
+        from usage: [TranslationUsageStat],
+        limit: Int = 6
+    ) -> [TranslationUsageServicePoint] {
+        let usageByService = Dictionary(grouping: usage) { item in
+            "\(item.usageKind)|\(item.providerName)|\(item.modelName)"
+        }
+        return usageByService.compactMap { identifier, serviceUsage -> TranslationUsageServicePoint? in
+            guard let firstUsage = serviceUsage.first else { return nil }
+            let displayName: String
+            if firstUsage.usageKind == TranslationUsageKind.llm.rawValue,
+               !firstUsage.modelName.isEmpty {
+                displayName = "\(firstUsage.providerName) · \(firstUsage.modelName)"
+            } else {
+                displayName = firstUsage.providerName
+            }
+            return TranslationUsageServicePoint(
+                id: identifier,
+                displayName: displayName,
+                usageKind: firstUsage.usageKind,
+                requestCount: serviceUsage.reduce(0) { $0 + $1.requestCount },
+                successCount: serviceUsage.reduce(0) { $0 + $1.successCount },
+                failedCount: serviceUsage.reduce(0) { $0 + $1.failedCount },
+                sourceCharacterCount: serviceUsage.reduce(0) { $0 + $1.sourceCharacterCount },
+                translatedCharacterCount: serviceUsage.reduce(0) { $0 + $1.translatedCharacterCount },
+                promptTokenCount: serviceUsage.reduce(0) { $0 + $1.promptTokenCount },
+                completionTokenCount: serviceUsage.reduce(0) { $0 + $1.completionTokenCount }
+            )
+        }
+        .sorted { $0.requestCount > $1.requestCount }
+        .prefix(max(1, limit))
+        .map { $0 }
+    }
+
     // MARK: - Date Formatting Helpers
 
     nonisolated static func formatBytes(_ bytes: Int) -> String {
@@ -305,4 +507,5 @@ enum StatsService {
         formatter.dateFormat = "M/d"
         return formatter.string(from: date)
     }
+
 }

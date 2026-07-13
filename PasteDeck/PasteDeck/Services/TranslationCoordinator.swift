@@ -21,6 +21,8 @@ let translationWorkspaceWindowIdentifier = NSUserInterfaceItemIdentifier("PasteD
 enum TranslationWindowMode {
     /// 从划词或截图获得原文，打开后立即翻译。
     case immediate
+    /// 用户从自动划词气泡主动放大；先创建可恢复历史，再调用全部已启用常规 API。
+    case automaticSelectionExpansion
     /// 打开空白输入框，用户按回车后开始翻译。
     case input
 }
@@ -49,6 +51,7 @@ final class TranslationCoordinator {
     private var isCapturingScreenshot = false
     private var hasRequestedInputMonitoringPermission = false
     private let windowController = TranslationWindowController()
+    private let automaticSelectionBubbleController = AutomaticSelectionTranslationBubbleController()
 
     private init() {}
 
@@ -68,6 +71,7 @@ final class TranslationCoordinator {
 
     func stop() {
         removeAutomaticSelectionMonitor()
+        automaticSelectionBubbleController.dismiss()
         for identifier in [
             HotKeyIdentifier.selectionTranslation,
             .screenshotTranslation,
@@ -82,6 +86,7 @@ final class TranslationCoordinator {
     }
 
     func translateSelectedText() {
+        automaticSelectionBubbleController.dismiss()
         automaticSelectionReadGeneration &+= 1
         automaticSelectionSuppressedUntil = Date().addingTimeInterval(1)
         isReadingAutomaticSelection = false
@@ -102,6 +107,7 @@ final class TranslationCoordinator {
     }
 
     func captureAndTranslate() {
+        automaticSelectionBubbleController.dismiss()
         guard !isCapturingScreenshot else {
             NSSound.beep()
             return
@@ -124,6 +130,7 @@ final class TranslationCoordinator {
     }
 
     func openInputTranslation() {
+        automaticSelectionBubbleController.dismiss()
         windowController.show(text: "", mode: .input)
     }
 
@@ -302,6 +309,14 @@ final class TranslationCoordinator {
         at point: NSPoint,
         source: AutomaticSelectionEventSource
     ) {
+        let screenPoint = NSEvent.mouseLocation
+        if automaticSelectionBubbleController.contains(screenPoint) {
+            automaticSelectionStartPoint = nil
+            automaticSelectionEventSource = nil
+            return
+        }
+        automaticSelectionBubbleController.dismiss()
+
         // Event taps also receive clicks inside PasteDeck. Closing the
         // translation window must not be treated as a new external selection,
         // otherwise the still-selected source text would reopen it in a loop.
@@ -331,16 +346,21 @@ final class TranslationCoordinator {
         // text is the same as the previous selection. Plain clicks must retain
         // the last value so returning focus cannot reopen a closed window.
         lastObservedAutomaticSelectionText = nil
+        let bubbleAnchorPoint = NSEvent.mouseLocation
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) { [weak self] in
             guard let self,
                   Date() >= self.automaticSelectionSuppressedUntil else {
                 return
             }
-            self.handleAutomaticSelection(allowsClipboardFallback: true)
+            self.handleAutomaticSelection(
+                allowsClipboardFallback: true,
+                near: bubbleAnchorPoint
+            )
         }
     }
 
     private func removeAutomaticSelectionMonitor() {
+        automaticSelectionBubbleController.dismiss()
         if let automaticSelectionEventTap {
             CGEvent.tapEnable(tap: automaticSelectionEventTap, enable: false)
         }
@@ -362,7 +382,8 @@ final class TranslationCoordinator {
     }
 
     private func handleAutomaticSelection(
-        allowsClipboardFallback: Bool
+        allowsClipboardFallback: Bool,
+        near anchorPoint: NSPoint
     ) {
         guard AXIsProcessTrusted(),
               !isReadingAutomaticSelection,
@@ -384,9 +405,17 @@ final class TranslationCoordinator {
                 }
                 guard text != self.lastObservedAutomaticSelectionText else { return }
                 self.lastObservedAutomaticSelectionText = text
-                // Reuse the same AppKit window as the manual shortcut so both
-                // entry points share one reliable presentation path.
-                self.windowController.show(text: text, mode: .immediate)
+                let services = Self.fetchSettings().resolvedAutomaticSelectionTranslationServices()
+                self.automaticSelectionBubbleController.show(
+                    text: text,
+                    near: anchorPoint,
+                    services: services
+                ) { [weak self] in
+                    guard let self else { return }
+                    self.automaticSelectionBubbleController.dismiss()
+                    // 放大是用户明确进入正式工作区的操作：创建翻译历史并调用全部已启用常规 API。
+                    self.windowController.show(text: text, mode: .automaticSelectionExpansion)
+                }
             }
         }
     }
@@ -696,7 +725,6 @@ final class TranslationViewModel: ObservableObject {
     private var activeRequests: [UUID: URLSessionDataTask] = [:]
     /// 用户取消后忽略服务端迟到回调，避免“已取消”又被覆盖为请求错误。
     private var cancelledOutputIDs: Set<UUID> = []
-
     init(sourceText: String, mode: TranslationWindowMode) {
         self.sourceText = sourceText
         self.mode = mode
@@ -712,8 +740,21 @@ final class TranslationViewModel: ObservableObject {
         outputs = []
         errorMessage = nil
         refreshConfigurations()
-        if mode == .immediate {
+        startForCurrentMode()
+    }
+
+    /// 根据入口启动翻译；自动划词放大即使暂时没有可用 API，也先保留一条可恢复的正式工作区记录。
+    func startForCurrentMode() {
+        switch mode {
+        case .immediate:
             translateUsingAPI()
+        case .automaticSelectionExpansion:
+            let source = sourceText.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !source.isEmpty else { return }
+            ensureWorkspace(source: source)
+            translateUsingAPI()
+        case .input:
+            break
         }
     }
 
@@ -1012,9 +1053,7 @@ private final class TranslationWindowController: NSObject, NSWindowDelegate {
         window.orderFrontRegardless()
         NSApp.activate(ignoringOtherApps: true)
 
-        if mode == .immediate {
-            viewModel.translateUsingAPI()
-        }
+        viewModel.startForCurrentMode()
     }
 
     /// 打开已缓存的翻译工作区；缓存不存在或损坏时不创建空白窗口，避免误导用户。

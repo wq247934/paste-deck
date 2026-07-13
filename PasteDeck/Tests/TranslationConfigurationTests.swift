@@ -7,6 +7,7 @@ final class TranslationConfigurationTests: XCTestCase {
         let settings = AppSettings()
 
         XCTAssertEqual(settings.automaticSelectionTranslationEnabled, false)
+        XCTAssertNil(settings.automaticSelectionTranslationServiceOrderJSON)
         XCTAssertEqual(settings.selectionTranslationShortcutEnabled, true)
         XCTAssertEqual(settings.screenshotTranslationShortcutEnabled, true)
         XCTAssertEqual(settings.inputTranslationShortcutEnabled, true)
@@ -17,6 +18,59 @@ final class TranslationConfigurationTests: XCTestCase {
             settings.selectionTranslationModifiers,
             Int(NSEvent.ModifierFlags.option.rawValue)
         )
+    }
+
+    func testAutomaticSelectionTranslationUsesConfiguredOrderAcrossAPIAndLLM() {
+        let settings = AppSettings()
+        let providerConfiguration = TranslationProviderConfiguration(
+            kind: .baidu,
+            name: "百度默认",
+            enabled: true,
+            credentialId: "provider-id",
+            credentialSecret: "provider-secret",
+            region: "ap-guangzhou",
+            allowsConcurrentRequests: false
+        )
+        let llmConfiguration = LLMTranslationConfiguration(
+            name: "模型默认",
+            baseURL: "https://example.com/v1",
+            apiKey: "llm-key",
+            model: "translation-model",
+            enabled: true
+        )
+        defer {
+            TranslationCredentialStore.deleteCredential(reference: providerConfiguration.credentialReference)
+            TranslationCredentialStore.deleteCredential(reference: llmConfiguration.credentialReference)
+        }
+
+        settings.translationProviderConfigurations = [providerConfiguration]
+        settings.llmTranslationConfigurations = [llmConfiguration]
+        settings.automaticSelectionTranslationServiceOrder = [
+            AutomaticSelectionTranslationServiceReference(
+                kind: .llm,
+                configurationID: llmConfiguration.id
+            ),
+            AutomaticSelectionTranslationServiceReference(
+                kind: .api,
+                configurationID: providerConfiguration.id
+            )
+        ]
+
+        let services = settings.resolvedAutomaticSelectionTranslationServices()
+
+        XCTAssertEqual(services.map(\.kind), [.llm, .api])
+        XCTAssertEqual(
+            services.map(\.configurationID),
+            [llmConfiguration.id, providerConfiguration.id]
+        )
+    }
+
+    func testAutomaticSelectionTranslationAllowsExplicitlyDisablingAllServices() {
+        let settings = AppSettings()
+        settings.automaticSelectionTranslationServiceOrder = []
+
+        XCTAssertNotNil(settings.automaticSelectionTranslationServiceOrderJSON)
+        XCTAssertTrue(settings.resolvedAutomaticSelectionTranslationServices().isEmpty)
     }
 
     func testMultipleProviderKeysAndLLMConfigurationsRoundTripThroughJSON() {
