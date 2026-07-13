@@ -10,6 +10,7 @@ PasteDeck is a native macOS clipboard manager for quickly searching, previewing,
 - Shows website names for link cards and lets link history be searched by site name. Automatically fetches webpage titles for copied links.
 - Opens from the menu bar or the global shortcut `Command + Shift + V`.
 - Menu bar dropdown includes a stats overview header showing today's copies, total items, and cache size.
+- Includes a visual, scenario-based Feature Guide in Settings and the menu bar, covering everyday actions, organization, previews, translation, analytics, and maintenance without a wall of text.
 - Provides fast keyboard navigation that keeps the selected card fully visible at every panel size, plus favorite filters, custom collections, pinning, deletion, and batch paste.
 - Supports horizontal and vertical panel layouts with vertical styles: compact list, large cards, and adaptive grid.
 - Preserves RTF data for rich text paste and supports plain-text paste with `Shift + Enter`.
@@ -66,6 +67,7 @@ Clipboard polling uses `NSPasteboard`; it does not require Accessibility by itse
 3. Search, filter, preview, favorite, pin, delete, or paste an item.
 4. Press `Space` to preview the selected item.
 5. Press `Enter` to paste, or `Shift + Enter` to paste plain text.
+6. Choose `Feature Guide…` from the menu bar or `Help` in Settings whenever you want a visual walkthrough of a workflow.
 
 ## Keyboard Shortcuts
 
@@ -139,7 +141,8 @@ Clipboard polling uses `NSPasteboard`; it does not require Accessibility by itse
 - `PreviewWindow` — large preview for text, Markdown, JSON/code, image, file, color, and translation.
 - `CodeHighlightView` — editable code preview with syntax highlighting.
 - `MarkdownRenderedText` — Markdown rendering support.
-- `SettingsWindow` — 9 settings tabs: General, Hotkey, History, Stats, Filter, Favorites, Appearance, Translation, Advanced.
+- `SettingsWindow` — 10 settings tabs: General, Hotkey, History, Stats, Filter, Favorites, Appearance, Translation, Advanced, Help.
+- `HelpCenterView` — scenario-based, card-led feature guide with three-step workflows and contextual shortcuts.
 - `StatsSettingsView` / `StatsViewModel` — statistics panel with trend charts, type distribution, and usage insights.
 
 ### Utilities
@@ -186,6 +189,7 @@ PasteDeck 是一个原生 macOS 剪贴板管理器，用浮动面板快速搜索
 - 链接卡片会显示网站名称，并支持按网站名搜索链接历史。自动抓取复制链接的网页标题。
 - 支持菜单栏打开，也支持全局快捷键 `Command + Shift + V`。
 - 菜单栏下拉菜单内嵌统计概览，展示今日复制次数、总条数和缓存占用。
+- 菜单栏和设置页均提供“功能指南”：按快速开始、查找整理、预览编辑、翻译、统计、个性化六个场景，用卡片、三步操作和快捷键帮助理解全部功能。
 - 支持键盘导航，并会按当前面板可视区域自动滚动选中卡片；同时支持收藏筛选、自定义收藏夹、系统“翻译”分类、置顶、删除和批量粘贴。翻译分类固定在“收藏”之后，不能删除、改名或排序。
 - 支持横向和竖向面板布局，竖向提供紧凑列表、大卡片和自适应网格三种样式。
 - 保留 RTF 富文本数据，并支持 `Shift + Enter` 纯文本粘贴。
@@ -241,6 +245,7 @@ PasteDeck 需要辅助功能权限来读取前台应用选中文字，并模拟 
 3. 搜索、筛选、预览、收藏、置顶、删除或粘贴项目。
 4. 按 `Space` 预览当前项目。
 5. 按 `Enter` 粘贴，按 `Shift + Enter` 以纯文本粘贴。
+6. 需要了解某项能力时，从菜单栏选择“功能指南…”，或在设置中打开“帮助”。
 
 ## 快捷键
 

@@ -119,6 +119,7 @@ enum StatusMenuBuilder {
     ///   - openMainPanel: 打开主面板回调
     ///   - openStats: 打开统计设置页回调
     ///   - openSettings: 打开设置页回调
+    ///   - openHelp: 打开功能指南回调
     ///   - quit: 退出应用回调
     /// - Returns: 配置好的 NSMenu 和它的 delegate（delegate 需由调用方持有强引用以防释放）。
     static func buildMenu(
@@ -129,6 +130,7 @@ enum StatusMenuBuilder {
         translateInput: @escaping () -> Void,
         openTranslationSettings: @escaping () -> Void,
         openSettings: @escaping () -> Void,
+        openHelp: @escaping () -> Void,
         quit: @escaping () -> Void
     ) -> (menu: NSMenu, delegate: MenuRefreshDelegate) {
         let delegate = MenuRefreshDelegate(
@@ -139,6 +141,7 @@ enum StatusMenuBuilder {
             onTranslateInput: translateInput,
             onOpenTranslationSettings: openTranslationSettings,
             onOpenSettings: openSettings,
+            onOpenHelp: openHelp,
             onQuit: quit
         )
 
@@ -230,6 +233,16 @@ enum StatusMenuBuilder {
             .withSymbolConfiguration(.init(pointSize: 14, weight: .regular))
         menu.addItem(settingsItem)
 
+        let helpItem = NSMenuItem(
+            title: "功能指南…",
+            action: #selector(MenuRefreshDelegate.performOpenHelp(_:)),
+            keyEquivalent: ""
+        )
+        helpItem.target = delegate
+        helpItem.image = NSImage(systemSymbolName: "questionmark.circle", accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 14, weight: .regular))
+        menu.addItem(helpItem)
+
         menu.addItem(NSMenuItem.separator())
 
         let quitItem = NSMenuItem(
@@ -255,6 +268,7 @@ final class MenuRefreshDelegate: NSObject, NSMenuDelegate {
     let onTranslateInput: () -> Void
     let onOpenTranslationSettings: () -> Void
     let onOpenSettings: () -> Void
+    let onOpenHelp: () -> Void
     let onQuit: () -> Void
 
     init(
@@ -265,6 +279,7 @@ final class MenuRefreshDelegate: NSObject, NSMenuDelegate {
         onTranslateInput: @escaping () -> Void,
         onOpenTranslationSettings: @escaping () -> Void,
         onOpenSettings: @escaping () -> Void,
+        onOpenHelp: @escaping () -> Void,
         onQuit: @escaping () -> Void
     ) {
         self.onOpenMainPanel = onOpenMainPanel
@@ -274,6 +289,7 @@ final class MenuRefreshDelegate: NSObject, NSMenuDelegate {
         self.onTranslateInput = onTranslateInput
         self.onOpenTranslationSettings = onOpenTranslationSettings
         self.onOpenSettings = onOpenSettings
+        self.onOpenHelp = onOpenHelp
         self.onQuit = onQuit
         super.init()
     }
@@ -312,6 +328,10 @@ final class MenuRefreshDelegate: NSObject, NSMenuDelegate {
 
     @objc func performOpenSettings(_ sender: NSMenuItem) {
         onOpenSettings()
+    }
+
+    @objc func performOpenHelp(_ sender: NSMenuItem) {
+        onOpenHelp()
     }
 
     @objc func performQuit(_ sender: NSMenuItem) {

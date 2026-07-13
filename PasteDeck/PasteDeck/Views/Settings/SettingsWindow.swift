@@ -41,6 +41,10 @@ struct SettingsWindow: View {
         }
         .frame(width: 760, height: 520)
         .background(.thinMaterial)
+        .onReceive(NotificationCenter.default.publisher(for: .selectSettingsPane)) { notification in
+            guard let pane = notification.object as? SettingsPane else { return }
+            selectedPane = pane
+        }
     }
 
     private var settingsSidebar: some View {
@@ -111,6 +115,8 @@ struct SettingsWindow: View {
             TranslationSettingsView()
         case .advanced:
             AdvancedSettingsView()
+        case .help:
+            HelpCenterView()
         }
     }
 }
@@ -125,6 +131,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
     case appearance
     case translation
     case advanced
+    case help
 
     var id: String { rawValue }
 
@@ -139,6 +146,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .appearance: return "外观"
         case .translation: return "翻译"
         case .advanced: return "高级"
+        case .help: return "帮助"
         }
     }
 
@@ -153,6 +161,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .appearance: return "主题和剪贴板面板布局"
         case .translation: return "划词、截图、快捷键与翻译服务"
         case .advanced: return "预览配置和数据维护"
+        case .help: return "用场景化导览快速上手所有功能"
         }
     }
 
@@ -167,17 +176,23 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .appearance: return "paintpalette"
         case .translation: return "character.book.closed"
         case .advanced: return "slider.horizontal.3"
+        case .help: return "questionmark.circle"
         }
     }
 }
 
+extension Notification.Name {
+    /// 在已打开的设置窗口中切换页面，避免从菜单栏进入功能指南时只前置旧页面。
+    static let selectSettingsPane = Notification.Name("PasteDeck.selectSettingsPane")
+}
+
 private enum PasteDeckVersion {
     static var short: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.9.0"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.15.0"
     }
 
     static var build: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "190"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "210"
     }
 
     static var display: String {

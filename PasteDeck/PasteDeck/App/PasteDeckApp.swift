@@ -129,6 +129,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             openSettings: { [weak self] in
                 self?.openSettings(pane: .general)
             },
+            openHelp: { [weak self] in
+                self?.openSettings(pane: .help)
+            },
             quit: { [weak self] in
                 self?.quitApp()
             }
@@ -208,6 +211,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func openSettings(pane: SettingsPane) {
         // 如果已有设置窗口且可见，直接前置
         if let existing = settingsWindow, existing.isVisible {
+            NotificationCenter.default.post(name: .selectSettingsPane, object: pane)
             existing.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
