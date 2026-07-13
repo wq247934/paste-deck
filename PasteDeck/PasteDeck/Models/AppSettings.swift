@@ -29,12 +29,6 @@ final class AppSettings {
     /// 竖向主面板样式原始值（0 紧凑列表、1 大卡片、2 自适应网格）；nil 用于兼容旧版本数据。
     var verticalPanelStyleRawValue: Int?
 
-    // 百度翻译 API
-    var baiduTranslateEnabled: Bool
-    var baiduTranslateAppId: String
-    var baiduTranslateSecretKey: String
-    var baiduTranslateIsAdvanced: Bool
-
     /// 是否启用划词后自动打开翻译窗口；nil 兼容旧数据并按关闭处理，避免升级后打扰用户。
     var automaticSelectionTranslationEnabled: Bool?
     /// 是否启用“翻译所选文本”全局快捷键；nil 兼容旧数据并按开启处理。
@@ -61,9 +55,9 @@ final class AppSettings {
     var inputTranslationModifiers: Int?
     /// 输入翻译快捷键的用户可读按键名称；nil 时显示 A。
     var inputTranslationDisplay: String?
-    /// 当前常规翻译服务商配置的 JSON；nil 时从旧版百度字段生成兼容配置。
-    var translationProviderConfigurationJSON: String?
-    /// 可配置多套 OpenAI-compatible 大模型端点的 JSON；nil 表示尚未配置大模型。
+    /// 所有常规翻译 API 的配置元数据与 Keychain 凭据引用 JSON；不包含实际凭据。
+    var translationProviderConfigurationsJSON: String?
+    /// 可配置多套 OpenAI-compatible 大模型端点的元数据与 Keychain 凭据引用 JSON；nil 表示尚未配置大模型。
     var llmTranslationConfigurationsJSON: String?
 
     /// 统计面板历史数据回填完成时间，nil 表示尚未回填。
@@ -85,10 +79,6 @@ final class AppSettings {
         self.cardSize = 1
         self.panelOrientationRawValue = nil
         self.verticalPanelStyleRawValue = nil
-        self.baiduTranslateEnabled = false
-        self.baiduTranslateAppId = ""
-        self.baiduTranslateSecretKey = ""
-        self.baiduTranslateIsAdvanced = false
         self.automaticSelectionTranslationEnabled = false
         self.selectionTranslationShortcutEnabled = true
         self.selectionTranslationKeyCode = 2
@@ -102,7 +92,7 @@ final class AppSettings {
         self.inputTranslationKeyCode = 0
         self.inputTranslationModifiers = Int(NSEvent.ModifierFlags.option.rawValue)
         self.inputTranslationDisplay = "A"
-        self.translationProviderConfigurationJSON = nil
+        self.translationProviderConfigurationsJSON = nil
         self.llmTranslationConfigurationsJSON = nil
         self.statsBackfilledAt = nil
         self.fetchLinkTitles = false
@@ -138,35 +128,62 @@ final class AppSettings {
         }
     }
 
-    /// 当前常规翻译服务商；优先读取新版 JSON，旧用户则无损沿用百度凭据。
-    var translationProviderConfiguration: TranslationProviderConfiguration {
+    /// 所有常规翻译 API 密钥；配置元数据来自 SwiftData，完整凭据由 Keychain 在读取时补全。
+    var translationProviderConfigurations: [TranslationProviderConfiguration] {
         get {
-            if let data = translationProviderConfigurationJSON?.data(using: .utf8),
-               let typed = try? JSONDecoder().decode(TranslationProviderConfiguration.self, from: data) {
-                return typed
+            if let data = translationProviderConfigurationsJSON?.data(using: .utf8),
+               let typed = try? JSONDecoder().decode([TranslationProviderConfiguration].self, from: data) {
+                return resolveProviderCredentials(typed)
             }
 
-            return TranslationProviderConfiguration(
-                kind: .baidu,
-                name: "百度翻译",
-                enabled: baiduTranslateEnabled,
-                credentialId: baiduTranslateAppId,
-                credentialSecret: baiduTranslateSecretKey,
-                region: "ap-guangzhou",
-                allowsConcurrentRequests: baiduTranslateIsAdvanced
-            )
+            return []
         }
         set {
-            translationProviderConfigurationJSON = try? String(
-                data: JSONEncoder().encode(newValue),
+            var enabledKinds = Set<TranslationProviderKind>()
+            let normalizedConfigurations = newValue.map { configuration -> TranslationProviderConfiguration in
+                var normalizedConfiguration = configuration
+                if normalizedConfiguration.enabled {
+                    if enabledKinds.contains(normalizedConfiguration.kind) {
+                        normalizedConfiguration.enabled = false
+                    } else {
+                        enabledKinds.insert(normalizedConfiguration.kind)
+                    }
+                }
+                return normalizedConfiguration
+            }
+            let credentials: [String: TranslationProviderCredential] = Dictionary(uniqueKeysWithValues: normalizedConfigurations.compactMap { configuration in
+                let hasCredential = !configuration.credentialId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    || !configuration.credentialSecret.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                guard hasCredential else { return nil }
+                return (
+                    configuration.credentialReference,
+                    TranslationProviderCredential(
+                        credentialID: configuration.credentialId,
+                        credentialSecret: configuration.credentialSecret
+                    )
+                )
+            })
+            let referencesToDelete = Set(normalizedConfigurations.compactMap { configuration -> String? in
+                let hasCredential = !configuration.credentialId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    || !configuration.credentialSecret.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                return hasCredential ? nil : configuration.credentialReference
+            })
+            guard TranslationCredentialStore.replaceProviderCredentials(
+                credentials,
+                deleting: referencesToDelete
+            ) else {
+                return
+            }
+            let configurationsForStorage = normalizedConfigurations.map { configuration -> TranslationProviderConfiguration in
+                var storedConfiguration = configuration
+                storedConfiguration.credentialId = ""
+                storedConfiguration.credentialSecret = ""
+                return storedConfiguration
+            }
+            translationProviderConfigurationsJSON = try? String(
+                data: JSONEncoder().encode(configurationsForStorage),
                 encoding: .utf8
             )
-            if newValue.kind == .baidu {
-                baiduTranslateEnabled = newValue.enabled
-                baiduTranslateAppId = newValue.credentialId
-                baiduTranslateSecretKey = newValue.credentialSecret
-                baiduTranslateIsAdvanced = newValue.allowsConcurrentRequests
-            }
         }
     }
 
@@ -178,14 +195,74 @@ final class AppSettings {
                 return []
             }
 
-            return typed
+            return resolveLLMCredentials(typed)
         }
         set {
+            let credentials: [String: LLMTranslationCredential] = Dictionary(uniqueKeysWithValues: newValue.compactMap { configuration in
+                guard !configuration.apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    return nil
+                }
+                return (
+                    configuration.credentialReference,
+                    LLMTranslationCredential(apiKey: configuration.apiKey)
+                )
+            })
+            let referencesToDelete = Set(newValue.compactMap { configuration -> String? in
+                configuration.apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    ? configuration.credentialReference
+                    : nil
+            })
+            guard TranslationCredentialStore.replaceLLMCredentials(
+                credentials,
+                deleting: referencesToDelete
+            ) else {
+                return
+            }
+            let configurationsForStorage = newValue.map { configuration -> LLMTranslationConfiguration in
+                var storedConfiguration = configuration
+                storedConfiguration.apiKey = ""
+                return storedConfiguration
+            }
             llmTranslationConfigurationsJSON = try? String(
-                data: JSONEncoder().encode(newValue),
+                data: JSONEncoder().encode(configurationsForStorage),
                 encoding: .utf8
             )
         }
+    }
+
+    /// 从 Keychain 为常规 API 配置恢复运行时凭据；SwiftData JSON 永远不包含凭据字段。
+    private func resolveProviderCredentials(_ configurations: [TranslationProviderConfiguration]) -> [TranslationProviderConfiguration] {
+        var runtimeConfigurations = configurations
+        let credentials = TranslationCredentialStore.providerCredentials(
+            references: runtimeConfigurations.map(\.credentialReference)
+        )
+
+        for index in runtimeConfigurations.indices {
+            let configuration = runtimeConfigurations[index]
+            if let credential = credentials[configuration.credentialReference] {
+                runtimeConfigurations[index].credentialId = credential.credentialID
+                runtimeConfigurations[index].credentialSecret = credential.credentialSecret
+            }
+        }
+
+        return runtimeConfigurations
+    }
+
+    /// 从 Keychain 为大模型配置恢复运行时 API Key；SwiftData JSON 永远不包含 API Key。
+    private func resolveLLMCredentials(_ configurations: [LLMTranslationConfiguration]) -> [LLMTranslationConfiguration] {
+        var runtimeConfigurations = configurations
+        let credentials = TranslationCredentialStore.llmCredentials(
+            references: runtimeConfigurations.map(\.credentialReference)
+        )
+
+        for index in runtimeConfigurations.indices {
+            let configuration = runtimeConfigurations[index]
+            if let credential = credentials[configuration.credentialReference] {
+                runtimeConfigurations[index].apiKey = credential.apiKey
+            }
+        }
+
+        return runtimeConfigurations
     }
 }
 

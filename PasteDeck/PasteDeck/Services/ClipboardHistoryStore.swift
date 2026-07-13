@@ -20,10 +20,16 @@ enum ClipboardDataChangeKind: String, Sendable {
 }
 
 struct ClipboardCollectionSnapshot: Identifiable, Equatable, Hashable, Sendable {
+    /// 收藏夹稳定标识，用于筛选和归属判断。
     let id: UUID
+    /// 用户可见收藏夹名称。
     let name: String
+    /// 收藏夹显示顺序。
     let sortOrder: Int
+    /// 是否为系统默认“收藏”分类。
     let isDefault: Bool
+    /// 是否为系统“翻译”分类；该分类仅承载翻译工作区，不能通过普通收藏菜单关联。
+    let isTranslation: Bool
 }
 
 struct ClipboardItemSnapshot: Identifiable, Equatable, Sendable {
@@ -81,7 +87,8 @@ struct ClipboardItemSnapshot: Identifiable, Equatable, Sendable {
                     id: $0.id,
                     name: $0.name,
                     sortOrder: $0.sortOrder,
-                    isDefault: $0.isDefault
+                    isDefault: $0.isDefault,
+                    isTranslation: $0.isTranslation
                 )
             }
             .sorted { $0.sortOrder < $1.sortOrder }
@@ -153,7 +160,7 @@ struct ClipboardItemSnapshot: Identifiable, Equatable, Sendable {
     }
 
     var nonDefaultCollections: [ClipboardCollectionSnapshot] {
-        collections.filter { !$0.isDefault }
+        collections.filter { !$0.isDefault && !$0.isTranslation }
     }
 
     var displaySourceApp: String? {
@@ -283,7 +290,8 @@ final class ClipboardHistoryStore: ObservableObject {
                     id: $0.id,
                     name: $0.name,
                     sortOrder: $0.sortOrder,
-                    isDefault: $0.isDefault
+                    isDefault: $0.isDefault,
+                    isTranslation: $0.isTranslation
                 )
             }
 
@@ -386,7 +394,8 @@ final class ClipboardHistoryStore: ObservableObject {
 
     func toggleCollection(itemID: UUID, collectionID: UUID) {
         guard let item = fetchItem(id: itemID),
-              let collection = fetchCollection(id: collectionID) else { return }
+              let collection = fetchCollection(id: collectionID),
+              !collection.isTranslation else { return }
 
         if item.collections == nil {
             item.collections = []
@@ -404,7 +413,7 @@ final class ClipboardHistoryStore: ObservableObject {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
-        let maxOrder = collections.map(\.sortOrder).max() ?? 0
+        let maxOrder = collections.map(\.sortOrder).max() ?? 1
         modelContext.insert(FavoriteCollection(name: trimmed, sortOrder: maxOrder + 1))
         try? modelContext.save()
         reloadCollections()
@@ -550,7 +559,8 @@ final class ClipboardHistoryStore: ObservableObject {
                     id: $0.id,
                     name: $0.name,
                     sortOrder: $0.sortOrder,
-                    isDefault: $0.isDefault
+                    isDefault: $0.isDefault,
+                    isTranslation: $0.isTranslation
                 )
             }
     }

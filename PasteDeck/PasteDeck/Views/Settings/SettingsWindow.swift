@@ -960,7 +960,8 @@ struct HistorySettingsView: View {
                 id: $0.id,
                 name: $0.name,
                 sortOrder: $0.sortOrder,
-                isDefault: $0.isDefault
+                isDefault: $0.isDefault,
+                isTranslation: $0.isTranslation
             )
         }
     }
@@ -1998,6 +1999,23 @@ struct FavoritesSettingsView: View {
     @State private var showDeleteAlert = false
     @State private var collectionToDelete: FavoriteCollection?
 
+    /// 系统分类固定显示在列表顶部；“翻译”紧随“收藏”，且两者均不进入拖拽排序区。
+    private var systemCollections: [FavoriteCollection] {
+        collections
+            .filter { $0.isDefault || $0.isTranslation }
+            .sorted {
+                if $0.isDefault != $1.isDefault {
+                    return $0.isDefault
+                }
+                return $0.sortOrder < $1.sortOrder
+            }
+    }
+
+    /// 普通收藏夹保留可拖拽排序能力，系统分类不参与其中。
+    private var editableCollections: [FavoriteCollection] {
+        collections.filter { !$0.isDefault && !$0.isTranslation }
+    }
+
     var body: some View {
         SettingsContentStack {
             SettingsCard(title: "收藏夹列表", icon: "star") {
@@ -2008,7 +2026,16 @@ struct FavoritesSettingsView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
                     List {
-                        ForEach(collections, id: \.id) { collection in
+                        ForEach(systemCollections, id: \.id) { collection in
+                            CollectionRowView(
+                                collection: collection,
+                                onDelete: {
+                                    collectionToDelete = collection
+                                    showDeleteAlert = true
+                                }
+                            )
+                        }
+                        ForEach(editableCollections, id: \.id) { collection in
                             CollectionRowView(
                                 collection: collection,
                                 onDelete: {
@@ -2026,10 +2053,10 @@ struct FavoritesSettingsView: View {
                     .frame(height: min(CGFloat(collections.count) * 36 + 12, 220))
                 }
 
-                if !collections.isEmpty {
+                if !editableCollections.isEmpty {
                     SettingsDivider()
 
-                    Label("拖拽调整顺序", systemImage: "arrow.up.arrow.down")
+                    Label("拖拽调整普通收藏夹顺序", systemImage: "arrow.up.arrow.down")
                         .font(.system(size: 11))
                         .foregroundColor(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -2049,16 +2076,17 @@ struct FavoritesSettingsView: View {
     }
 
     private func moveCollections(from source: IndexSet, to destination: Int) {
-        var reordered = collections
+        var reordered = editableCollections
         reordered.move(fromOffsets: source, toOffset: destination)
         for (index, collection) in reordered.enumerated() {
-            collection.sortOrder = index
+            collection.sortOrder = index + 2
         }
         try? modelContext.save()
         NotificationCenter.default.post(name: .clipboardDataChanged, object: nil)
     }
 
     private func deleteCollection(_ collection: FavoriteCollection) {
+        guard !collection.isDefault, !collection.isTranslation else { return }
         // 仅解除卡片关联，不删除卡片
         collection.items?.forEach { item in
             item.collections?.removeAll(where: { $0.id == collection.id })
@@ -2085,10 +2113,14 @@ struct CollectionRowView: View {
         _editedName = State(initialValue: collection.name)
     }
 
+    private var isSystemCollection: Bool {
+        collection.isDefault || collection.isTranslation
+    }
+
     var body: some View {
         HStack {
-            Image(systemName: collection.isDefault ? "star.fill" : "folder")
-                .foregroundColor(collection.isDefault ? .yellow : .secondary)
+            Image(systemName: collection.isDefault ? "star.fill" : (collection.isTranslation ? "character.book.closed" : "folder"))
+                .foregroundColor(collection.isDefault ? .yellow : (collection.isTranslation ? .accentColor : .secondary))
 
             if isEditing {
                 TextField("收藏夹名称", text: $editedName)
@@ -2115,13 +2147,22 @@ struct CollectionRowView: View {
                     .background(Capsule().fill(Color.accentColor.opacity(0.7)))
             }
 
+            if collection.isTranslation {
+                Text("系统")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Capsule().fill(Color.accentColor.opacity(0.7)))
+            }
+
             Spacer()
 
             Text("\(collection.items?.count ?? 0) 项")
                 .font(.system(size: 12))
                 .foregroundColor(.secondary)
 
-            if !collection.isDefault {
+            if !isSystemCollection {
                 Button(action: onDelete) {
                     Image(systemName: "trash")
                         .font(.system(size: 12))
@@ -2132,7 +2173,7 @@ struct CollectionRowView: View {
         }
         .padding(.vertical, 2)
         .contextMenu {
-            if !collection.isDefault {
+            if !isSystemCollection {
                 Button("改名") {
                     startEditing()
                 }

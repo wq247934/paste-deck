@@ -21,21 +21,31 @@ struct PasteDeckApp: App {
     init() {
         modelContainer = AppModelContainer.container
 
-        // 确保默认收藏夹存在
-        Self.seedDefaultCollection(context: modelContainer.mainContext)
+        // 确保“收藏”和“翻译”两个系统分类存在，并保持翻译紧随收藏之后。
+        Self.seedSystemCollections(context: modelContainer.mainContext)
     }
 
-    /// 如果数据库中没有默认收藏夹，创建一个
-    private static func seedDefaultCollection(context: ModelContext) {
-        let descriptor = FetchDescriptor<FavoriteCollection>(
-            predicate: #Predicate { $0.isDefault == true }
-        )
-        let count = (try? context.fetchCount(descriptor)) ?? 0
-        if count == 0 {
-            let defaultCollection = FavoriteCollection(name: "收藏", sortOrder: 0, isDefault: true)
-            context.insert(defaultCollection)
-            try? context.save()
+    /// 如果数据库中缺少系统分类则创建，并将普通收藏夹顺延，保证翻译分类始终紧随收藏。
+    private static func seedSystemCollections(context: ModelContext) {
+        let collections = (try? context.fetch(FetchDescriptor<FavoriteCollection>())) ?? []
+        let defaultCollection = collections.first(where: \.isDefault)
+        let translationCollection = collections.first(where: \.isTranslation)
+
+        if defaultCollection == nil {
+            context.insert(FavoriteCollection(name: "收藏", sortOrder: 0, isDefault: true))
         }
+
+        if translationCollection == nil {
+            for collection in collections where !collection.isDefault {
+                collection.sortOrder += 1
+            }
+            context.insert(FavoriteCollection(name: "翻译", sortOrder: 1, isTranslation: true))
+        }
+
+        let systemCollections = ((try? context.fetch(FetchDescriptor<FavoriteCollection>())) ?? [])
+        systemCollections.first(where: \.isDefault)?.sortOrder = 0
+        systemCollections.first(where: \.isTranslation)?.sortOrder = 1
+        try? context.save()
     }
 
     var body: some Scene {
@@ -355,7 +365,8 @@ enum AppModelContainer {
             ClipboardItem.self,
             AppSettings.self,
             FavoriteCollection.self,
-            DailyStatsSnapshot.self
+            DailyStatsSnapshot.self,
+            TranslationUsageSnapshot.self
         ])
 
         let appSupportURL = try! FileManager.default.url(

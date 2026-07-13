@@ -16,7 +16,11 @@ let package = Package(
         .executableTarget(
             name: "PasteDeck",
             dependencies: ["Highlightr"],
-            path: "PasteDeck/PasteDeck"
+            path: "PasteDeck/PasteDeck",
+            resources: [
+                .process("Resources/Assets.xcassets"),
+                .copy("Resources/BrandLogos")
+            ]
         ),
         .testTarget(
             name: "PasteDeckTests",

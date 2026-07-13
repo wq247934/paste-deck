@@ -462,6 +462,9 @@ class MainPanelController: NSObject, NSWindowDelegate {
         canCloseOnResignKey = false
 
         panel.makeKeyAndOrderFront(nil)
+        // 预览或翻译工作区仍可见时，主面板通过全局快捷键再次被唤起。
+        // 三者处于同一窗口层级，显式重排可保证这次用户操作的主面板位于最前。
+        panel.orderFrontRegardless()
         if panel.isKeyWindow {
             requestCardFocus()
         }
@@ -510,8 +513,13 @@ class MainPanelController: NSObject, NSWindowDelegate {
         let hasPreviewWindow = NSApp.windows.contains { window in
             window.isVisible && window.contentViewController?.view is NSHostingView<PreviewWindow>
         }
+        // 翻译工作区从主面板打开后会接管 key window。它和普通预览一样属于应用内辅助窗口，
+        // 必须在失焦判断中保留主面板，避免 hidePanel() 进一步执行 NSApp.hide(nil) 把新窗口立即隐藏。
+        let hasTranslationWorkspace = NSApp.windows.contains { window in
+            window.isVisible && window.identifier == translationWorkspaceWindowIdentifier
+        }
         let hasSheet = panel?.attachedSheet != nil
-        return hasPreviewWindow || hasSheet
+        return hasPreviewWindow || hasTranslationWorkspace || hasSheet
     }
 
     /// AppKit posts resign-key before the destination window is always final.

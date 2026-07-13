@@ -47,6 +47,38 @@ struct ExtremeStats: Equatable, Sendable {
     let totalPinned: Int
 }
 
+/// 翻译调用统计行，直接对应一个“日期 + 服务类型 + 密钥 + 模型”的聚合快照。
+struct TranslationUsageStat: Identifiable, Equatable, Sendable {
+    /// 聚合快照的稳定标识，用于 SwiftUI 列表渲染。
+    let id: UUID
+    /// 该行所属日期的零点。
+    let date: Date
+    /// 调用种类；候选值为 api、llm。
+    let usageKind: String
+    /// 服务商种类；常规 API 为 baidu、tencent、youdao、alibaba，LLM 为 llm。
+    let providerKind: String
+    /// 用户设置的服务或密钥名称。
+    let providerName: String
+    /// 不可逆密钥指纹，支持区分同一服务的不同密钥。
+    let credentialFingerprint: String
+    /// 大模型标识；常规 API 为空字符串。
+    let modelName: String
+    /// 翻译请求总数，包含失败请求。
+    let requestCount: Int
+    /// 成功请求数。
+    let successCount: Int
+    /// 失败请求数。
+    let failedCount: Int
+    /// 原文字符总数。
+    let sourceCharacterCount: Int
+    /// 译文字符总数。
+    let translatedCharacterCount: Int
+    /// 大模型输入 token 总数；服务未返回 usage 时为零。
+    let promptTokenCount: Int
+    /// 大模型输出 token 总数；服务未返回 usage 时为零。
+    let completionTokenCount: Int
+}
+
 // MARK: - StatsService
 
 enum StatsService {
@@ -210,6 +242,47 @@ enum StatsService {
             totalFavorites: totalFavorites,
             totalPinned: totalPinned
         )
+    }
+
+    // MARK: - Translation Usage
+
+    /// 读取最近指定天数内按日、服务类型、密钥与模型聚合的翻译用量。
+    nonisolated static func fetchTranslationUsage(days: Int) -> [TranslationUsageStat] {
+        let context = ModelContext(AppModelContainer.container)
+        let calendar = Calendar.current
+        let todayStart = calendar.startOfDay(for: Date())
+        guard let startDate = calendar.date(byAdding: .day, value: -(max(1, days) - 1), to: todayStart) else {
+            return []
+        }
+        let descriptor = FetchDescriptor<TranslationUsageSnapshot>(
+            predicate: #Predicate { $0.date >= startDate },
+            sortBy: [SortDescriptor(\.date, order: .reverse)]
+        )
+        let snapshots = (try? context.fetch(descriptor)) ?? []
+        return snapshots
+            .map { snapshot in
+                TranslationUsageStat(
+                    id: snapshot.id,
+                    date: snapshot.date,
+                    usageKind: snapshot.usageKindRawValue,
+                    providerKind: snapshot.providerKindRawValue,
+                    providerName: snapshot.providerName,
+                    credentialFingerprint: snapshot.credentialFingerprint,
+                    modelName: snapshot.modelName,
+                    requestCount: snapshot.requestCount,
+                    successCount: snapshot.successCount,
+                    failedCount: snapshot.failedCount,
+                    sourceCharacterCount: snapshot.sourceCharacterCount,
+                    translatedCharacterCount: snapshot.translatedCharacterCount,
+                    promptTokenCount: snapshot.promptTokenCount,
+                    completionTokenCount: snapshot.completionTokenCount
+                )
+            }
+            .sorted {
+                if $0.date != $1.date { return $0.date > $1.date }
+                if $0.usageKind != $1.usageKind { return $0.usageKind < $1.usageKind }
+                return $0.providerName < $1.providerName
+            }
     }
 
     // MARK: - Date Formatting Helpers

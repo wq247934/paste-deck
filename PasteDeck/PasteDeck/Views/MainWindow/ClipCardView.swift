@@ -695,13 +695,14 @@ struct CardContextMenu: View {
             }
         }
 
-        // 收藏夹子菜单
-        if collections.isEmpty {
+        // 翻译分类由翻译工作区自动维护，不能作为普通收藏夹手动关联。
+        let assignableCollections = collections.filter { !$0.isTranslation }
+        if assignableCollections.isEmpty {
             Button(collectionMenuTitle) {}
                 .disabled(true)
         } else {
             Menu(collectionMenuTitle) {
-                ForEach(collections, id: \.id) { collection in
+                ForEach(assignableCollections, id: \.id) { collection in
                     let isInCollection = item.collectionIDs.contains(collection.id)
                     Button(action: {
                         onToggleCollection(collection.id)

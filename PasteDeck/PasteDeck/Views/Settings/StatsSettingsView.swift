@@ -23,6 +23,7 @@ struct StatsSettingsView: View {
                 trendSection
                 typeDistributionSection
                 insightsSection
+                translationUsageSection
             }
         }
         .task {
@@ -30,6 +31,9 @@ struct StatsSettingsView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .clipboardDataChanged)) { _ in
             viewModel.handleClipboardChanged()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .translationUsageDidChange)) { _ in
+            viewModel.handleTranslationUsageChanged()
         }
     }
 
@@ -511,6 +515,93 @@ struct StatsSettingsView: View {
                 .font(.system(size: 12, design: .monospaced))
                 .foregroundColor(.secondary)
                 .lineLimit(1)
+        }
+    }
+
+    // MARK: - Section 5: Translation Usage
+
+    private var translationUsageSection: some View {
+        SettingsCard(
+            title: "翻译调用统计",
+            icon: "chart.bar.doc.horizontal",
+            footer: "每行对应一天内的一种服务、密钥和模型。密钥仅显示不可逆指纹，不会暴露完整凭据。"
+        ) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Picker("", selection: $viewModel.translationUsageDays) {
+                        Text("今天").tag(1)
+                        Text("近 7 天").tag(7)
+                        Text("近 30 天").tag(30)
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 240)
+                    .onChange(of: viewModel.translationUsageDays) { _, _ in
+                        viewModel.reloadTranslationUsage()
+                    }
+                    Spacer()
+                    Text("\(viewModel.translationUsage.reduce(0) { $0 + $1.requestCount }) 次调用")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.secondary)
+                }
+
+                if viewModel.translationUsage.isEmpty {
+                    Text("所选时段暂无翻译调用记录")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 8)
+                } else {
+                    ForEach(viewModel.translationUsage) { usage in
+                        translationUsageRow(usage)
+                        if usage.id != viewModel.translationUsage.last?.id {
+                            Divider()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func translationUsageRow(_ usage: TranslationUsageStat) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(StatsService.formatShortDate(usage.date))
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(.secondary)
+                    .frame(width: 34, alignment: .leading)
+                Text(usage.providerName)
+                    .font(.system(size: 12, weight: .semibold))
+                    .lineLimit(1)
+                Text(usage.usageKind == TranslationUsageKind.llm.rawValue ? "大模型" : usage.providerKind)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Capsule().fill(Color.primary.opacity(0.06)))
+                Spacer()
+                Text("\(usage.requestCount) 次 · 成功 \(usage.successCount)")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(.secondary)
+            }
+
+            HStack(spacing: 10) {
+                Text("密钥 \(usage.credentialFingerprint)")
+                if !usage.modelName.isEmpty {
+                    Text("模型 \(usage.modelName)")
+                }
+                if usage.usageKind == TranslationUsageKind.llm.rawValue {
+                    Text(
+                        usage.promptTokenCount + usage.completionTokenCount > 0
+                            ? "Token \(usage.promptTokenCount) 入 / \(usage.completionTokenCount) 出"
+                            : "Token 服务未返回"
+                    )
+                } else {
+                    Text("字符 \(usage.sourceCharacterCount) 入 / \(usage.translatedCharacterCount) 出")
+                }
+            }
+            .font(.system(size: 11, design: .monospaced))
+            .foregroundColor(.secondary)
+            .lineLimit(1)
         }
     }
 }

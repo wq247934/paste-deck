@@ -43,6 +43,9 @@ final class ClipboardItem {
     /// RTF 富文本数据（字体、颜色、样式等）
     var rtfData: Data?
 
+    /// 翻译工作区快照。仅“翻译”系统分类中的文本记录使用，保存各服务的译文、失败状态和模型信息，以便历史记录可恢复为原翻译窗口。
+    var translationWorkspaceData: Data?
+
     /// 收藏夹关联（多对多）
     var collections: [FavoriteCollection]?
 
@@ -53,6 +56,11 @@ final class ClipboardItem {
         get {
             collections?.contains(where: { $0.isDefault }) ?? false
         }
+    }
+
+    /// 当前记录是否是由翻译中心创建的可恢复翻译工作区，而不是普通剪贴板文本。
+    var isTranslationHistory: Bool {
+        collections?.contains(where: \.isTranslation) ?? false
     }
 
     var displayTitle: String {
@@ -106,9 +114,11 @@ final class ClipboardItem {
         Self.relativeDateTimeFormatter.localizedString(for: createdAt, relativeTo: Date())
     }
 
-    /// 获取非默认收藏夹列表（用于显示 badge）
+    /// 获取可由用户管理的非默认收藏夹列表（用于显示 badge）；翻译系统分类不作为普通收藏标签展示。
     var nonDefaultCollections: [FavoriteCollection] {
-        (collections ?? []).filter { !$0.isDefault }.sorted { $0.sortOrder < $1.sortOrder }
+        (collections ?? [])
+            .filter { !$0.isDefault && !$0.isTranslation }
+            .sorted { $0.sortOrder < $1.sortOrder }
     }
 
     var isCleanupEligible: Bool {
@@ -182,6 +192,7 @@ final class ClipboardItem {
         self.linkTitleRequestedAt = nil
         self.linkTitleFetchedAt = nil
         self.rtfData = rtfData
+        self.translationWorkspaceData = nil
     }
 
     // MARK: - Methods

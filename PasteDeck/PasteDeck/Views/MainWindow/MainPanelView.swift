@@ -685,6 +685,12 @@ struct MainPanelView: View {
 
     private func previewItem(id: UUID) {
         guard let item = historyStore.fetchItem(id: id) else { return }
+        if item.isTranslationHistory {
+            Task { @MainActor in
+                TranslationCoordinator.shared.openTranslationHistory(itemID: item.id)
+            }
+            return
+        }
         previewController = PreviewWindowController()
         previewController?.show(item: item, onClose: {})
     }

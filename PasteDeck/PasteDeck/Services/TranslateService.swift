@@ -10,6 +10,63 @@ import Foundation
 
 // MARK: - Configuration
 
+/// 常用 OpenAI-compatible 大模型服务商预设。预设仅提供服务名称和官方端点，从不擅自填写模型名称。
+enum LLMTranslationPreset: CaseIterable, Identifiable {
+    /// DeepSeek OpenAI-compatible API。
+    case deepSeek
+    /// 智谱 AI GLM OpenAI-compatible API。
+    case glm
+    /// Moonshot AI Kimi OpenAI-compatible API。
+    case kimi
+    /// 小米 MiMo OpenAI-compatible API。
+    case mimo
+    /// OpenAI API。
+    case openAI
+    /// MiniMax OpenAI-compatible API。
+    case miniMax
+    /// 阿里云百炼通义千问 OpenAI-compatible API。
+    case qwen
+
+    /// 用于 SwiftUI 列表的稳定标识。
+    var id: String {
+        switch self {
+        case .deepSeek: return "deepSeek"
+        case .glm: return "glm"
+        case .kimi: return "kimi"
+        case .mimo: return "mimo"
+        case .openAI: return "openAI"
+        case .miniMax: return "miniMax"
+        case .qwen: return "qwen"
+        }
+    }
+
+    /// 设置页展示的服务商名称。
+    var displayName: String {
+        switch self {
+        case .deepSeek: return "DeepSeek"
+        case .glm: return "GLM（智谱 AI）"
+        case .kimi: return "Kimi（Moonshot AI）"
+        case .mimo: return "MiMo（小米）"
+        case .openAI: return "OpenAI"
+        case .miniMax: return "MiniMax"
+        case .qwen: return "通义千问"
+        }
+    }
+
+    /// 服务商官方 OpenAI-compatible 基础地址；应用会在其后补齐 chat/completions 或 models。
+    var baseURL: String {
+        switch self {
+        case .deepSeek: return "https://api.deepseek.com"
+        case .glm: return "https://open.bigmodel.cn/api/paas/v4"
+        case .kimi: return "https://api.moonshot.cn/v1"
+        case .mimo: return "https://api.xiaomimimo.com/v1"
+        case .openAI: return "https://api.openai.com/v1"
+        case .miniMax: return "https://api.minimaxi.com/v1"
+        case .qwen: return "https://dashscope.aliyuncs.com/compatible-mode/v1"
+        }
+    }
+}
+
 /// 常规翻译服务商类型；raw value 会写入设置 JSON，已有值不可随意调整。
 enum TranslationProviderKind: String, Codable, CaseIterable, Identifiable {
     /// 百度翻译开放平台通用翻译 API。
@@ -51,22 +108,86 @@ enum TranslationProviderKind: String, Codable, CaseIterable, Identifiable {
     }
 }
 
-/// 一套常规翻译服务商配置，凭据目前跟随 AppSettings 保存在本机 SwiftData 中。
-struct TranslationProviderConfiguration: Codable, Equatable {
+/// 一套常规翻译服务商密钥配置；完整凭据仅保存在 macOS Keychain，SwiftData 仅保存凭据引用。
+/// 同一服务商可保存多套配置，但同一时刻只能启用其中一套。
+struct TranslationProviderConfiguration: Codable, Equatable, Identifiable {
+    /// 配置稳定标识，用于在密钥列表、译文面板与调用统计之间关联同一套凭据。
+    var id: UUID
     /// 服务商类型；候选值为 baidu、tencent、youdao、alibaba。
     var kind: TranslationProviderKind
-    /// 设置页与翻译结果中展示的服务名称。
+    /// 设置页、译文面板与统计中展示的密钥名称，例如“百度主账号”。
     var name: String
-    /// 是否允许将该服务作为默认常规翻译入口。
+    /// 是否启用该密钥；每种 TranslationProviderKind 最多只能有一套启用配置。
     var enabled: Bool
-    /// 服务商用于标识调用方的 App ID、Secret ID、应用 ID 或 AccessKey ID。
+    /// Keychain 中 TranslationProviderCredential 的稳定引用，不包含任何实际凭据。
+    var credentialReference: String
+    /// 服务商用于标识调用方的 App ID、Secret ID、应用 ID 或 AccessKey ID；仅在运行内存中使用。
     var credentialId: String
-    /// 服务商用于签名请求的密钥、Secret Key、应用密钥或 AccessKey Secret。
+    /// 服务商用于签名请求的密钥、Secret Key、应用密钥或 AccessKey Secret；仅在运行内存中使用。
     var credentialSecret: String
     /// 腾讯云 API 地域，其他服务商保留该字段但不使用；常见值为 ap-guangzhou。
     var region: String
     /// 是否允许预览窗口并发翻译分段；仅在账号配额允许时开启。
     var allowsConcurrentRequests: Bool
+
+    init(
+        id: UUID = UUID(),
+        kind: TranslationProviderKind,
+        name: String,
+        enabled: Bool,
+        credentialReference: String? = nil,
+        credentialId: String,
+        credentialSecret: String,
+        region: String,
+        allowsConcurrentRequests: Bool
+    ) {
+        self.id = id
+        self.kind = kind
+        self.name = name
+        self.enabled = enabled
+        self.credentialReference = credentialReference ?? TranslationCredentialStore.providerReference(for: id)
+        self.credentialId = credentialId
+        self.credentialSecret = credentialSecret
+        self.region = region
+        self.allowsConcurrentRequests = allowsConcurrentRequests
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case kind
+        case name
+        case enabled
+        case credentialReference
+        case region
+        case allowsConcurrentRequests
+    }
+
+    /// 从设置 JSON 读取元数据和 Keychain 引用；实际凭据始终在后续由 Keychain 补全。
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let decodedKind = try container.decode(TranslationProviderKind.self, forKey: .kind)
+        self.id = try container.decode(UUID.self, forKey: .id)
+        self.kind = decodedKind
+        self.name = try container.decodeIfPresent(String.self, forKey: .name) ?? decodedKind.displayName
+        self.enabled = try container.decodeIfPresent(Bool.self, forKey: .enabled) ?? false
+        self.credentialReference = try container.decode(String.self, forKey: .credentialReference)
+        self.credentialId = ""
+        self.credentialSecret = ""
+        self.region = try container.decodeIfPresent(String.self, forKey: .region) ?? "ap-guangzhou"
+        self.allowsConcurrentRequests = try container.decodeIfPresent(Bool.self, forKey: .allowsConcurrentRequests) ?? false
+    }
+
+    /// 新版设置 JSON 仅保存配置元数据和 Keychain 引用，故意排除 credentialId 与 credentialSecret。
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(kind, forKey: .kind)
+        try container.encode(name, forKey: .name)
+        try container.encode(enabled, forKey: .enabled)
+        try container.encode(credentialReference, forKey: .credentialReference)
+        try container.encode(region, forKey: .region)
+        try container.encode(allowsConcurrentRequests, forKey: .allowsConcurrentRequests)
+    }
 
     var isConfigured: Bool {
         enabled && !credentialId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -74,7 +195,7 @@ struct TranslationProviderConfiguration: Codable, Equatable {
     }
 }
 
-/// 一套 OpenAI-compatible 大模型翻译配置，可在设置中保存多套并按需选择。
+/// 一套 OpenAI-compatible 大模型翻译配置，可保存多套并按需选择；API Key 仅保存在 macOS Keychain。
 struct LLMTranslationConfiguration: Codable, Equatable, Identifiable {
     /// 配置稳定标识，用于列表编辑、测试结果关联和翻译菜单选择。
     var id: UUID
@@ -82,9 +203,11 @@ struct LLMTranslationConfiguration: Codable, Equatable, Identifiable {
     var name: String
     /// OpenAI-compatible API 基础地址或完整 chat/completions 地址。
     var baseURL: String
-    /// Bearer API Key；请求时仅通过 Authorization header 发送。
+    /// Keychain 中 LLMTranslationCredential 的稳定引用，不包含 API Key。
+    var credentialReference: String
+    /// Bearer API Key；仅在运行内存中使用，请求时通过 Authorization header 发送。
     var apiKey: String
-    /// chat/completions 请求使用的模型标识，例如 deepseek-chat。
+    /// chat/completions 请求使用的模型标识；用户可从服务商获取模型列表或手动填写，初始值始终为空。
     var model: String
     /// 是否在翻译结果的“大模型重译”菜单中提供此配置。
     var enabled: Bool
@@ -93,6 +216,7 @@ struct LLMTranslationConfiguration: Codable, Equatable, Identifiable {
         id: UUID = UUID(),
         name: String = "大模型",
         baseURL: String = "",
+        credentialReference: String? = nil,
         apiKey: String = "",
         model: String = "",
         enabled: Bool = true
@@ -100,9 +224,42 @@ struct LLMTranslationConfiguration: Codable, Equatable, Identifiable {
         self.id = id
         self.name = name
         self.baseURL = baseURL
+        self.credentialReference = credentialReference ?? TranslationCredentialStore.llmReference(for: id)
         self.apiKey = apiKey
         self.model = model
         self.enabled = enabled
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case baseURL
+        case credentialReference
+        case model
+        case enabled
+    }
+
+    /// 从设置 JSON 读取端点元数据和 Keychain 引用；实际 API Key 始终在后续由 Keychain 补全。
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(UUID.self, forKey: .id)
+        self.name = try container.decodeIfPresent(String.self, forKey: .name) ?? "大模型"
+        self.baseURL = try container.decodeIfPresent(String.self, forKey: .baseURL) ?? ""
+        self.credentialReference = try container.decode(String.self, forKey: .credentialReference)
+        self.apiKey = ""
+        self.model = try container.decodeIfPresent(String.self, forKey: .model) ?? ""
+        self.enabled = try container.decodeIfPresent(Bool.self, forKey: .enabled) ?? false
+    }
+
+    /// 新版设置 JSON 仅保存端点元数据和 Keychain 引用，故意排除 apiKey。
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encode(baseURL, forKey: .baseURL)
+        try container.encode(credentialReference, forKey: .credentialReference)
+        try container.encode(model, forKey: .model)
+        try container.encode(enabled, forKey: .enabled)
     }
 
     var isConfigured: Bool {
@@ -132,6 +289,12 @@ struct TranslateSegment: Identifiable {
     var isTranslating: Bool = false
 }
 
+/// 所有翻译 HTTP 请求共用的可靠性边界，避免网络异常时无限期占用译文卡片。
+private enum TranslationRequestPolicy {
+    /// 单个翻译或模型列表请求的最长等待时间；超时后卡片提供重试按钮。
+    static let timeout: TimeInterval = 60
+}
+
 // MARK: - Translate Service
 
 final class TranslateService {
@@ -142,19 +305,6 @@ final class TranslateService {
 
     init(configuration: TranslationProviderConfiguration) {
         self.configuration = configuration
-    }
-
-    /// 兼容旧版预览窗口和旧设置数据的百度初始化入口。
-    convenience init(appId: String, secretKey: String, isAdvanced: Bool = false) {
-        self.init(configuration: TranslationProviderConfiguration(
-            kind: .baidu,
-            name: TranslationProviderKind.baidu.displayName,
-            enabled: true,
-            credentialId: appId,
-            credentialSecret: secretKey,
-            region: "ap-guangzhou",
-            allowsConcurrentRequests: isAdvanced
-        ))
     }
 
     // MARK: Text Splitting
@@ -240,26 +390,36 @@ final class TranslateService {
 
     // MARK: API Call
 
+    @discardableResult
     func translateSegment(
         _ text: String,
         from: String = "auto",
         to: String = "zh",
         completion: @escaping (Result<String, Error>) -> Void
-    ) {
+    ) -> URLSessionDataTask? {
         guard configuration.isConfigured else {
             completion(.failure(TranslateError.notConfigured))
-            return
+            return nil
+        }
+
+        let completionWithUsage: (Result<String, Error>) -> Void = { result in
+            TranslationUsageTracker.recordAPI(
+                configuration: self.configuration,
+                sourceText: text,
+                result: result
+            )
+            completion(result)
         }
 
         switch configuration.kind {
         case .baidu:
-            translateWithBaidu(text, from: from, to: to, completion: completion)
+            return translateWithBaidu(text, from: from, to: to, completion: completionWithUsage)
         case .tencent:
-            translateWithTencent(text, from: from, to: to, completion: completion)
+            return translateWithTencent(text, from: from, to: to, completion: completionWithUsage)
         case .youdao:
-            translateWithYoudao(text, from: from, to: to, completion: completion)
+            return translateWithYoudao(text, from: from, to: to, completion: completionWithUsage)
         case .alibaba:
-            translateWithAlibaba(text, from: from, to: to, completion: completion)
+            return translateWithAlibaba(text, from: from, to: to, completion: completionWithUsage)
         }
     }
 
@@ -268,7 +428,7 @@ final class TranslateService {
         from: String,
         to: String,
         completion: @escaping (Result<String, Error>) -> Void
-    ) {
+    ) -> URLSessionDataTask? {
         let salt = String(Int.random(in: 100000...999999))
         let rawSignature = configuration.credentialId + text + salt + configuration.credentialSecret
         let signature = Insecure.MD5.hash(data: Data(rawSignature.utf8)).hexString
@@ -283,10 +443,10 @@ final class TranslateService {
         ]
         guard let url = components?.url else {
             completion(.failure(TranslateError.invalidURL))
-            return
+            return nil
         }
 
-        performJSONRequest(URLRequest(url: url)) { json in
+        return performJSONRequest(URLRequest(url: url)) { json in
             if let code = json["error_code"] as? String {
                 throw TranslateError.apiError(
                     provider: self.configuration.name,
@@ -306,7 +466,7 @@ final class TranslateService {
         from: String,
         to: String,
         completion: @escaping (Result<String, Error>) -> Void
-    ) {
+    ) -> URLSessionDataTask? {
         let salt = UUID().uuidString
         let timestamp = String(Int(Date().timeIntervalSince1970))
         let input = Self.youdaoSignatureInput(text)
@@ -314,7 +474,7 @@ final class TranslateService {
         let signature = SHA256.hash(data: Data(rawSignature.utf8)).hexString
         guard let url = URL(string: "https://openapi.youdao.com/api") else {
             completion(.failure(TranslateError.invalidURL))
-            return
+            return nil
         }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -330,7 +490,7 @@ final class TranslateService {
             URLQueryItem(name: "curtime", value: timestamp)
         ].percentEncodedQuery?.data(using: .utf8)
 
-        performJSONRequest(request) { json in
+        return performJSONRequest(request) { json in
             let code = json["errorCode"] as? String ?? ""
             guard code == "0" else {
                 throw TranslateError.apiError(provider: self.configuration.name, code: code, message: "请求失败")
@@ -347,7 +507,7 @@ final class TranslateService {
         from: String,
         to: String,
         completion: @escaping (Result<String, Error>) -> Void
-    ) {
+    ) -> URLSessionDataTask? {
         let host = "tmt.tencentcloudapi.com"
         let service = "tmt"
         let timestamp = Int(Date().timeIntervalSince1970)
@@ -366,7 +526,7 @@ final class TranslateService {
         guard let body = try? JSONSerialization.data(withJSONObject: bodyObject),
               let url = URL(string: "https://\(host)") else {
             completion(.failure(TranslateError.invalidURL))
-            return
+            return nil
         }
 
         let contentType = "application/json; charset=utf-8"
@@ -393,7 +553,7 @@ final class TranslateService {
         request.setValue(String(timestamp), forHTTPHeaderField: "X-TC-Timestamp")
         request.setValue(authorization, forHTTPHeaderField: "Authorization")
 
-        performJSONRequest(request) { json in
+        return performJSONRequest(request) { json in
             guard let response = json["Response"] as? [String: Any] else {
                 throw TranslateError.invalidResponse
             }
@@ -416,11 +576,11 @@ final class TranslateService {
         from: String,
         to: String,
         completion: @escaping (Result<String, Error>) -> Void
-    ) {
+    ) -> URLSessionDataTask? {
         let resource = "/api/translate/web/general"
         guard let url = URL(string: "https://mt.cn-hangzhou.aliyuncs.com\(resource)") else {
             completion(.failure(TranslateError.invalidURL))
-            return
+            return nil
         }
         let bodyObject: [String: Any] = [
             "FormatType": "text",
@@ -431,7 +591,7 @@ final class TranslateService {
         ]
         guard let body = try? JSONSerialization.data(withJSONObject: bodyObject) else {
             completion(.failure(TranslateError.invalidResponse))
-            return
+            return nil
         }
 
         let accept = "application/json"
@@ -462,7 +622,7 @@ final class TranslateService {
         request.setValue("2019-01-02", forHTTPHeaderField: "x-acs-version")
         request.setValue("acs \(configuration.credentialId):\(signature)", forHTTPHeaderField: "Authorization")
 
-        performJSONRequest(request) { json in
+        return performJSONRequest(request) { json in
             if let errorCode = json["errorCode"] as? String {
                 throw TranslateError.apiError(
                     provider: self.configuration.name,
@@ -486,8 +646,10 @@ final class TranslateService {
         _ request: URLRequest,
         parser: @escaping ([String: Any]) throws -> String,
         completion: @escaping (Result<String, Error>) -> Void
-    ) {
-        URLSession.shared.dataTask(with: request) { data, response, error in
+    ) -> URLSessionDataTask {
+        var request = request
+        request.timeoutInterval = TranslationRequestPolicy.timeout
+        let task = URLSession.shared.dataTask(with: request) { data, response, error in
             if let error {
                 completion(.failure(error))
                 return
@@ -510,7 +672,9 @@ final class TranslateService {
             } catch {
                 completion(.failure(error))
             }
-        }.resume()
+        }
+        task.resume()
+        return task
     }
 
     private static func youdaoSignatureInput(_ text: String) -> String {
@@ -539,37 +703,20 @@ final class LLMTranslationService {
         self.configuration = configuration
     }
 
-    func translate(
-        _ text: String,
-        targetLanguage: String,
-        completion: @escaping (Result<String, Error>) -> Void
-    ) {
-        guard configuration.isConfigured,
-              let url = Self.chatCompletionsURL(from: configuration.baseURL) else {
+    /// 获取当前 API Key 可用的模型。接口兼容 OpenAI 的 GET /models；失败时不阻止用户继续手动填写模型名称。
+    @discardableResult
+    func fetchAvailableModels(completion: @escaping (Result<[String], Error>) -> Void) -> URLSessionDataTask? {
+        guard configuration.enabled,
+              !configuration.apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let url = Self.modelsURL(from: configuration.baseURL) else {
             completion(.failure(TranslateError.notConfigured))
-            return
-        }
-        let targetDescription = targetLanguage == "en" ? "English" : "Simplified Chinese"
-        let bodyObject: [String: Any] = [
-            "model": configuration.model,
-            "messages": [
-                ["role": "system", "content": "You are a professional translator. Translate faithfully into \(targetDescription). Return only the translation, without explanations."],
-                ["role": "user", "content": text]
-            ],
-            "temperature": 0.2,
-            "stream": false
-        ]
-        guard let body = try? JSONSerialization.data(withJSONObject: bodyObject) else {
-            completion(.failure(TranslateError.invalidResponse))
-            return
+            return nil
         }
 
         var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.httpBody = body
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = TranslationRequestPolicy.timeout
         request.setValue("Bearer \(configuration.apiKey)", forHTTPHeaderField: "Authorization")
-        URLSession.shared.dataTask(with: request) { data, response, error in
+        let task = URLSession.shared.dataTask(with: request) { data, response, error in
             if let error {
                 completion(.failure(error))
                 return
@@ -585,27 +732,148 @@ final class LLMTranslationService {
                 completion(.failure(TranslateError.apiError(
                     provider: self.configuration.name,
                     code: String(httpResponse.statusCode),
-                    message: errorObject?["message"] as? String ?? "请求失败"
+                    message: errorObject?["message"] as? String ?? "获取模型列表失败"
                 )))
+                return
+            }
+            let models = ((json["data"] as? [[String: Any]]) ?? [])
+                .compactMap { $0["id"] as? String }
+                .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+            completion(.success(models))
+        }
+        task.resume()
+        return task
+    }
+
+    /// 发起可取消的大模型翻译请求。调用方应保存返回的 task，以支持用户主动取消或重新翻译。
+    @discardableResult
+    func translate(
+        _ text: String,
+        targetLanguage: String,
+        completion: @escaping (Result<String, Error>) -> Void
+    ) -> URLSessionDataTask? {
+        guard configuration.isConfigured,
+              let url = Self.chatCompletionsURL(from: configuration.baseURL) else {
+            completion(.failure(TranslateError.notConfigured))
+            return nil
+        }
+        let targetDescription = targetLanguage == "en" ? "English" : "Simplified Chinese"
+        let bodyObject: [String: Any] = [
+            "model": configuration.model,
+            "messages": [
+                ["role": "system", "content": "You are a professional translator. Translate faithfully into \(targetDescription). Return only the translation, without explanations."],
+                ["role": "user", "content": text]
+            ],
+            "temperature": 0.2,
+            "stream": false
+        ]
+        guard let body = try? JSONSerialization.data(withJSONObject: bodyObject) else {
+            completion(.failure(TranslateError.invalidResponse))
+            return nil
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = TranslationRequestPolicy.timeout
+        request.httpBody = body
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(configuration.apiKey)", forHTTPHeaderField: "Authorization")
+        let task = URLSession.shared.dataTask(with: request) { data, response, error in
+            if let error {
+                let result = Result<String, Error>.failure(error)
+                TranslationUsageTracker.recordLLM(
+                    configuration: self.configuration,
+                    sourceText: text,
+                    result: result,
+                    promptTokens: 0,
+                    completionTokens: 0
+                )
+                completion(result)
+                return
+            }
+            guard let data,
+                  let httpResponse = response as? HTTPURLResponse,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                let result = Result<String, Error>.failure(TranslateError.invalidResponse)
+                TranslationUsageTracker.recordLLM(
+                    configuration: self.configuration,
+                    sourceText: text,
+                    result: result,
+                    promptTokens: 0,
+                    completionTokens: 0
+                )
+                completion(result)
+                return
+            }
+            let usage = json["usage"] as? [String: Any]
+            let promptTokens = usage?["prompt_tokens"] as? Int ?? 0
+            let completionTokens = usage?["completion_tokens"] as? Int ?? 0
+            guard (200...299).contains(httpResponse.statusCode) else {
+                let errorObject = json["error"] as? [String: Any]
+                let result = Result<String, Error>.failure(TranslateError.apiError(
+                    provider: self.configuration.name,
+                    code: String(httpResponse.statusCode),
+                    message: errorObject?["message"] as? String ?? "请求失败"
+                ))
+                TranslationUsageTracker.recordLLM(
+                    configuration: self.configuration,
+                    sourceText: text,
+                    result: result,
+                    promptTokens: promptTokens,
+                    completionTokens: completionTokens
+                )
+                completion(result)
                 return
             }
             guard let choices = json["choices"] as? [[String: Any]],
                   let message = choices.first?["message"] as? [String: Any],
                   let content = message["content"] as? String else {
-                completion(.failure(TranslateError.invalidResponse))
+                let result = Result<String, Error>.failure(TranslateError.invalidResponse)
+                TranslationUsageTracker.recordLLM(
+                    configuration: self.configuration,
+                    sourceText: text,
+                    result: result,
+                    promptTokens: promptTokens,
+                    completionTokens: completionTokens
+                )
+                completion(result)
                 return
             }
-            completion(.success(content.trimmingCharacters(in: .whitespacesAndNewlines)))
-        }.resume()
+            let result = Result<String, Error>.success(content.trimmingCharacters(in: .whitespacesAndNewlines))
+            TranslationUsageTracker.recordLLM(
+                configuration: self.configuration,
+                sourceText: text,
+                result: result,
+                promptTokens: promptTokens,
+                completionTokens: completionTokens
+            )
+            completion(result)
+        }
+        task.resume()
+        return task
     }
 
     private static func chatCompletionsURL(from input: String) -> URL? {
+        endpointURL(from: input, path: "chat/completions")
+    }
+
+    private static func modelsURL(from input: String) -> URL? {
+        endpointURL(from: input, path: "models")
+    }
+
+    private static func endpointURL(from input: String, path: String) -> URL? {
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         guard !trimmed.isEmpty else { return nil }
-        if trimmed.hasSuffix("/chat/completions") {
+        if trimmed.hasSuffix("/\(path)") {
             return URL(string: trimmed)
         }
-        return URL(string: trimmed.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + "/chat/completions")
+        if trimmed.hasSuffix("/chat/completions") {
+            let base = String(trimmed.dropLast("chat/completions".count)).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            return URL(string: "\(base)/\(path)")
+        }
+        return URL(string: "\(trimmed)/\(path)")
     }
 }
 
