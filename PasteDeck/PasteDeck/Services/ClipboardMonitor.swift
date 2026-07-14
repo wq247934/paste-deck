@@ -21,6 +21,7 @@ class ClipboardMonitor {
     private var cleanupTimer: Timer?
     private var startupMaintenanceWorkItem: DispatchWorkItem?
     private var cacheManager: CacheManager
+    private let imageAssetStore: ClipboardImageAssetStore
     private var isPaused = false
     private var linkTitlePreferenceObserver: NSObjectProtocol?
 
@@ -41,6 +42,7 @@ class ClipboardMonitor {
         self.modelContext = modelContext
         self.changeCount = NSPasteboard.general.changeCount
         self.cacheManager = CacheManager()
+        self.imageAssetStore = .shared
         self.linkTitlePreferenceObserver = NotificationCenter.default.addObserver(
             forName: .linkTitleFetchingPreferenceChanged,
             object: nil,
@@ -138,9 +140,18 @@ class ClipboardMonitor {
 
         let parsedItems = parsePasteboard(pasteboard, sourceApp: sourceApplication?.name)
         for item in parsedItems {
-            if !isDuplicate(item) {
-                saveItem(item)
+            if isDuplicate(item) {
+                // 图片已经完成内容寻址落盘；临时记录未采用时立即释放无引用资产。
+                ClipboardItemLifecycleService.discardUnadoptedImage(
+                    at: item.imagePath,
+                    in: modelContext,
+                    cacheManager: cacheManager,
+                    imageAssetStore: imageAssetStore
+                )
+                continue
             }
+
+            saveItem(item)
         }
     }
 
@@ -161,10 +172,13 @@ class ClipboardMonitor {
         case .text, .link, .markdown, .json:
             return recent.textContent == item.textContent
         case .image:
-            // 图片比较大小和尺寸
-            return recent.imageWidth == item.imageWidth &&
-                   recent.imageHeight == item.imageHeight &&
-                   recent.fileSize == item.fileSize
+            // 使用文件内容摘要去重，避免相同尺寸和文件大小的不同图片被误判。
+            guard let recentIdentifier = cacheManager.imageContentIdentifier(at: recent.imagePath),
+                  let itemIdentifier = cacheManager.imageContentIdentifier(at: item.imagePath) else {
+                return false
+            }
+
+            return recentIdentifier == itemIdentifier
         case .file:
             return recent.filePath == item.filePath
         case .color:
@@ -209,7 +223,10 @@ class ClipboardMonitor {
             return nil
         }
 
-        guard let imagePath = cacheManager.saveImage(image) else {
+        guard let imagePath = imageAssetStore.prepareImageForAdoption(
+            image,
+            cacheManager: cacheManager
+        ) else {
             return nil
         }
         let pixelSize = NSImage(contentsOfFile: imagePath)?.pixelSize ?? image.pixelSize
@@ -395,7 +412,22 @@ class ClipboardMonitor {
     private func saveItem(_ item: ClipboardItem) {
         prepareLinkTitle(for: item)
         modelContext.insert(item)
-        try? modelContext.save()
+        do {
+            try modelContext.save()
+        } catch {
+            modelContext.rollback()
+            ClipboardItemLifecycleService.discardUnadoptedImage(
+                at: item.imagePath,
+                in: modelContext,
+                cacheManager: cacheManager,
+                imageAssetStore: imageAssetStore
+            )
+            NSLog("[PasteDeck] Failed to save clipboard item: \(error.localizedDescription)")
+            return
+        }
+
+        imageAssetStore.commitAdoption(at: item.imagePath)
+
         DailyStatsUpdater.upsert(for: item, context: modelContext)
         postClipboardDataChanged(itemID: item.id, kind: .inserted)
         scheduleOCRIfNeeded(for: item)
@@ -578,7 +610,12 @@ class ClipboardMonitor {
         let workItem = DispatchWorkItem { [weak self] in
             DailyStatsUpdater.backfillIfNeeded()
             let deletedCount = Self.performAutoCleanup()
+            let cleanedFileCount = Self.performCacheMaintenance(removeAllUnreferenced: true)
             let ocrJobs = Self.pendingImageOCRJobs(limit: 20)
+
+            if cleanedFileCount > 0 {
+                NSLog("[PasteDeck] Startup cache maintenance: removed \(cleanedFileCount) unreferenced files")
+            }
 
             DispatchQueue.main.async {
                 guard let self else { return }
@@ -599,6 +636,12 @@ class ClipboardMonitor {
     private func runAutoCleanupInBackground() {
         DispatchQueue.global(qos: .utility).async { [weak self] in
             let deletedCount = Self.performAutoCleanup()
+            let cleanedFileCount = Self.performCacheMaintenance(removeAllUnreferenced: false)
+
+            if cleanedFileCount > 0 {
+                NSLog("[PasteDeck] Cache maintenance: removed \(cleanedFileCount) unreferenced files")
+            }
+
             guard deletedCount > 0 else { return }
 
             DispatchQueue.main.async {
@@ -614,43 +657,50 @@ class ClipboardMonitor {
         let descriptor = FetchDescriptor<AppSettings>()
         guard let appSettings = try? context.fetch(descriptor).first else { return 0 }
 
-        var deletedCount = 0
+        let allDescriptor = FetchDescriptor<ClipboardItem>(
+            sortBy: [SortDescriptor(\ClipboardItem.createdAt, order: .reverse)]
+        )
+        guard let allItems = try? context.fetch(allDescriptor) else { return 0 }
+        var itemIDsToDelete = Set<UUID>()
 
         // 按天数清理
         if appSettings.historyDaysLimit > 0 {
             let cutoff = Calendar.current.date(byAdding: .day, value: -appSettings.historyDaysLimit, to: Date()) ?? Date()
-            let oldDescriptor = FetchDescriptor<ClipboardItem>(
-                predicate: #Predicate { $0.createdAt < cutoff }
-            )
-            if let oldItems = try? context.fetch(oldDescriptor) {
-                for item in oldItems where item.isCleanupEligible {
-                    context.delete(item)
-                    deletedCount += 1
-                }
+            for item in allItems where item.createdAt < cutoff && item.isCleanupEligible {
+                itemIDsToDelete.insert(item.id)
             }
         }
 
         // 按条数清理（保留最新的 N 条）
-        if appSettings.historyCountLimit > 0 {
-            var allDescriptor = FetchDescriptor<ClipboardItem>()
-            allDescriptor.sortBy = [SortDescriptor(\ClipboardItem.createdAt, order: .reverse)]
-            if let allItems: [ClipboardItem] = try? context.fetch(allDescriptor), allItems.count > appSettings.historyCountLimit {
-                let protectedCount = allItems.filter { !$0.isCleanupEligible }.count
-                let deletableLimit = max(0, appSettings.historyCountLimit - protectedCount)
-                let cleanupCandidates = allItems.filter(\.isCleanupEligible)
-                let toDelete = cleanupCandidates.dropFirst(deletableLimit)
-                for item in toDelete {
-                    context.delete(item)
-                    deletedCount += 1
-                }
+        let remainingItems = allItems.filter { !itemIDsToDelete.contains($0.id) }
+        if appSettings.historyCountLimit > 0,
+           remainingItems.count > appSettings.historyCountLimit {
+            let protectedCount = remainingItems.filter { !$0.isCleanupEligible }.count
+            let deletableLimit = max(0, appSettings.historyCountLimit - protectedCount)
+            let cleanupCandidates = remainingItems.filter(\.isCleanupEligible)
+            cleanupCandidates.dropFirst(deletableLimit).forEach {
+                itemIDsToDelete.insert($0.id)
             }
         }
 
-        if deletedCount > 0 {
-            try? context.save()
+        let itemsToDelete = allItems.filter { itemIDsToDelete.contains($0.id) }
+        return ClipboardItemLifecycleService.deleteItems(itemsToDelete, in: context)
+    }
+
+    /// Startup removes all legacy orphans; recurring maintenance applies the soft limit to orphans only.
+    private static func performCacheMaintenance(removeAllUnreferenced: Bool) -> Int {
+        let context = ModelContext(AppModelContainer.container)
+        if removeAllUnreferenced {
+            return ClipboardItemLifecycleService.clearUnreferencedCache(in: context)
         }
 
-        return deletedCount
+        let descriptor = FetchDescriptor<AppSettings>()
+        guard let appSettings = try? context.fetch(descriptor).first else { return 0 }
+
+        return ClipboardItemLifecycleService.cleanCacheIfNeeded(
+            limitMB: appSettings.cacheSizeLimit,
+            in: context
+        )
     }
 }
 

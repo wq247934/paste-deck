@@ -10,16 +10,22 @@
 
 import Foundation
 import AppKit
+import CryptoKit
 
 /// Manages local cache storage for clipboard images and files
-class CacheManager {
+final class CacheManager {
+    /// Orphan scans ignore very recent files so a concurrent clipboard insert can finish adopting its asset.
+    private static let orphanSafetyInterval: TimeInterval = 60
+
     private let fileManager = FileManager.default
     private let imageCacheDirectory: URL
     private let fileCacheDirectory: URL
 
-    init() {
-        let cacheURL = fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first!
-        let appCacheURL = cacheURL.appendingPathComponent("PasteDeck")
+    init(cacheRootDirectory: URL? = nil) {
+        let appCacheURL = cacheRootDirectory ?? fileManager
+            .urls(for: .cachesDirectory, in: .userDomainMask)
+            .first!
+            .appendingPathComponent("PasteDeck")
 
         imageCacheDirectory = appCacheURL.appendingPathComponent("images")
         fileCacheDirectory = appCacheURL.appendingPathComponent("files")
@@ -31,23 +37,52 @@ class CacheManager {
 
     /// Saves an NSImage to the cache as PNG
     /// - Parameter image: The image to save
-    /// - Returns: The file path of the saved image, or nil on failure
+    /// - Returns: The content-addressed file path of the saved image, or nil on failure
     func saveImage(_ image: NSImage) -> String? {
-        let fileName = UUID().uuidString + ".png"
-        let fileURL = imageCacheDirectory.appendingPathComponent(fileName)
-
         guard let tiffData = image.tiffRepresentation,
               let bitmap = NSBitmapImageRep(data: tiffData),
               let pngData = bitmap.representation(using: .png, properties: [:]) else {
             return nil
         }
 
+        // 图片文件名是规范 PNG 数据的 SHA-256。相同内容复用同一资产，避免重复复制时先制造孤儿文件。
+        let contentIdentifier = contentIdentifier(for: pngData)
+        let fileURL = imageCacheDirectory.appendingPathComponent("\(contentIdentifier).png")
+        if fileManager.fileExists(atPath: fileURL.path) {
+            return fileURL.path
+        }
+
         do {
-            try pngData.write(to: fileURL)
+            try pngData.write(to: fileURL, options: .atomic)
             return fileURL.path
         } catch {
+            // 并发写入同一内容时，另一个写入者可能已经完成；此时仍采用已存在的内容寻址资产。
+            if fileManager.fileExists(atPath: fileURL.path) {
+                return fileURL.path
+            }
+
             return nil
         }
+    }
+
+    /// Returns a stable SHA-256 identifier for a cached image. Legacy UUID-named files are hashed lazily.
+    func imageContentIdentifier(at path: String?) -> String? {
+        guard let path else { return nil }
+
+        let fileURL = URL(fileURLWithPath: path)
+        let fileNameIdentifier = fileURL.deletingPathExtension().lastPathComponent.lowercased()
+        if fileNameIdentifier.count == 64,
+           fileNameIdentifier.unicodeScalars.allSatisfy({
+               CharacterSet(charactersIn: "0123456789abcdef").contains($0)
+           }) {
+            return fileNameIdentifier
+        }
+
+        guard let data = try? Data(contentsOf: fileURL, options: .mappedIfSafe) else {
+            return nil
+        }
+
+        return contentIdentifier(for: data)
     }
 
     /// Returns the file size in bytes at the given path
@@ -59,16 +94,17 @@ class CacheManager {
         return fileSize
     }
 
-    /// Calculates total cache size in bytes
+    /// Calculates image cache size in bytes. The reserved files directory is excluded until it has ownership tracking.
     func getTotalCacheSize() -> Int {
         var totalSize = 0
 
-        for directory in [imageCacheDirectory, fileCacheDirectory] {
-            if let enumerator = fileManager.enumerator(at: directory, includingPropertiesForKeys: [.fileSizeKey]) {
-                for case let fileURL as URL in enumerator {
-                    if let fileSize = try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize {
-                        totalSize += fileSize
-                    }
+        if let enumerator = fileManager.enumerator(
+            at: imageCacheDirectory,
+            includingPropertiesForKeys: [.fileSizeKey]
+        ) {
+            for case let fileURL as URL in enumerator {
+                if let fileSize = try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize {
+                    totalSize += fileSize
                 }
             }
         }
@@ -76,63 +112,70 @@ class CacheManager {
         return totalSize
     }
 
-    /// Removes old cache files when cache size exceeds the limit
-    func cleanCacheIfNeeded(limitMB: Int) async {
+    /// Removes only unreferenced cache files when total cache size exceeds the configured soft limit.
+    /// Referenced images are never deleted, so the resulting size may remain above the limit.
+    @discardableResult
+    func cleanCacheIfNeeded(limitMB: Int, referencedImagePaths: Set<String>) -> Int {
+        guard limitMB > 0 else { return 0 }
+
         let limitBytes = limitMB * 1024 * 1024
         let currentSize = getTotalCacheSize()
 
-        guard currentSize > limitBytes else { return }
+        guard currentSize > limitBytes else { return 0 }
 
-        print("Cache size (\(currentSize) bytes) exceeds limit (\(limitBytes) bytes), cleaning...")
+        let referencedPaths = normalizedPaths(referencedImagePaths)
+        let sortedCandidates = unreferencedCacheFiles(referencedImagePaths: referencedPaths)
+            .sorted { first, second in first.date < second.date }
+        var remainingSize = currentSize
+        var removedCount = 0
 
-        // 清理图片缓存（按文件修改时间从旧到新）
-        await cleanDirectoryByAge(directory: imageCacheDirectory, targetSize: limitBytes / 2)
-        await cleanDirectoryByAge(directory: fileCacheDirectory, targetSize: limitBytes / 2)
+        for candidate in sortedCandidates {
+            guard remainingSize > limitBytes else { break }
+
+            do {
+                try fileManager.removeItem(at: candidate.url)
+                remainingSize -= candidate.size
+                removedCount += 1
+            } catch {
+                continue
+            }
+        }
+
+        return removedCount
     }
 
-    /// Clean files in directory by age (oldest first) until size is under target
-    private func cleanDirectoryByAge(directory: URL, targetSize: Int) async {
-        guard fileManager.fileExists(atPath: directory.path) else { return }
+    /// Removes every cache file that is not referenced by a persisted clipboard image.
+    @discardableResult
+    func clearUnreferencedCache(referencedImagePaths: Set<String>) -> Int {
+        let referencedPaths = normalizedPaths(referencedImagePaths)
+        var removedCount = 0
+
+        for candidate in unreferencedCacheFiles(referencedImagePaths: referencedPaths) {
+            do {
+                try fileManager.removeItem(at: candidate.url)
+                removedCount += 1
+            } catch {
+                continue
+            }
+        }
+
+        return removedCount
+    }
+
+    /// Removes one image asset only when the path belongs to PasteDeck's image cache.
+    @discardableResult
+    func removeCachedImage(at path: String) -> Bool {
+        let fileURL = URL(fileURLWithPath: path).standardizedFileURL
+        guard fileURL.deletingLastPathComponent() == imageCacheDirectory.standardizedFileURL,
+              fileManager.fileExists(atPath: fileURL.path) else {
+            return false
+        }
 
         do {
-            // 获取目录下所有文件
-            let fileURLs = try fileManager.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.fileSizeKey, .contentModificationDateKey])
-
-            // 按修改时间排序（最旧的在前）
-            let sortedFiles = fileURLs.sorted { (url1, url2) -> Bool in
-                let date1 = (try? url1.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? Date.distantPast
-                let date2 = (try? url2.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? Date.distantPast
-                return date1 < date2
-            }
-
-            var currentSize = sortedFiles.reduce(0) { total, url in
-                let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-                return total + size
-            }
-
-            // 删除旧文件直到大小低于目标
-            for fileURL in sortedFiles {
-                guard currentSize > targetSize else { break }
-
-                let fileSize = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-                try? fileManager.removeItem(at: fileURL)
-                currentSize -= fileSize
-            }
-
-            print("Cleaned \(directory.lastPathComponent) to \(currentSize) bytes (target: \(targetSize))")
+            try fileManager.removeItem(at: fileURL)
+            return true
         } catch {
-            print("Error cleaning directory \(directory.lastPathComponent): \(error)")
-        }
-    }
-
-    /// Removes all cached files
-    func clearAllCache() {
-        for directory in [imageCacheDirectory, fileCacheDirectory] {
-            if let enumerator = fileManager.enumerator(at: directory, includingPropertiesForKeys: nil) {
-                for case let fileURL as URL in enumerator {
-                    try? fileManager.removeItem(at: fileURL)
-                }
-            }
+            return false
         }
     }
 
@@ -144,5 +187,46 @@ class CacheManager {
                 try? fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
             }
         }
+    }
+
+    private func contentIdentifier(for data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    private func normalizedPaths(_ paths: Set<String>) -> Set<String> {
+        Set(paths.map { URL(fileURLWithPath: $0).standardizedFileURL.path })
+    }
+
+    private func unreferencedCacheFiles(
+        referencedImagePaths: Set<String>
+    ) -> [(url: URL, size: Int, date: Date)] {
+        var candidates: [(url: URL, size: Int, date: Date)] = []
+
+        guard let fileURLs = try? fileManager.contentsOfDirectory(
+            at: imageCacheDirectory,
+            includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey]
+        ) else {
+            return candidates
+        }
+
+        for fileURL in fileURLs {
+            let values = try? fileURL.resourceValues(
+                forKeys: [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey]
+            )
+            guard values?.isRegularFile == true else { continue }
+
+            let isReferencedImage = referencedImagePaths.contains(fileURL.standardizedFileURL.path)
+            let modificationDate = values?.contentModificationDate ?? Date.distantPast
+            let isSafeToRemove = Date().timeIntervalSince(modificationDate) >= Self.orphanSafetyInterval
+            guard !isReferencedImage, isSafeToRemove else { continue }
+
+            candidates.append((
+                url: fileURL,
+                size: values?.fileSize ?? 0,
+                date: modificationDate
+            ))
+        }
+
+        return candidates
     }
 }

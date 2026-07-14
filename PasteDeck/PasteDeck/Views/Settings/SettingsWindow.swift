@@ -188,11 +188,11 @@ extension Notification.Name {
 
 private enum PasteDeckVersion {
     static var short: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.15.0"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.15.3"
     }
 
     static var build: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "210"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "213"
     }
 
     static var display: String {
@@ -1037,10 +1037,14 @@ struct HistorySettingsView: View {
             }
 
             SettingsCard(title: "缓存空间", icon: "externaldrive") {
-                SettingsRow(title: "最大缓存空间", subtitle: "用于图片等本地缓存文件") {
+                SettingsRow(title: "未引用缓存软上限", subtitle: "超限时仅清理没有历史记录引用的本地文件") {
                     SettingsMenuPicker(selection: Binding(
                         get: { appSettings.cacheSizeLimit },
-                        set: { appSettings.cacheSizeLimit = $0; try? modelContext.save() }
+                        set: {
+                            appSettings.cacheSizeLimit = $0
+                            try? modelContext.save()
+                            Self.scheduleCacheMaintenance(limitMB: $0)
+                        }
                     ), options: [
                         SettingsMenuOption(value: 100, title: "100 MB"),
                         SettingsMenuOption(value: 500, title: "500 MB"),
@@ -1168,6 +1172,20 @@ struct HistorySettingsView: View {
             await MainActor.run {
                 historySnapshot = snapshot
                 isLoadingHistorySnapshot = false
+            }
+        }
+    }
+
+    /// Applies a changed soft limit off the main thread; referenced image assets remain protected.
+    private nonisolated static func scheduleCacheMaintenance(limitMB: Int) {
+        DispatchQueue.global(qos: .utility).async {
+            let context = ModelContext(AppModelContainer.container)
+            let removedCount = ClipboardItemLifecycleService.cleanCacheIfNeeded(
+                limitMB: limitMB,
+                in: context
+            )
+            if removedCount > 0 {
+                NSLog("[PasteDeck] Cache limit update: removed \(removedCount) unreferenced files")
             }
         }
     }
@@ -1525,12 +1543,16 @@ private struct CleanupPreviewSheet: View {
         guard !queuedIDs.isEmpty else { return }
 
         previewController?.performClose()
-        for itemID in queuedIDs {
-            guard let item = fetchItem(id: itemID), item.isCleanupEligible else { continue }
-            modelContext.delete(item)
+        let itemsToDelete = queuedIDs.compactMap { fetchItem(id: $0) }
+            .filter(\.isCleanupEligible)
+        let deletedCount = ClipboardItemLifecycleService.deleteItems(
+            itemsToDelete,
+            in: modelContext
+        )
+        if deletedCount > 0 {
+            NotificationCenter.default.post(name: .clipboardDataChanged, object: nil)
         }
-        try? modelContext.save()
-        NotificationCenter.default.post(name: .clipboardDataChanged, object: nil)
+
         dismiss()
     }
 
@@ -2460,7 +2482,7 @@ struct AdvancedSettingsView: View {
                     Button(role: .destructive) {
                         showingClearCacheAlert = true
                     } label: {
-                        Label("清除缓存", systemImage: "externaldrive.badge.xmark")
+                        Label("清理未引用缓存", systemImage: "externaldrive.badge.xmark")
                     }
                     .buttonStyle(SettingsActionButtonStyle(tone: .destructive))
                 }
@@ -2481,11 +2503,13 @@ struct AdvancedSettingsView: View {
                 clearAllHistory()
             }
         }
-        .alert("确定要清除所有缓存吗？", isPresented: $showingClearCacheAlert) {
+        .alert("确定要清理未引用缓存吗？", isPresented: $showingClearCacheAlert) {
             Button("取消", role: .cancel) {}
-            Button("清除", role: .destructive) {
-                CacheManager().clearAllCache()
+            Button("清理", role: .destructive) {
+                clearUnreferencedCache()
             }
+        } message: {
+            Text("只会删除没有任何历史记录引用的缓存文件；收藏、置顶和普通历史图片不会受影响。")
         }
     }
 
@@ -2499,11 +2523,21 @@ struct AdvancedSettingsView: View {
         let context = ModelContext(AppModelContainer.container)
         let descriptor = FetchDescriptor<ClipboardItem>()
         if let items = try? context.fetch(descriptor) {
-            for item in items where item.isCleanupEligible {
-                context.delete(item)
+            let deletedCount = ClipboardItemLifecycleService.deleteItems(
+                items.filter(\.isCleanupEligible),
+                in: context
+            )
+            if deletedCount > 0 {
+                NotificationCenter.default.post(name: .clipboardDataChanged, object: nil)
             }
-            try? context.save()
-            NotificationCenter.default.post(name: .clipboardDataChanged, object: nil)
+        }
+    }
+
+    private func clearUnreferencedCache() {
+        DispatchQueue.global(qos: .utility).async {
+            let context = ModelContext(AppModelContainer.container)
+            let removedCount = ClipboardItemLifecycleService.clearUnreferencedCache(in: context)
+            NSLog("[PasteDeck] Manual cache maintenance: removed \(removedCount) unreferenced files")
         }
     }
 }
