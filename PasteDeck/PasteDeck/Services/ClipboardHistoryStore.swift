@@ -425,8 +425,11 @@ final class ClipboardHistoryStore: ObservableObject {
             removeSnapshots(ids: [id])
             return
         }
-        modelContext.delete(item)
-        try? modelContext.save()
+
+        guard ClipboardItemLifecycleService.deleteItems([item], in: modelContext) > 0 else {
+            return
+        }
+
         removeSnapshots(ids: [id])
     }
 

@@ -29,7 +29,7 @@ PasteDeck is a native macOS clipboard manager for quickly searching, previewing,
 - Closing an automatic translation window does not reopen it while the original text remains selected. A new mouse selection opens translation again, even when it contains the same text.
 - Statistics panel with daily/30-day trends, type distribution, source app insights, extreme records, and daily translation usage by provider, key fingerprint, and LLM model/token count.
 - Theme support: light, dark, or follow system appearance.
-- Stores history locally with SwiftData and caches images under `~/Library/Caches/PasteDeck/images/`.
+- Stores history locally with SwiftData and caches images under `~/Library/Caches/PasteDeck/images/`. Image assets use SHA-256 content-addressed filenames; pending adoption, final-reference deletion, and maintenance share one serialized boundary so a concurrent cleanup cannot remove an image before its history record is saved.
 
 ## Screenshots / 界面预览
 
@@ -138,9 +138,11 @@ Clipboard polling uses `NSPasteboard`; it does not require Accessibility by itse
 ### Services
 - `ClipboardMonitor` polls `NSPasteboard`, parses content, deduplicates entries, saves history, schedules OCR, and runs cleanup.
 - `ClipboardHistoryStore` loads and filters history for the main panel, manages selection, favorites, collections, deletion, and batch paste.
+- `ClipboardItemLifecycleService` centralizes SwiftData deletion and shared image-asset release, and supplies the referenced-path set used by safe cache maintenance.
+- `ClipboardImageAssetStore` serializes image adoption, final-reference deletion, and maintenance while protecting image paths whose SwiftData insertion is still pending.
 - `HotKeyManager` uses Carbon `RegisterEventHotKey` for independent clipboard and translation shortcuts.
 - `PasteService` writes selected content back to the pasteboard and simulates paste through `CGEvent`.
-- `CacheManager` manages image cache at `~/Library/Caches/PasteDeck/images/` with configurable size limits.
+- `CacheManager` manages SHA-256 content-addressed images at `~/Library/Caches/PasteDeck/images/`; cache limits are soft limits that never delete files still referenced by history, favorites, or pinned items.
 - `ImageOCRService` runs Vision OCR for copied images and persists searchable text.
 - `LinkTitleService` fetches webpage titles for copied links asynchronously without blocking UI.
 - `TranslateService` provides Baidu, Tencent Cloud, Youdao, and Alibaba Cloud translation adapters plus OpenAI-compatible LLM translation, model-list retrieval, and request timeouts.
@@ -171,7 +173,7 @@ Clipboard polling uses `NSPasteboard`; it does not require Accessibility by itse
 
 ## Testing
 
-Unit tests cover panel layout geometry, card sizing, and settings layout:
+Unit tests cover panel layout geometry, card sizing, settings layout, translation behavior, and image-asset lifecycle/reference safety, including adoption/deletion interleaving:
 
 ```bash
 swift test
@@ -233,7 +235,7 @@ PasteDeck 是一个原生 macOS 剪贴板管理器，用浮动面板快速搜索
 - 关闭或点击气泡外部后，原文本仍处于选中状态也不会再次弹出气泡；重新鼠标划选时，即使文本相同也会重新触发。
 - 统计面板：展示每日/近 30 天趋势、类型分布、来源 App 洞察和极值记录。翻译模块支持今天/近 7 天/近 30 天及全部/API/大模型筛选，API 用量按输入/输出字符统计，大模型用量按服务返回的输入/输出 Token 统计；按日趋势图和服务排行图支持鼠标悬停高亮并显示调用、成功、失败及用量详情。
 - 主题支持：亮色、暗色或跟随系统外观。
-- 历史记录使用 SwiftData 本地存储，图片缓存位于 `~/Library/Caches/PasteDeck/images/`。
+- 历史记录使用 SwiftData 本地存储，图片缓存位于 `~/Library/Caches/PasteDeck/images/`。图片按内容 SHA-256 命名，相同图片共享一个文件；图片采用、最终引用删除和缓存维护经过同一串行边界，避免并发清理在历史记录保存前删除图片。
 
 ## 界面预览
 
@@ -310,7 +312,7 @@ PasteDeck 需要辅助功能权限来读取前台应用选中文字，并模拟 
 
 ## 测试
 
-单元测试覆盖面板布局几何、卡片尺寸和设置布局：
+单元测试覆盖面板布局几何、卡片尺寸、设置布局、翻译行为，以及图片资产生命周期、引用安全和采用/删除交错：
 
 ```bash
 swift test

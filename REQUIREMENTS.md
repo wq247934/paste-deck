@@ -11,8 +11,10 @@
 - [x] 记录文本、富文本、链接、Markdown、JSON、图片、文件、颜色
 - [x] 按优先级检测内容类型：fileURL → image(tiff/png) → string(link/json/markdown/text) → color
 - [x] 保留 RTF 数据用于富文本粘贴
-- [x] 图片缓存到 `~/Library/Caches/PasteDeck/images/`，缓存大小可配置（100MB/500MB/1GB/无限）
-- [x] 去重处理
+- [x] 图片缓存到 `~/Library/Caches/PasteDeck/images/`，按规范 PNG 内容 SHA-256 命名并实现文件级复用
+- [x] 图片资产由统一生命周期管理：落盘后登记待采用状态，采用、最终引用删除和维护串行协调；重复临时资产立即释放，删除最后一条数据库引用时同步删除文件
+- [x] 缓存大小可配置（100MB/500MB/1GB/无限）；容量和手动维护仅扫描图片目录并清理数据库未引用且非待采用的图片，不处理尚无引用跟踪的 files 目录
+- [x] 基于内容摘要的图片去重处理，避免仅按尺寸和文件大小误判
 - [x] 应用黑名单过滤（基于 Bundle ID）
 
 ### 2. 全局快捷键与面板
@@ -140,6 +142,7 @@
 - [x] 设置布局测试（AppSettingsLayoutTests）
 - [x] 键盘焦点测试（KeyboardFocusPanelTests）
 - [x] 链接标题服务测试（LinkTitleServiceTests）
+- [x] 图片资产生命周期测试（ClipboardAssetLifecycleTests），覆盖共享引用、待采用/最终删除交错、待采用期间维护保护和 files 目录隔离
 
 ---
 
