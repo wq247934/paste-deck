@@ -48,4 +48,16 @@ final class TranslationSelectionProbeTests: XCTestCase {
 
         XCTAssertFalse(snapshot.isSafeToRestore)
     }
+
+    func testAutomaticSelectionTranslationEligibilityRejectsNumbersAndSymbols() {
+        XCTAssertFalse(AutomaticSelectionTranslationEligibility.accepts("2026-07-14"))
+        XCTAssertFalse(AutomaticSelectionTranslationEligibility.accepts("!@#$%^&*()"))
+        XCTAssertFalse(AutomaticSelectionTranslationEligibility.accepts("   \n\t  "))
+    }
+
+    func testAutomaticSelectionTranslationEligibilityAcceptsNaturalLanguageText() {
+        XCTAssertTrue(AutomaticSelectionTranslationEligibility.accepts("PasteDeck 2026"))
+        XCTAssertTrue(AutomaticSelectionTranslationEligibility.accepts("你好，世界"))
+        XCTAssertTrue(AutomaticSelectionTranslationEligibility.accepts("こんにちは"))
+    }
 }

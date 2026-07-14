@@ -1225,12 +1225,7 @@ struct VirtualizedCardList: NSViewRepresentable {
                     }
                 )
                 .equatable()
-                .onTapGesture {
-                    self.parent.onItemTapped(index, snapshot.id)
-                }
-                .onTapGesture(count: 2) {
-                    self.parent.onItemDoubleTapped(snapshot.id)
-                }
+                .gesture(cardInteractionGesture(index: index, itemID: snapshot.id))
                 .frame(width: currentMetrics.itemSize.width, height: currentMetrics.itemSize.height)
 
                 cardItem.configure(rootView)
@@ -1268,16 +1263,22 @@ struct VirtualizedCardList: NSViewRepresentable {
                     }
                 )
                 .equatable()
-                .onTapGesture {
-                    self.parent.onItemTapped(index, snapshot.id)
-                }
-                .onTapGesture(count: 2) {
-                    self.parent.onItemDoubleTapped(snapshot.id)
-                }
+                .gesture(cardInteractionGesture(index: index, itemID: snapshot.id))
                 .frame(width: currentMetrics.itemSize.width, height: currentMetrics.itemSize.height)
 
                 cardItem.configure(rootView)
             }
+        }
+
+        /// 先识别双击，再在双击失败后处理单击，避免两个独立点击手势竞争导致双击粘贴丢失。
+        private func cardInteractionGesture(index: Int, itemID: UUID) -> some Gesture {
+            TapGesture(count: 2)
+                .onEnded { [weak self] _ in
+                    self?.parent.onItemDoubleTapped(itemID)
+                }
+                .exclusively(before: TapGesture().onEnded { [weak self] _ in
+                    self?.parent.onItemTapped(index, itemID)
+                })
         }
 
         private func reconfigureVisibleItems() {

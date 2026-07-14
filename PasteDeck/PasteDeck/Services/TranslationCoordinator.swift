@@ -33,6 +33,14 @@ private enum AutomaticSelectionEventSource: Equatable {
     case globalMonitor
 }
 
+/// 自动划词气泡只应为包含自然语言文字的选区发起翻译，避免数字、标点或其他符号无意义地占用服务额度。
+enum AutomaticSelectionTranslationEligibility {
+    /// Unicode 字母覆盖中文、日文、韩文和各类拼音文字；纯数字、符号、空白及表情均不满足展示条件。
+    static func accepts(_ text: String) -> Bool {
+        text.unicodeScalars.contains { CharacterSet.letters.contains($0) }
+    }
+}
+
 @MainActor
 final class TranslationCoordinator {
     static let shared = TranslationCoordinator()
@@ -400,7 +408,9 @@ final class TranslationCoordinator {
                 self.isReadingAutomaticSelection = false
                 guard readGeneration == self.automaticSelectionReadGeneration,
                       Date() >= self.automaticSelectionSuppressedUntil else { return }
-                guard let text, text.count <= 12_000 else {
+                guard let text,
+                      text.count <= 12_000,
+                      AutomaticSelectionTranslationEligibility.accepts(text) else {
                     return
                 }
                 guard text != self.lastObservedAutomaticSelectionText else { return }

@@ -196,6 +196,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         false
     }
 
+    /// 登录启动时不创建主面板，保持剪贴板监听和菜单栏服务静默运行；用户重新打开已运行的应用时再展示主面板。
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+        self.openMainPanel()
+        return false
+    }
+
     // MARK: - Menu Actions
 
     @objc private func openMainPanel() {

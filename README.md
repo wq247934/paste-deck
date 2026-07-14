@@ -9,6 +9,8 @@ PasteDeck is a native macOS clipboard manager for quickly searching, previewing,
 - Records clipboard history for text, rich text, links, Markdown, JSON, images, files, and colors.
 - Shows website names for link cards and lets link history be searched by site name. Automatically fetches webpage titles for copied links.
 - Opens from the menu bar or the global shortcut `Command + Shift + V`.
+- Login launches remain silent in the menu bar; reopening the running app shows the clipboard panel.
+- Click a card to select it, or double-click it to paste it immediately.
 - Menu bar dropdown includes a stats overview header showing today's copies, total items, and cache size.
 - Includes a visual, scenario-based Feature Guide in Settings and the menu bar, covering everyday actions, organization, previews, translation, analytics, and maintenance without a wall of text.
 - Provides fast keyboard navigation that keeps the selected card fully visible at every panel size, plus favorite filters, custom collections, pinning, deletion, and batch paste.
@@ -23,7 +25,7 @@ PasteDeck is a native macOS clipboard manager for quickly searching, previewing,
 - The translation workspace keeps translation actions inside the source card and exposes configured LLMs as direct comparison choices. Translation service settings use grouped credential cards with clear status and add-service entry points.
 - Translation settings, model choices, and result cards show locally bundled provider logos for Baidu, Tencent Cloud, Youdao, Alibaba Cloud, DeepSeek, GLM, Kimi, MiMo, OpenAI, MiniMax, and Qwen. Logo files are cached in memory and never fetched at runtime.
 - `Option + D` fallback probes are globally serialized and restore the original multi-format clipboard. Automatic translation may use this bounded fallback only after a real mouse selection; keyboard-created selections never trigger automatic translation.
-- Automatic selected-text translation requires both Accessibility and Input Monitoring. The settings page reports Input Monitoring status and opens the matching System Settings page; with permission, a recoverable event tap reliably observes mouse selections in other apps.
+- Automatic selected-text translation requires both Accessibility and Input Monitoring. The settings page reports Input Monitoring status and opens the matching System Settings page; with permission, a recoverable event tap reliably observes mouse selections in other apps. Selections containing only numbers, symbols, whitespace, or emoji do not open a translation bubble.
 - Closing an automatic translation window does not reopen it while the original text remains selected. A new mouse selection opens translation again, even when it contains the same text.
 - Statistics panel with daily/30-day trends, type distribution, source app insights, extreme records, and daily translation usage by provider, key fingerprint, and LLM model/token count.
 - Theme support: light, dark, or follow system appearance.
@@ -188,6 +190,8 @@ PasteDeck 是一个原生 macOS 剪贴板管理器，用浮动面板快速搜索
 - 记录文本、富文本、链接、Markdown、JSON、图片、文件和颜色。
 - 链接卡片会显示网站名称，并支持按网站名搜索链接历史。自动抓取复制链接的网页标题。
 - 支持菜单栏打开，也支持全局快捷键 `Command + Shift + V`。
+- 开机登录后静默常驻菜单栏；重新打开已运行的应用时，会显示剪贴板主面板。
+- 单击卡片可选中，双击卡片可立即粘贴。
 - 菜单栏下拉菜单内嵌统计概览，展示今日复制次数、总条数和缓存占用。
 - 菜单栏和设置页均提供“功能指南”：按快速开始、查找整理、预览编辑、翻译、统计、个性化六个场景，用卡片、三步操作和快捷键帮助理解全部功能。
 - 支持键盘导航，并会按当前面板可视区域自动滚动选中卡片；同时支持收藏筛选、自定义收藏夹、系统“翻译”分类、置顶、删除和批量粘贴。翻译分类固定在“收藏”之后，不能删除、改名或排序。
@@ -205,7 +209,7 @@ PasteDeck 是一个原生 macOS 剪贴板管理器，用浮动面板快速搜索
 - 翻译配置、模型选择和译文卡片会显示百度、腾讯云、有道、阿里云、DeepSeek、GLM、Kimi、MiMo、OpenAI、MiniMax、通义千问的本地品牌 Logo；运行时不联网获取图片，并使用进程内缓存避免滚动时重复解码。
 - 自动划词气泡可在设置中勾选并排序多个常规 API 或大模型服务，首项作为默认服务；气泡顶部可切换服务，仅在首次查看某个服务时按需请求并缓存本次结果。气泡本身不写入“翻译”分类；点击放大后进入正式翻译工作区、调用全部已启用常规 API，并保存为可恢复的翻译历史。
 - `Option + D` 的跨应用复制兜底全局串行执行并恢复原多格式剪贴板。自动划词仅在一次真实鼠标划词后才可能使用这条受限兜底；键盘创建的选区不会自动触发翻译。
-- 自动划词需要“辅助功能”和“输入监控”权限。设置页会显示输入监控状态并可直达系统设置；获得权限后通过可恢复的事件 tap 可靠识别其他应用的鼠标划词。
+- 自动划词需要“辅助功能”和“输入监控”权限。设置页会显示输入监控状态并可直达系统设置；获得权限后通过可恢复的事件 tap 可靠识别其他应用的鼠标划词。纯数字、符号、空白或表情选区不会弹出翻译气泡。
 - 关闭或点击气泡外部后，原文本仍处于选中状态也不会再次弹出气泡；重新鼠标划选时，即使文本相同也会重新触发。
 - 统计面板：展示每日/近 30 天趋势、类型分布、来源 App 洞察和极值记录。翻译模块支持今天/近 7 天/近 30 天及全部/API/大模型筛选，API 用量按输入/输出字符统计，大模型用量按服务返回的输入/输出 Token 统计；按日趋势图和服务排行图支持鼠标悬停高亮并显示调用、成功、失败及用量详情。
 - 主题支持：亮色、暗色或跟随系统外观。
@@ -244,7 +248,7 @@ PasteDeck 需要辅助功能权限来读取前台应用选中文字，并模拟 
 2. 按 `Command + Shift + V`，或从菜单栏打开 PasteDeck。
 3. 搜索、筛选、预览、收藏、置顶、删除或粘贴项目。
 4. 按 `Space` 预览当前项目。
-5. 按 `Enter` 粘贴，按 `Shift + Enter` 以纯文本粘贴。
+5. 双击卡片或按 `Enter` 粘贴，按 `Shift + Enter` 以纯文本粘贴。
 6. 需要了解某项能力时，从菜单栏选择“功能指南…”，或在设置中打开“帮助”。
 
 ## 快捷键
