@@ -31,6 +31,24 @@ PasteDeck is a native macOS clipboard manager for quickly searching, previewing,
 - Theme support: light, dark, or follow system appearance.
 - Stores history locally with SwiftData and caches images under `~/Library/Caches/PasteDeck/images/`.
 
+## Screenshots / 界面预览
+
+### Feature Guide / 功能指南
+
+![PasteDeck Feature Guide](docs/images/pastedeck-feature-guide.png)
+
+### Translation Workspace / 翻译工作区
+
+![PasteDeck translation workspace](docs/images/pastedeck-translation-workspace.png)
+
+### Usage Insights / 使用洞察
+
+![PasteDeck statistics](docs/images/pastedeck-statistics.png)
+
+### Content Preview / 内容预览
+
+![PasteDeck JSON preview](docs/images/pastedeck-preview.png)
+
 ## Installation
 
 ### Download
@@ -185,6 +203,8 @@ PasteDeck is released under the MIT License. See [LICENSE](LICENSE).
 
 PasteDeck 是一个原生 macOS 剪贴板管理器，用浮动面板快速搜索、预览、整理和粘贴剪贴板历史。
 
+![PasteDeck 主面板](docs/images/pastedeck-main-panel.png)
+
 ## 功能亮点
 
 - 记录文本、富文本、链接、Markdown、JSON、图片、文件和颜色。
@@ -214,6 +234,24 @@ PasteDeck 是一个原生 macOS 剪贴板管理器，用浮动面板快速搜索
 - 统计面板：展示每日/近 30 天趋势、类型分布、来源 App 洞察和极值记录。翻译模块支持今天/近 7 天/近 30 天及全部/API/大模型筛选，API 用量按输入/输出字符统计，大模型用量按服务返回的输入/输出 Token 统计；按日趋势图和服务排行图支持鼠标悬停高亮并显示调用、成功、失败及用量详情。
 - 主题支持：亮色、暗色或跟随系统外观。
 - 历史记录使用 SwiftData 本地存储，图片缓存位于 `~/Library/Caches/PasteDeck/images/`。
+
+## 界面预览
+
+### 功能指南
+
+![PasteDeck 功能指南](docs/images/pastedeck-feature-guide.png)
+
+### 翻译工作区
+
+![PasteDeck 翻译工作区](docs/images/pastedeck-translation-workspace.png)
+
+### 使用洞察
+
+![PasteDeck 统计](docs/images/pastedeck-statistics.png)
+
+### 内容预览
+
+![PasteDeck JSON 预览](docs/images/pastedeck-preview.png)
 
 ## 安装
 
