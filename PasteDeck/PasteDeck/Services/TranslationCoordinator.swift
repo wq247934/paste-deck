@@ -6,12 +6,15 @@
 //
 
 import AppKit
+import ScreenCaptureKit
 import SwiftData
 import SwiftUI
 
 extension Notification.Name {
     /// 翻译设置保存后通知协调器重新注册快捷键与划词监听。
     static let translationSettingsDidChange = Notification.Name("PasteDeck.translationSettingsDidChange")
+    /// 截图选择层出现前通知主面板主动退出，避免失焦回调与异步屏幕采集发生先后不确定的窗口交接。
+    static let mainPanelShouldCloseForScreenshotTranslation = Notification.Name("PasteDeck.mainPanelShouldCloseForScreenshotTranslation")
 }
 
 /// 翻译工作区窗口的稳定标识，供主面板在焦点交接期间识别为应用内辅助窗口，避免误触发整应用隐藏。
@@ -121,17 +124,22 @@ final class TranslationCoordinator {
             return
         }
         isCapturingScreenshot = true
-        ScreenshotTranslationService.capture { [weak self] result in
-            Task { @MainActor in
-                self?.isCapturingScreenshot = false
-                switch result {
-                case .success(let text):
-                    self?.windowController.show(text: text, mode: .immediate)
-                case .failure(let error):
-                    if case TranslationInteractionError.captureCancelled = error {
-                        return
+        NotificationCenter.default.post(name: .mainPanelShouldCloseForScreenshotTranslation, object: nil)
+        // 让主面板先完成 orderOut，再开始异步枚举屏幕内容；否则截图选择层抢占 key window 时，主面板的
+        // resign-key 回调可能与截图初始化交错，表现为第一次快捷键只关闭面板。
+        DispatchQueue.main.async { [weak self] in
+            ScreenshotTranslationService.capture { [weak self] result in
+                Task { @MainActor in
+                    self?.isCapturingScreenshot = false
+                    switch result {
+                    case .success(let text):
+                        self?.windowController.show(text: text, mode: .immediate)
+                    case .failure(let error):
+                        if case TranslationInteractionError.captureCancelled = error {
+                            return
+                        }
+                        self?.windowController.showError(error.localizedDescription)
                     }
-                    self?.windowController.showError(error.localizedDescription)
                 }
             }
         }
@@ -622,48 +630,375 @@ private enum SelectedTextReader {
 
 // MARK: - Screenshot OCR
 
+@MainActor
 private enum ScreenshotTranslationService {
+    /// 交互选择控制器必须在区域选择、图像裁剪和 OCR 全部完成前保活，否则 NSPanel 会提前释放而中断操作。
+    private static var activeSelectionController: ScreenshotSelectionController?
+
     static func capture(completion: @escaping (Result<String, Error>) -> Void) {
         guard CGPreflightScreenCaptureAccess() else {
             _ = CGRequestScreenCaptureAccess()
             completion(.failure(TranslationInteractionError.screenRecordingPermissionRequired))
             return
         }
+
+        let selectionController = ScreenshotSelectionController { result in
+            activeSelectionController = nil
+            switch result {
+            case .success(let image):
+                recognizeText(in: image, completion: completion)
+            case .failure(let error):
+                completion(.failure(error))
+            }
+        }
+        activeSelectionController = selectionController
+        selectionController.begin()
+    }
+
+    private static func recognizeText(
+        in image: CGImage,
+        completion: @escaping (Result<String, Error>) -> Void
+    ) {
         let fileURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("PasteDeck-Translation-\(UUID().uuidString).png")
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
-        process.arguments = ["-i", "-x", "-t", "png", fileURL.path]
-        process.terminationHandler = { process in
-            guard process.terminationStatus == 0, FileManager.default.fileExists(atPath: fileURL.path) else {
-                completion(.failure(TranslationInteractionError.captureCancelled))
-                return
-            }
-            ImageOCRService.shared.recognizeText(inImageAt: fileURL.path) { text in
-                try? FileManager.default.removeItem(at: fileURL)
-                guard let text, !text.isEmpty else {
-                    completion(.failure(TranslationInteractionError.noTextRecognized))
-                    return
-                }
-                completion(.success(text))
-            }
+        guard let pngData = NSBitmapImageRep(cgImage: image).representation(
+            using: .png,
+            properties: [:]
+        ) else {
+            completion(.failure(TranslationInteractionError.imageEncodingFailed))
+            return
         }
+
         do {
-            try process.run()
+            try pngData.write(to: fileURL, options: .atomic)
         } catch {
             completion(.failure(error))
+            return
         }
+        ImageOCRService.shared.recognizeText(inImageAt: fileURL.path) { text in
+            try? FileManager.default.removeItem(at: fileURL)
+            guard let text, !text.isEmpty else {
+                completion(.failure(TranslationInteractionError.noTextRecognized))
+                return
+            }
+            completion(.success(text))
+        }
+    }
+}
+
+/// 截图翻译先通过 ScreenCaptureKit 固定整张可见屏幕，再在静态画面上选区。
+/// 这样选择层不会参与采集，也不会走 `screencapture -i` 在部分 GPU 窗口上出现的底层内容回退路径。
+@MainActor
+private final class ScreenshotSelectionController {
+    /// 每块屏幕对应的已固定图像；选择完成后以同一屏幕的图像裁剪，避免坐标系跨屏混用。
+    private var capturedImages: [CGDirectDisplayID: CGImage] = [:]
+    /// 尚未返回图像的屏幕数；全部完成后才显示选择层，避免用户面对未完成的画面。
+    private var pendingCaptureCount = 0
+    /// 本次截图涉及的屏幕快照；在异步列举可共享内容返回前保存，避免在回调中重新读取会变化的屏幕列表。
+    private var captureScreens: [NSScreen] = []
+    /// 第一个采集错误；仍等待其他回调结束以避免提前释放仍在运行的回调上下文。
+    private var captureError: Error?
+    /// 全屏选择层窗口；同时覆盖所有屏幕，确保副屏也能进行区域翻译。
+    private var selectionPanels: [NSPanel] = []
+    /// 防止取消、鼠标抬起和异步采集失败重复回调调用方。
+    private var didFinish = false
+    /// 向截图服务返回裁剪后图像或用户取消/采集失败结果的单次回调。
+    private let completion: (Result<CGImage, Error>) -> Void
+
+    init(completion: @escaping (Result<CGImage, Error>) -> Void) {
+        self.completion = completion
+    }
+
+    func begin() {
+        captureScreens = NSScreen.screens
+        guard !captureScreens.isEmpty else {
+            finish(.failure(TranslationInteractionError.captureFailed))
+            return
+        }
+        Task { @MainActor [weak self] in
+            do {
+                let content = try await SCShareableContent.excludingDesktopWindows(
+                    false,
+                    onScreenWindowsOnly: true
+                )
+                self?.beginCapturing(content, error: nil)
+            } catch {
+                self?.beginCapturing(nil, error: error)
+            }
+        }
+    }
+
+    private func beginCapturing(_ content: SCShareableContent?, error: Error?) {
+        guard !didFinish else { return }
+        guard let content else {
+            finish(.failure(error ?? TranslationInteractionError.captureFailed))
+            return
+        }
+        pendingCaptureCount = captureScreens.count
+        for screen in captureScreens {
+            let displayID = screenCaptureDisplayID(for: screen)
+            guard let display = content.displays.first(where: { $0.displayID == displayID }) else {
+                recordCapture(
+                    nil,
+                    error: TranslationInteractionError.captureFailed,
+                    for: displayID
+                )
+                continue
+            }
+            let filter = SCContentFilter(display: display, excludingWindows: [])
+            let configuration = SCStreamConfiguration()
+            configuration.width = display.width
+            configuration.height = display.height
+            configuration.showsCursor = false
+            SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration) { [weak self] image, error in
+                Task { @MainActor [weak self] in
+                    self?.recordCapture(image, error: error, for: displayID)
+                }
+            }
+        }
+    }
+
+    private func recordCapture(
+        _ image: CGImage?,
+        error: Error?,
+        for displayID: CGDirectDisplayID
+    ) {
+        guard !didFinish else { return }
+        if let image {
+            capturedImages[displayID] = image
+        } else if captureError == nil {
+            captureError = error ?? TranslationInteractionError.captureFailed
+        }
+        pendingCaptureCount -= 1
+        guard pendingCaptureCount == 0 else { return }
+        if let captureError {
+            finish(.failure(captureError))
+            return
+        }
+        showSelectionPanels(on: captureScreens)
+    }
+
+    private func showSelectionPanels(on screens: [NSScreen]) {
+        for screen in screens {
+            guard let image = capturedImages[screenCaptureDisplayID(for: screen)] else {
+                finish(.failure(TranslationInteractionError.captureFailed))
+                return
+            }
+            let selectionView = ScreenshotSelectionView(
+                image: image,
+                imageSize: screen.frame.size,
+                onSelection: { [weak self] selectedRect in
+                    self?.completeSelection(selectedRect, image: image, screen: screen)
+                },
+                onCancel: { [weak self] in
+                    self?.finish(.failure(TranslationInteractionError.captureCancelled))
+                }
+            )
+            let panel = ScreenshotSelectionPanel(
+                contentRect: screen.frame,
+                styleMask: [.borderless, .nonactivatingPanel],
+                backing: .buffered,
+                defer: false
+            )
+            panel.backgroundColor = .clear
+            panel.isOpaque = false
+            panel.hasShadow = false
+            panel.becomesKeyOnlyIfNeeded = false
+            panel.hidesOnDeactivate = false
+            panel.worksWhenModal = true
+            panel.level = .screenSaver
+            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+            panel.contentView = selectionView
+            panel.makeFirstResponder(selectionView)
+            panel.orderFrontRegardless()
+            selectionPanels.append(panel)
+        }
+        let mouseLocation = NSEvent.mouseLocation
+        let initialPanel = selectionPanels.first { $0.frame.contains(mouseLocation) } ?? selectionPanels.first
+        initialPanel?.makeKeyAndOrderFront(nil)
+    }
+
+    private func completeSelection(_ selectedRect: NSRect, image: CGImage, screen: NSScreen) {
+        guard !didFinish,
+              let croppedImage = crop(image, to: selectedRect, on: screen) else {
+            finish(.failure(TranslationInteractionError.captureCancelled))
+            return
+        }
+        finish(.success(croppedImage))
+    }
+
+    private func crop(_ image: CGImage, to selectedRect: NSRect, on screen: NSScreen) -> CGImage? {
+        let screenSize = screen.frame.size
+        guard screenSize.width > 0, screenSize.height > 0 else { return nil }
+        let horizontalScale = CGFloat(image.width) / screenSize.width
+        let verticalScale = CGFloat(image.height) / screenSize.height
+        let cropRect = CGRect(
+            x: floor(selectedRect.minX * horizontalScale),
+            y: floor((screenSize.height - selectedRect.maxY) * verticalScale),
+            width: ceil(selectedRect.width * horizontalScale),
+            height: ceil(selectedRect.height * verticalScale)
+        ).integral.intersection(CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        guard !cropRect.isNull, !cropRect.isEmpty else { return nil }
+        return image.cropping(to: cropRect)
+    }
+
+    private func finish(_ result: Result<CGImage, Error>) {
+        guard !didFinish else { return }
+        didFinish = true
+        selectionPanels.forEach { $0.orderOut(nil) }
+        selectionPanels.removeAll()
+        completion(result)
+    }
+
+    private func screenCaptureDisplayID(for screen: NSScreen) -> CGDirectDisplayID {
+        let screenNumberKey = NSDeviceDescriptionKey("NSScreenNumber")
+        return (screen.deviceDescription[screenNumberKey] as? NSNumber)?.uint32Value ?? 0
+    }
+}
+
+private final class ScreenshotSelectionPanel: NSPanel {
+    override var canBecomeMain: Bool { false }
+    override var canBecomeKey: Bool { true }
+}
+
+private final class ScreenshotSelectionView: NSView {
+    private let image: NSImage
+    private let onSelection: (NSRect) -> Void
+    private let onCancel: () -> Void
+    private var dragStartPoint: NSPoint?
+    private var selectedRect = NSRect.zero
+    private var hasStartedSelection = false
+
+    init(
+        image: CGImage,
+        imageSize: NSSize,
+        onSelection: @escaping (NSRect) -> Void,
+        onCancel: @escaping () -> Void
+    ) {
+        self.image = NSImage(cgImage: image, size: imageSize)
+        self.onSelection = onSelection
+        self.onCancel = onCancel
+        super.init(frame: NSRect(origin: .zero, size: imageSize))
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override var acceptsFirstResponder: Bool { true }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        image.draw(in: bounds, from: .zero, operation: .sourceOver, fraction: 1)
+        NSColor.black.withAlphaComponent(0.35).setFill()
+        bounds.fill()
+        if !hasStartedSelection {
+            drawInstruction()
+        }
+        guard !selectedRect.isEmpty else { return }
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
+        context.saveGState()
+        context.setBlendMode(.clear)
+        context.fill(selectedRect)
+        context.restoreGState()
+        NSColor.white.withAlphaComponent(0.9).setStroke()
+        NSBezierPath(rect: selectedRect).stroke()
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        dragStartPoint = convert(event.locationInWindow, from: nil)
+        selectedRect = .zero
+        hasStartedSelection = false
+        needsDisplay = true
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let dragStartPoint else { return }
+        hasStartedSelection = true
+        updateSelection(from: dragStartPoint, to: convert(event.locationInWindow, from: nil))
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        guard let dragStartPoint else { return }
+        let endPoint = convert(event.locationInWindow, from: nil)
+        updateSelection(from: dragStartPoint, to: endPoint)
+        self.dragStartPoint = nil
+        guard selectedRect.width >= 2, selectedRect.height >= 2 else {
+            onCancel()
+            return
+        }
+        onSelection(selectedRect)
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53 {
+            onCancel()
+            return
+        }
+        super.keyDown(with: event)
+    }
+
+    private func updateSelection(from startPoint: NSPoint, to endPoint: NSPoint) {
+        selectedRect = NSRect(
+            x: min(startPoint.x, endPoint.x),
+            y: min(startPoint.y, endPoint.y),
+            width: abs(endPoint.x - startPoint.x),
+            height: abs(endPoint.y - startPoint.y)
+        ).intersection(bounds)
+        needsDisplay = true
+    }
+
+    private func drawInstruction() {
+        let title = "拖动鼠标框选想要翻译的文字"
+        let subtitle = "按 Esc 取消"
+        let titleAttributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 18, weight: .semibold),
+            .foregroundColor: NSColor.white
+        ]
+        let subtitleAttributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 13, weight: .regular),
+            .foregroundColor: NSColor.white.withAlphaComponent(0.8)
+        ]
+        let titleSize = title.size(withAttributes: titleAttributes)
+        let subtitleSize = subtitle.size(withAttributes: subtitleAttributes)
+        let cardSize = NSSize(
+            width: max(titleSize.width, subtitleSize.width) + 48,
+            height: titleSize.height + subtitleSize.height + 38
+        )
+        let cardRect = NSRect(
+            x: (bounds.width - cardSize.width) / 2,
+            y: (bounds.height - cardSize.height) / 2,
+            width: cardSize.width,
+            height: cardSize.height
+        )
+        NSColor.black.withAlphaComponent(0.58).setFill()
+        NSBezierPath(roundedRect: cardRect, xRadius: 12, yRadius: 12).fill()
+        title.draw(
+            at: NSPoint(x: cardRect.midX - titleSize.width / 2, y: cardRect.maxY - titleSize.height - 17),
+            withAttributes: titleAttributes
+        )
+        subtitle.draw(
+            at: NSPoint(x: cardRect.midX - subtitleSize.width / 2, y: cardRect.minY + 15),
+            withAttributes: subtitleAttributes
+        )
     }
 }
 
 private enum TranslationInteractionError: LocalizedError {
     case captureCancelled
+    case captureFailed
+    case imageEncodingFailed
     case noTextRecognized
     case screenRecordingPermissionRequired
 
     var errorDescription: String? {
         switch self {
         case .captureCancelled: return "已取消截图"
+        case .captureFailed: return "无法截取屏幕内容。请确认“屏幕录制”权限后重试。"
+        case .imageEncodingFailed: return "无法处理截图内容，请重试。"
         case .noTextRecognized: return "截图中未识别到文字"
         case .screenRecordingPermissionRequired: return "截图翻译需要“屏幕录制”权限。授权后请完全退出并重新打开 PasteDeck。"
         }

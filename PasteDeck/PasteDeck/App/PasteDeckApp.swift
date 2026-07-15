@@ -188,6 +188,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             object: nil
         )
 
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(hideMainPanelForScreenshotTranslation),
+            name: .mainPanelShouldCloseForScreenshotTranslation,
+            object: nil
+        )
+
         // Main panel is created lazily on first use so app launch does not
         // pay the SwiftUI/SwiftData history-loading cost.
     }
@@ -256,6 +263,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     @objc private func toggleMainPanel() {
         mainPanelControllerForUse().togglePanel()
+    }
+
+    /// 截图翻译不把剪贴板面板当作截图目标。若面板已打开，先主动关闭它但保持应用不隐藏，
+    /// 再由协调器在下一轮主线程事件循环展示截图选择层，确保窗口焦点交接只有一个确定顺序。
+    @objc private func hideMainPanelForScreenshotTranslation() {
+        mainPanelController?.hidePanel(shouldHideApp: false)
     }
 
     private func mainPanelControllerForUse() -> MainPanelController {
