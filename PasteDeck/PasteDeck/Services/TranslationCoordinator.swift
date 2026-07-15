@@ -692,6 +692,8 @@ struct TranslationOutput: Identifiable, Codable {
     let providerName: String
     /// 卡片副标题，显示 API 类型或具体模型名称。
     let detail: String
+    /// 本卡片实际使用的目标语言；候选值为 simplifiedChinese、english、spanish、hindi、arabic、bengali、portuguese、russian、japanese、german、french、korean、indonesian、urdu、turkish、vietnamese、italian、thai、persian、polish；nil 表示旧版历史没有保存该信息。
+    var targetLanguage: TranslationTargetLanguage? = nil
     /// 已成功返回的译文内容，空字符串表示尚未完成。
     var translatedText: String
     /// 请求失败时显示的可恢复错误信息。
@@ -728,6 +730,8 @@ final class TranslationViewModel: ObservableObject {
     @Published private(set) var providerConfigurations: [TranslationProviderConfiguration] = []
     @Published var llmConfigurations: [LLMTranslationConfiguration] = []
     @Published var mode: TranslationWindowMode
+    /// 工作区目标语言；候选值为 automatic、simplifiedChinese、english、spanish、hindi、arabic、bengali、portuguese、russian、japanese、german、french、korean、indonesian、urdu、turkish、vietnamese、italian、thai、persian、polish。
+    @Published private(set) var targetLanguage: TranslationTargetLanguage
     /// 当前持久化翻译工作区的 ClipboardItem 标识；nil 表示用户尚未实际发起翻译。
     @Published private(set) var historyItemID: UUID?
 
@@ -738,15 +742,17 @@ final class TranslationViewModel: ObservableObject {
     init(sourceText: String, mode: TranslationWindowMode) {
         self.sourceText = sourceText
         self.mode = mode
+        self.targetLanguage = .automatic
         self.historyItemID = nil
         refreshConfigurations()
     }
 
     func reset(sourceText: String, mode: TranslationWindowMode) {
         cancelAll()
+        historyItemID = nil
         self.sourceText = sourceText
         self.mode = mode
-        historyItemID = nil
+        targetLanguage = .automatic
         outputs = []
         errorMessage = nil
         refreshConfigurations()
@@ -780,11 +786,27 @@ final class TranslationViewModel: ObservableObject {
             output.isTranslating = false
             return output
         }
+        targetLanguage = workspace.targetLanguage
         self.historyItemID = itemID
         errorMessage = nil
         mode = .input
         refreshConfigurations()
         return true
+    }
+
+    /// 更新目标语言后立即替换常规 API 译文，使目标语言菜单成为一次完整的重新翻译操作。
+    /// 大模型卡片保留原结果，避免无意重复调用用户单独选择的模型。
+    func selectTargetLanguage(_ targetLanguage: TranslationTargetLanguage) {
+        guard self.targetLanguage != targetLanguage else { return }
+
+        self.targetLanguage = targetLanguage
+        saveWorkspace()
+        refreshConfigurations()
+        guard !sourceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              providerConfigurations.contains(where: \.isConfigured) else {
+            return
+        }
+        translateUsingAPI()
     }
 
     func translateUsingAPI() {
@@ -799,7 +821,7 @@ final class TranslationViewModel: ObservableObject {
 
         ensureWorkspace(source: source)
         errorMessage = nil
-        let targetLanguage = TranslateService.detectTargetLanguage(for: source)
+        let resolvedTargetLanguage = TranslateService.resolvedTargetLanguage(targetLanguage, for: source)
         cancelOutputs(of: .api)
         outputs.removeAll { $0.kind == .api }
 
@@ -811,6 +833,7 @@ final class TranslationViewModel: ObservableObject {
                 configurationID: configuration.id,
                 providerName: configuration.name.isEmpty ? configuration.kind.displayName : configuration.name,
                 detail: configuration.kind.displayName,
+                targetLanguage: resolvedTargetLanguage,
                 translatedText: "",
                 errorMessage: nil,
                 isTranslating: true
@@ -819,7 +842,7 @@ final class TranslationViewModel: ObservableObject {
                 outputID: outputID,
                 configuration: configuration,
                 source: source,
-                targetLanguage: targetLanguage
+                targetLanguage: resolvedTargetLanguage
             )
         }
         saveWorkspace()
@@ -836,7 +859,7 @@ final class TranslationViewModel: ObservableObject {
 
         ensureWorkspace(source: source)
         let outputID = UUID()
-        let targetLanguage = TranslateService.detectTargetLanguage(for: source)
+        let resolvedTargetLanguage = TranslateService.resolvedTargetLanguage(targetLanguage, for: source)
         errorMessage = nil
         outputs.append(TranslationOutput(
             id: outputID,
@@ -844,6 +867,7 @@ final class TranslationViewModel: ObservableObject {
             configurationID: configuration.id,
             providerName: configuration.name,
             detail: configuration.model,
+            targetLanguage: resolvedTargetLanguage,
             translatedText: "",
             errorMessage: nil,
             isTranslating: true
@@ -852,7 +876,7 @@ final class TranslationViewModel: ObservableObject {
             outputID: outputID,
             configuration: configuration,
             source: source,
-            targetLanguage: targetLanguage
+            targetLanguage: resolvedTargetLanguage
         )
         saveWorkspace()
     }
@@ -886,8 +910,9 @@ final class TranslationViewModel: ObservableObject {
         guard let output = outputs.first(where: { $0.id == id }) else { return }
         let source = sourceText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !source.isEmpty else { return }
-        let targetLanguage = TranslateService.detectTargetLanguage(for: source)
+        let resolvedTargetLanguage = TranslateService.resolvedTargetLanguage(targetLanguage, for: source)
         guard let index = outputs.firstIndex(where: { $0.id == id }) else { return }
+        outputs[index].targetLanguage = resolvedTargetLanguage
         outputs[index].translatedText = ""
         outputs[index].errorMessage = nil
         outputs[index].isTranslating = true
@@ -901,7 +926,7 @@ final class TranslationViewModel: ObservableObject {
                 saveWorkspace()
                 return
             }
-            startAPITranslation(outputID: id, configuration: configuration, source: source, targetLanguage: targetLanguage)
+            startAPITranslation(outputID: id, configuration: configuration, source: source, targetLanguage: resolvedTargetLanguage)
         case .llm:
             guard let configuration = llmConfigurations.first(where: { $0.id == output.configurationID && $0.isConfigured }) else {
                 outputs[index].isTranslating = false
@@ -909,7 +934,7 @@ final class TranslationViewModel: ObservableObject {
                 saveWorkspace()
                 return
             }
-            startLLMTranslation(outputID: id, configuration: configuration, source: source, targetLanguage: targetLanguage)
+            startLLMTranslation(outputID: id, configuration: configuration, source: source, targetLanguage: resolvedTargetLanguage)
         }
         saveWorkspace()
     }
@@ -947,7 +972,7 @@ final class TranslationViewModel: ObservableObject {
         outputID: UUID,
         configuration: TranslationProviderConfiguration,
         source: String,
-        targetLanguage: String
+        targetLanguage: TranslationTargetLanguage
     ) {
         let task = TranslateService(configuration: configuration).translateSegment(source, to: targetLanguage) { [weak self] result in
             DispatchQueue.main.async {
@@ -963,7 +988,7 @@ final class TranslationViewModel: ObservableObject {
         outputID: UUID,
         configuration: LLMTranslationConfiguration,
         source: String,
-        targetLanguage: String
+        targetLanguage: TranslationTargetLanguage
     ) {
         let task = LLMTranslationService(configuration: configuration).translate(source, targetLanguage: targetLanguage) { [weak self] result in
             DispatchQueue.main.async {
@@ -984,12 +1009,12 @@ final class TranslationViewModel: ObservableObject {
 
     private func ensureWorkspace(source: String) {
         guard historyItemID == nil else { return }
-        historyItemID = TranslationWorkspaceCache.create(sourceText: source)
+        historyItemID = TranslationWorkspaceCache.create(sourceText: source, targetLanguage: targetLanguage)
     }
 
     private func saveWorkspace() {
         guard let historyItemID else { return }
-        TranslationWorkspaceCache.save(itemID: historyItemID, outputs: outputs)
+        TranslationWorkspaceCache.save(itemID: historyItemID, outputs: outputs, targetLanguage: targetLanguage)
     }
 
     private func refreshConfigurations() {
@@ -1139,6 +1164,41 @@ private struct TranslationWorkspaceView: View {
         model.providerConfigurations.filter(\.isConfigured).count
     }
 
+    /// 紧凑菜单在保留完整语言名称的同时，避免默认 Picker 在原文卡片中占用过多视觉空间。
+    private var targetLanguageMenu: some View {
+        Menu {
+            ForEach(TranslationTargetLanguage.allCases) { targetLanguage in
+                Button {
+                    model.selectTargetLanguage(targetLanguage)
+                } label: {
+                    if model.targetLanguage == targetLanguage {
+                        Label(targetLanguage.displayName, systemImage: "checkmark")
+                    } else {
+                        Text(targetLanguage.displayName)
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "globe")
+                Text("目标：\(model.targetLanguage == .automatic ? "自动" : model.targetLanguage.displayName)")
+                    .lineLimit(1)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+            }
+            .font(.system(size: 12, weight: .medium))
+            .foregroundColor(.primary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(Color.primary.opacity(0.055), in: Capsule())
+            .overlay(Capsule().stroke(Color.primary.opacity(0.1), lineWidth: 1))
+            .contentShape(Capsule())
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help("源语言始终自动识别；不支持所选目标语言的服务会在对应卡片中提示")
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             workspaceHeader
@@ -1217,7 +1277,7 @@ private struct TranslationWorkspaceView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("翻译工作区")
                     .font(.system(size: 17, weight: .semibold))
-                Text("自动识别中英文 · 多结果并排对比")
+                Text("源语言自动识别 · 20 种目标语言 · 多结果并排对比")
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
             }
@@ -1280,6 +1340,8 @@ private struct TranslationWorkspaceView: View {
                 .foregroundColor(.secondary)
 
                 Spacer()
+
+                targetLanguageMenu
 
                 Button {
                     model.translateUsingAPI()
@@ -1398,6 +1460,14 @@ private struct TranslationWorkspaceView: View {
                         .foregroundColor(.secondary)
                 }
                 Spacer()
+                if let targetLanguage = output.targetLanguage {
+                    Text(targetLanguage.displayName)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 4)
+                        .background(Color.primary.opacity(0.055), in: Capsule())
+                }
                 if output.isTranslating {
                     ProgressView()
                         .controlSize(.small)

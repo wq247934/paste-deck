@@ -933,7 +933,7 @@ struct TranslationSettingsView: View {
         providerTestMessages[id] = nil
         let startDate = Date()
         let service = TranslateService(configuration: configuration)
-        service.translateSegment("hello", from: "en", to: "zh") { result in
+        service.translateSegment("hello", from: "en", to: .simplifiedChinese) { result in
             DispatchQueue.main.async {
                 testingProviderIDs.remove(id)
                 let latency = Int(Date().timeIntervalSince(startDate) * 1000)
@@ -952,7 +952,7 @@ struct TranslationSettingsView: View {
         testingLLMIds.insert(id)
         llmTestMessages[id] = nil
         let startDate = Date()
-        LLMTranslationService(configuration: configuration).translate("hello", targetLanguage: "zh") { result in
+        LLMTranslationService(configuration: configuration).translate("hello", targetLanguage: .simplifiedChinese) { result in
             DispatchQueue.main.async {
                 testingLLMIds.remove(id)
                 let latency = Int(Date().timeIntervalSince(startDate) * 1000)

@@ -7,6 +7,7 @@
 
 import CryptoKit
 import Foundation
+import NaturalLanguage
 
 // MARK: - Configuration
 
@@ -104,6 +105,140 @@ enum TranslationProviderKind: String, Codable, CaseIterable, Identifiable {
         case .tencent: return "Secret Key"
         case .youdao: return "应用密钥"
         case .alibaba: return "AccessKey Secret"
+        }
+    }
+}
+
+/// 翻译工作区统一使用的目标语言；raw value 会写入翻译历史，已有值不可随意调整。
+/// “自动”只决定目标语言，源语言在产品层始终自动识别；其余 20 项覆盖最常用的全球翻译目标。
+enum TranslationTargetLanguage: String, Codable, CaseIterable, Identifiable {
+    /// 按原文自动选择：中文字符占比超过三分之一时译为英文，否则译为简体中文。
+    case automatic = "auto"
+    /// 简体中文。
+    case simplifiedChinese = "zh"
+    /// 英语。
+    case english = "en"
+    /// 西班牙语。
+    case spanish = "es"
+    /// 印地语。
+    case hindi = "hi"
+    /// 阿拉伯语。
+    case arabic = "ar"
+    /// 孟加拉语。
+    case bengali = "bn"
+    /// 葡萄牙语。
+    case portuguese = "pt"
+    /// 俄语。
+    case russian = "ru"
+    /// 日语。
+    case japanese = "ja"
+    /// 德语。
+    case german = "de"
+    /// 法语。
+    case french = "fr"
+    /// 韩语。
+    case korean = "ko"
+    /// 印度尼西亚语。
+    case indonesian = "id"
+    /// 乌尔都语。
+    case urdu = "ur"
+    /// 土耳其语。
+    case turkish = "tr"
+    /// 越南语。
+    case vietnamese = "vi"
+    /// 意大利语。
+    case italian = "it"
+    /// 泰语。
+    case thai = "th"
+    /// 波斯语。
+    case persian = "fa"
+    /// 波兰语。
+    case polish = "pl"
+
+    var id: String { rawValue }
+
+    /// 目标语言选择器和译文卡片使用的本地化名称。
+    var displayName: String {
+        switch self {
+        case .automatic: return "自动（按原文选择）"
+        case .simplifiedChinese: return "简体中文"
+        case .english: return "英语"
+        case .spanish: return "西班牙语"
+        case .hindi: return "印地语"
+        case .arabic: return "阿拉伯语"
+        case .bengali: return "孟加拉语"
+        case .portuguese: return "葡萄牙语"
+        case .russian: return "俄语"
+        case .japanese: return "日语"
+        case .german: return "德语"
+        case .french: return "法语"
+        case .korean: return "韩语"
+        case .indonesian: return "印度尼西亚语"
+        case .urdu: return "乌尔都语"
+        case .turkish: return "土耳其语"
+        case .vietnamese: return "越南语"
+        case .italian: return "意大利语"
+        case .thai: return "泰语"
+        case .persian: return "波斯语"
+        case .polish: return "波兰语"
+        }
+    }
+
+    /// OpenAI-compatible 大模型系统提示中使用的明确语言名称。
+    var llmDescription: String {
+        switch self {
+        case .automatic: return "the automatically selected target language"
+        case .simplifiedChinese: return "Simplified Chinese"
+        case .english: return "English"
+        case .spanish: return "Spanish"
+        case .hindi: return "Hindi"
+        case .arabic: return "Arabic"
+        case .bengali: return "Bengali"
+        case .portuguese: return "Portuguese"
+        case .russian: return "Russian"
+        case .japanese: return "Japanese"
+        case .german: return "German"
+        case .french: return "French"
+        case .korean: return "Korean"
+        case .indonesian: return "Indonesian"
+        case .urdu: return "Urdu"
+        case .turkish: return "Turkish"
+        case .vietnamese: return "Vietnamese"
+        case .italian: return "Italian"
+        case .thai: return "Thai"
+        case .persian: return "Persian"
+        case .polish: return "Polish"
+        }
+    }
+
+    /// 将统一语言标识转换成各常规 API 的语言码；nil 表示该服务商不支持该目标语言。
+    func apiCode(for providerKind: TranslationProviderKind) -> String? {
+        guard self != .automatic else { return nil }
+
+        switch providerKind {
+        case .baidu:
+            switch self {
+            case .spanish: return "spa"
+            case .arabic: return "ara"
+            case .japanese: return "jp"
+            case .french: return "fra"
+            case .korean: return "kor"
+            case .vietnamese: return "vie"
+            default: return rawValue
+            }
+        case .tencent:
+            switch self {
+            case .simplifiedChinese, .english, .spanish, .arabic, .portuguese,
+                 .russian, .japanese, .german, .french, .korean, .indonesian,
+                 .turkish, .vietnamese, .italian, .thai:
+                return rawValue
+            case .automatic, .hindi, .bengali, .urdu, .persian, .polish:
+                return nil
+            }
+        case .youdao:
+            return self == .simplifiedChinese ? "zh-CHS" : rawValue
+        case .alibaba:
+            return rawValue
         }
     }
 }
@@ -302,6 +437,10 @@ final class TranslateService {
 
     /// 国内翻译 API 的常见单次限制为 5,000-6,000 字符；按 4,500 字节拆分可兼容 UTF-8 中文与各平台限制。
     private let maxBytesPerRequest = 4500
+    /// 腾讯云文本翻译需要显式源语言；这些是其可接受并可由 NaturalLanguage 直接映射的源语言码。
+    private static let tencentSourceLanguageCodes: Set<String> = [
+        "ar", "de", "en", "es", "fr", "id", "it", "ja", "ko", "ms", "pt", "ru", "th", "tr", "vi", "zh"
+    ]
 
     init(configuration: TranslationProviderConfiguration) {
         self.configuration = configuration
@@ -394,11 +533,20 @@ final class TranslateService {
     func translateSegment(
         _ text: String,
         from: String = "auto",
-        to: String = "zh",
+        to targetLanguage: TranslationTargetLanguage = .simplifiedChinese,
         completion: @escaping (Result<String, Error>) -> Void
     ) -> URLSessionDataTask? {
         guard configuration.isConfigured else {
             completion(.failure(TranslateError.notConfigured))
+            return nil
+        }
+
+        let resolvedTargetLanguage = Self.resolvedTargetLanguage(targetLanguage, for: text)
+        guard let targetLanguageCode = resolvedTargetLanguage.apiCode(for: configuration.kind) else {
+            completion(.failure(TranslateError.unsupportedTargetLanguage(
+                provider: configuration.name.isEmpty ? configuration.kind.displayName : configuration.name,
+                language: resolvedTargetLanguage.displayName
+            )))
             return nil
         }
 
@@ -413,13 +561,13 @@ final class TranslateService {
 
         switch configuration.kind {
         case .baidu:
-            return translateWithBaidu(text, from: from, to: to, completion: completionWithUsage)
+            return translateWithBaidu(text, from: from, to: targetLanguageCode, completion: completionWithUsage)
         case .tencent:
-            return translateWithTencent(text, from: from, to: to, completion: completionWithUsage)
+            return translateWithTencent(text, from: from, to: targetLanguageCode, completion: completionWithUsage)
         case .youdao:
-            return translateWithYoudao(text, from: from, to: to, completion: completionWithUsage)
+            return translateWithYoudao(text, from: from, to: targetLanguageCode, completion: completionWithUsage)
         case .alibaba:
-            return translateWithAlibaba(text, from: from, to: to, completion: completionWithUsage)
+            return translateWithAlibaba(text, from: from, to: targetLanguageCode, completion: completionWithUsage)
         }
     }
 
@@ -516,7 +664,7 @@ final class TranslateService {
         dateFormatter.timeZone = TimeZone(secondsFromGMT: 0)
         dateFormatter.dateFormat = "yyyy-MM-dd"
         let date = dateFormatter.string(from: Date(timeIntervalSince1970: TimeInterval(timestamp)))
-        let sourceLanguage = from == "auto" ? (to == "zh" ? "en" : "zh") : from
+        let sourceLanguage = Self.tencentSourceLanguage(for: text, requestedSource: from)
         let bodyObject: [String: Any] = [
             "SourceText": text,
             "Source": sourceLanguage,
@@ -692,6 +840,33 @@ final class TranslateService {
         let chineseCount = text.unicodeScalars.filter { chineseRange.contains($0) }.count
         return chineseCount > text.unicodeScalars.count / 3 ? "en" : "zh"
     }
+
+    /// 将用户的目标语言选择解析为一次请求的实际目标；显式语言不会被原文检测覆盖。
+    static func resolvedTargetLanguage(
+        _ targetLanguage: TranslationTargetLanguage,
+        for text: String
+    ) -> TranslationTargetLanguage {
+        guard targetLanguage == .automatic else { return targetLanguage }
+
+        return detectTargetLanguage(for: text) == "en" ? .english : .simplifiedChinese
+    }
+
+    /// 腾讯云 TextTranslate 不接受产品层的自动源语言语义，因此先用系统语言识别转换成其源语言码。
+    /// 无法可靠映射时保留原中英文兜底，避免为了检测额外发起一次收费网络请求。
+    private static func tencentSourceLanguage(for text: String, requestedSource: String) -> String {
+        guard requestedSource == "auto" else { return requestedSource }
+
+        if let detectedLanguageCode = NLLanguageRecognizer.dominantLanguage(for: text)?.rawValue {
+            if detectedLanguageCode == "zh-Hans" || detectedLanguageCode == "zh-Hant" {
+                return "zh"
+            }
+            if tencentSourceLanguageCodes.contains(detectedLanguageCode) {
+                return detectedLanguageCode
+            }
+        }
+
+        return detectTargetLanguage(for: text) == "en" ? "zh" : "en"
+    }
 }
 
 // MARK: - LLM Translation
@@ -750,7 +925,7 @@ final class LLMTranslationService {
     @discardableResult
     func translate(
         _ text: String,
-        targetLanguage: String,
+        targetLanguage: TranslationTargetLanguage,
         completion: @escaping (Result<String, Error>) -> Void
     ) -> URLSessionDataTask? {
         guard configuration.isConfigured,
@@ -758,7 +933,8 @@ final class LLMTranslationService {
             completion(.failure(TranslateError.notConfigured))
             return nil
         }
-        let targetDescription = targetLanguage == "en" ? "English" : "Simplified Chinese"
+        let resolvedTargetLanguage = TranslateService.resolvedTargetLanguage(targetLanguage, for: text)
+        let targetDescription = resolvedTargetLanguage.llmDescription
         let bodyObject: [String: Any] = [
             "model": configuration.model,
             "messages": [
@@ -885,6 +1061,7 @@ enum TranslateError: LocalizedError {
     case invalidResponse
     case apiError(provider: String, code: String, message: String)
     case notConfigured
+    case unsupportedTargetLanguage(provider: String, language: String)
 
     var errorDescription: String? {
         switch self {
@@ -893,6 +1070,7 @@ enum TranslateError: LocalizedError {
         case .invalidResponse: return "服务返回格式异常"
         case .apiError(let provider, let code, let message): return "\(provider)错误 \(code)：\(message)"
         case .notConfigured: return "翻译服务尚未完成配置"
+        case .unsupportedTargetLanguage(let provider, let language): return "\(provider)暂不支持翻译为\(language)"
         }
     }
 }

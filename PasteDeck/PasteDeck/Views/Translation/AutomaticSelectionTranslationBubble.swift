@@ -87,7 +87,7 @@ private final class AutomaticSelectionTranslationBubbleModel: ObservableObject {
         guard resultStates[reference] == nil else { return }
 
         resultStates[reference] = .translating
-        let targetLanguage = TranslateService.detectTargetLanguage(for: sourceText)
+        let targetLanguage = TranslateService.resolvedTargetLanguage(.automatic, for: sourceText)
         let completion: (Result<String, Error>) -> Void = { [weak self] result in
             DispatchQueue.main.async {
                 guard let self else { return }

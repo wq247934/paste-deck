@@ -169,6 +169,30 @@ final class TranslationConfigurationTests: XCTestCase {
     func testTargetLanguageDetectionSwitchesBetweenChineseAndEnglish() {
         XCTAssertEqual(TranslateService.detectTargetLanguage(for: "这是中文内容"), "en")
         XCTAssertEqual(TranslateService.detectTargetLanguage(for: "PasteDeck translates selected text"), "zh")
+        XCTAssertEqual(
+            TranslateService.resolvedTargetLanguage(.automatic, for: "这是中文内容"),
+            .english
+        )
+        XCTAssertEqual(
+            TranslateService.resolvedTargetLanguage(.automatic, for: "PasteDeck translates selected text"),
+            .simplifiedChinese
+        )
+        XCTAssertEqual(
+            TranslateService.resolvedTargetLanguage(.japanese, for: "PasteDeck translates selected text"),
+            .japanese
+        )
+    }
+
+    func testTranslationTargetLanguageOffersAutomaticPlusTwentyCommonLanguages() {
+        XCTAssertEqual(TranslationTargetLanguage.allCases.first, .automatic)
+        XCTAssertEqual(TranslationTargetLanguage.allCases.filter { $0 != .automatic }.count, 20)
+    }
+
+    func testTranslationTargetLanguageMapsProviderSpecificCodesAndUnsupportedTargets() {
+        XCTAssertEqual(TranslationTargetLanguage.simplifiedChinese.apiCode(for: .youdao), "zh-CHS")
+        XCTAssertEqual(TranslationTargetLanguage.japanese.apiCode(for: .baidu), "jp")
+        XCTAssertEqual(TranslationTargetLanguage.polish.apiCode(for: .alibaba), "pl")
+        XCTAssertNil(TranslationTargetLanguage.polish.apiCode(for: .tencent))
     }
 
     func testLLMPresetsKeepModelEmptyUntilUserSelectsOrEntersOne() {
@@ -245,6 +269,7 @@ final class TranslationConfigurationTests: XCTestCase {
             configurationID: configurationID,
             providerName: "DeepSeek",
             detail: "model-a",
+            targetLanguage: .japanese,
             translatedText: "第一版译文",
             errorMessage: nil,
             isTranslating: false
@@ -255,17 +280,27 @@ final class TranslationConfigurationTests: XCTestCase {
             configurationID: configurationID,
             providerName: "DeepSeek",
             detail: "model-a",
+            targetLanguage: .japanese,
             translatedText: "第二版译文",
             errorMessage: nil,
             isTranslating: false
         )
 
-        let data = try JSONEncoder().encode(TranslationWorkspaceSnapshot(outputs: [firstOutput, secondOutput]))
+        let data = try JSONEncoder().encode(TranslationWorkspaceSnapshot(
+            outputs: [firstOutput, secondOutput],
+            targetLanguage: .japanese
+        ))
         let decoded = try JSONDecoder().decode(TranslationWorkspaceSnapshot.self, from: data)
 
         XCTAssertEqual(decoded.outputs.count, 2)
         XCTAssertEqual(decoded.outputs.map(\.translatedText), ["第一版译文", "第二版译文"])
         XCTAssertEqual(decoded.outputs.map(\.configurationID), [configurationID, configurationID])
+        XCTAssertEqual(decoded.outputs.map(\.targetLanguage), [.japanese, .japanese])
+        XCTAssertEqual(decoded.targetLanguage, .japanese)
+
+        let legacyData = try XCTUnwrap(#"{"outputs":[]}"#.data(using: .utf8))
+        let legacySnapshot = try JSONDecoder().decode(TranslationWorkspaceSnapshot.self, from: legacyData)
+        XCTAssertNil(legacySnapshot.targetLanguage)
     }
 
     func testMultipleProviderCredentialsResolveFromOneCredentialEnvelope() {
