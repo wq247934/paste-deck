@@ -235,11 +235,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let hostingController = NSHostingController(rootView: settingsView)
         let window = NSWindow(contentViewController: hostingController)
         window.title = "PasteDeck 设置"
-        window.styleMask = [.titled, .closable, .miniaturizable]
+        window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
         window.delegate = self
         window.isReleasedWhenClosed = false
         window.hidesOnDeactivate = false
-        window.setContentSize(NSSize(width: 760, height: 520))
+        window.contentMinSize = SettingsWindowLayout.minimumContentSize
+        window.setContentSize(SettingsWindowLayout.defaultContentSize)
         // 按当前外观模式渲染设置页（浅色/深色/跟随系统）。
         window.appearance = AppearanceResolver.currentAppearance
         installSettingsAppearanceObserver()

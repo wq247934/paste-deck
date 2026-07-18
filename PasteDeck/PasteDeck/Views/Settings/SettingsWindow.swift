@@ -10,6 +10,14 @@ import SwiftData
 import ServiceManagement
 import UniformTypeIdentifiers
 
+/// 设置窗口的尺寸策略集中在一个位置，确保 SwiftUI 内容约束与 AppKit 窗口能力保持一致。
+enum SettingsWindowLayout {
+    /// 默认使用更宽的内容区，让统计图表和双栏洞察在首次打开时拥有足够的可读空间。
+    static let defaultContentSize = CGSize(width: 920, height: 680)
+    /// 最小尺寸保留完整侧边栏和单栏设置内容，窗口缩小时由各页面自行响应式换行。
+    static let minimumContentSize = CGSize(width: 760, height: 520)
+}
+
 struct SettingsWindow: View {
     @State private var selectedPane: SettingsPane
 
@@ -39,7 +47,14 @@ struct SettingsWindow: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color.primary.opacity(0.018))
         }
-        .frame(width: 760, height: 520)
+        .frame(
+            minWidth: SettingsWindowLayout.minimumContentSize.width,
+            idealWidth: SettingsWindowLayout.defaultContentSize.width,
+            maxWidth: .infinity,
+            minHeight: SettingsWindowLayout.minimumContentSize.height,
+            idealHeight: SettingsWindowLayout.defaultContentSize.height,
+            maxHeight: .infinity
+        )
         .background(.thinMaterial)
         .onReceive(NotificationCenter.default.publisher(for: .selectSettingsPane)) { notification in
             guard let pane = notification.object as? SettingsPane else { return }
@@ -188,11 +203,11 @@ extension Notification.Name {
 
 private enum PasteDeckVersion {
     static var short: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.15.3"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.16.0"
     }
 
     static var build: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "213"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "217"
     }
 
     static var display: String {

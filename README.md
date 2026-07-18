@@ -165,7 +165,7 @@ Clipboard polling uses `NSPasteboard`; it does not require Accessibility by itse
 - `MarkdownRenderedText` — Markdown rendering support.
 - `SettingsWindow` — 10 settings tabs: General, Hotkey, History, Stats, Filter, Favorites, Appearance, Translation, Advanced, Help.
 - `HelpCenterView` — scenario-based, card-led feature guide with three-step workflows and contextual shortcuts.
-- `StatsSettingsView` / `StatsViewModel` — statistics panel with trend charts, type distribution, and usage insights.
+- `StatsSettingsView` / `StatsViewModel` — responsive statistics dashboard with KPI cards, interactive trend charts, content composition, source insights, and translation usage details.
 
 ### Utilities
 - `AppearanceManager` centralizes theme → `NSAppearance` resolution for the main panel, preview window, and settings window.
@@ -234,7 +234,8 @@ PasteDeck 是一个原生 macOS 剪贴板管理器，用浮动面板快速搜索
 - `Option + D` 的跨应用复制兜底全局串行执行并恢复原多格式剪贴板。自动划词仅在一次真实鼠标划词后才可能使用这条受限兜底；键盘创建的选区不会自动触发翻译。
 - 自动划词需要“辅助功能”和“输入监控”权限。设置页会显示输入监控状态并可直达系统设置；获得权限后通过可恢复的事件 tap 可靠识别其他应用的鼠标划词。纯数字、符号、空白或表情选区不会弹出翻译气泡。
 - 关闭或点击气泡外部后，原文本仍处于选中状态也不会再次弹出气泡；重新鼠标划选时，即使文本相同也会重新触发。
-- 统计面板：展示每日/近 30 天趋势、类型分布、来源 App 洞察和极值记录。翻译模块支持今天/近 7 天/近 30 天及全部/API/大模型筛选，API 用量按输入/输出字符统计，大模型用量按服务返回的输入/输出 Token 统计；按日趋势图和服务排行图支持鼠标悬停高亮并显示调用、成功、失败及用量详情。
+- 统计面板采用响应式仪表盘布局：顶部 KPI 卡片展示今日复制、历史条目和缓存占用；折线与面积图突出 7/30 天趋势和日均基线；内容构成、来源排行、极值记录会随窗口宽度切换单栏/双栏。翻译模块支持今天/近 7 天/近 30 天及全部/API/大模型筛选，API 用量按输入/输出字符统计，大模型用量按服务返回的输入/输出 Token 统计；趋势和服务排行支持鼠标悬停详情，低频调用明细默认折叠。
+- 设置窗口支持拖动边缘自由调整大小，默认以更宽的仪表盘尺寸打开，并保留 760×520 的安全最小尺寸。
 - 主题支持：亮色、暗色或跟随系统外观。
 - 历史记录使用 SwiftData 本地存储，图片缓存位于 `~/Library/Caches/PasteDeck/images/`。图片按内容 SHA-256 命名，相同图片共享一个文件；图片采用、最终引用删除和缓存维护经过同一串行边界，避免并发清理在历史记录保存前删除图片。
 

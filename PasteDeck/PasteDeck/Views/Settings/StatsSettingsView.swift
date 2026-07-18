@@ -17,19 +17,24 @@ struct StatsSettingsView: View {
     @State private var hoveredTranslationTrendLocation: CGPoint?
     @State private var hoveredTranslationServiceID: String?
     @State private var hoveredTranslationServiceLocation: CGPoint?
+    @State private var showsTranslationDetails = false
+
+    private let hoverAnimation = Animation.easeOut(duration: 0.14)
+    private let chartTooltipWidth: CGFloat = 132
+    private let translationTooltipWidth: CGFloat = 228
 
     var body: some View {
-        SettingsContentStack {
+        VStack(alignment: .leading, spacing: 16) {
             if viewModel.isLoading {
                 loadingState
             } else {
-                overviewSection
-                trendSection
-                typeDistributionSection
-                insightsSection
-                translationUsageSection
+                overviewGrid
+                trendCard
+                distributionAndInsights
+                translationUsageCard
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .task {
             viewModel.loadIfNeeded()
         }
@@ -41,106 +46,154 @@ struct StatsSettingsView: View {
         }
     }
 
-    // MARK: - Hover Animation Helpers
-
-    private var hoverAnimation: Animation {
-        .easeOut(duration: 0.15)
-    }
-
-    private let tooltipWidth: CGFloat = 100
-    private let tooltipHeight: CGFloat = 36
-    private let translationTooltipWidth: CGFloat = 220
-
     // MARK: - Loading
 
     private var loadingState: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 14) {
             ProgressView()
                 .controlSize(.large)
-            Text("正在加载统计数据")
+            Text("正在生成使用概览")
                 .font(.system(size: 15, weight: .semibold))
-                .foregroundColor(.primary)
-            Text("正在从聚合表中读取数据")
+            Text("聚合数据加载完成后会自动刷新")
                 .font(.system(size: 12))
-                .foregroundColor(.secondary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(.top, 60)
-    }
-
-    // MARK: - Section 1: Overview
-
-    private var overviewSection: some View {
-        SettingsCard(title: "概览", icon: "chart.bar") {
-            HStack(spacing: 0) {
-                overviewCell(
-                    title: "今日复制",
-                    value: "\(viewModel.overview?.todayCount ?? 0)",
-                    subtitle: "次"
-                )
-                verticalDivider
-                overviewCell(
-                    title: "总条数",
-                    value: "\(viewModel.overview?.totalItems ?? 0)",
-                    subtitle: "条"
-                )
-                verticalDivider
-                overviewCell(
-                    title: "缓存占用",
-                    value: StatsService.formatBytes(viewModel.overview?.cacheBytes ?? 0),
-                    subtitle: nil
-                )
-            }
-        }
-    }
-
-    private func overviewCell(title: String, value: String, subtitle: String?) -> some View {
-        VStack(spacing: 4) {
-            Text(title)
-                .font(.system(size: 11))
-                .foregroundColor(.secondary)
-            HStack(alignment: .firstTextBaseline, spacing: 2) {
-                Text(value)
-                    .font(.system(size: 22, weight: .semibold, design: .rounded))
-                    .foregroundColor(.primary)
-                if let subtitle {
-                    Text(subtitle)
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
-                }
-            }
+                .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 8)
+        .padding(.vertical, 96)
     }
 
-    private var verticalDivider: some View {
-        Rectangle()
-            .fill(Color.primary.opacity(0.06))
-            .frame(width: 1)
-            .padding(.vertical, 4)
+    // MARK: - Overview
+
+    private var overviewGrid: some View {
+        LazyVGrid(
+            columns: Array(repeating: GridItem(.flexible(minimum: 130), spacing: 12), count: 3),
+            spacing: 12
+        ) {
+            metricCard(
+                title: "今日复制",
+                value: (viewModel.overview?.todayCount ?? 0).formatted(),
+                unit: "次",
+                detail: "今日实时累计",
+                icon: "bolt.fill",
+                color: .blue
+            )
+            metricCard(
+                title: "历史条目",
+                value: (viewModel.overview?.totalItems ?? 0).formatted(),
+                unit: "条",
+                detail: "当前保留记录",
+                icon: "square.stack.3d.up.fill",
+                color: .purple
+            )
+            metricCard(
+                title: "缓存占用",
+                value: StatsService.formatBytes(viewModel.overview?.cacheBytes ?? 0),
+                unit: nil,
+                detail: "图片与本地资源",
+                icon: "internaldrive.fill",
+                color: .orange
+            )
+        }
     }
 
-    // MARK: - Section 2: Trend
+    private func metricCard(
+        title: String,
+        value: String,
+        unit: String?,
+        detail: String,
+        icon: String,
+        color: Color
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label(title, systemImage: icon)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 4)
+                Circle()
+                    .fill(color)
+                    .frame(width: 7, height: 7)
+                    .shadow(color: color.opacity(0.35), radius: 4)
+            }
 
-    private var trendSection: some View {
-        SettingsCard(title: "复制趋势", icon: "chart.line.uptrend.xy") {
-            VStack(spacing: 12) {
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Text(value)
+                    .font(.system(size: 25, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                if let unit {
+                    Text(unit)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Text(detail)
+                .font(.system(size: 10))
+                .foregroundStyle(.tertiary)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, minHeight: 102, alignment: .leading)
+        .padding(15)
+        .background(
+            LinearGradient(
+                colors: [color.opacity(0.14), Color.primary.opacity(0.025)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ),
+            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(color.opacity(0.18), lineWidth: 1)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    // MARK: - Clipboard Trend
+
+    private var trendCard: some View {
+        dashboardCard(
+            title: "复制趋势",
+            subtitle: trendSummary,
+            icon: "chart.xyaxis.line"
+        ) {
+            VStack(alignment: .leading, spacing: 14) {
                 HStack {
-                    Picker("", selection: $viewModel.trendDays) {
-                        Text("近 7 天").tag(7)
-                        Text("近 30 天").tag(30)
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(Color.accentColor)
+                            .frame(width: 7, height: 7)
+                        Text("每日复制")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.secondary)
                     }
+
+                    Spacer()
+
+                    Picker("趋势范围", selection: $viewModel.trendDays) {
+                        Text("7 天").tag(7)
+                        Text("30 天").tag(30)
+                    }
+                    .labelsHidden()
                     .pickerStyle(.segmented)
-                    .frame(width: 200)
+                    .controlSize(.small)
+                    .frame(width: 142)
                     .onChange(of: viewModel.trendDays) { _, _ in
+                        hoveredTrendDate = nil
+                        hoveredTrendLocation = nil
                         viewModel.reloadTrend()
                     }
-                    Spacer()
                 }
 
                 if viewModel.trend.isEmpty {
-                    emptyChartPlaceholder
+                    emptyState(
+                        title: "暂无趋势数据",
+                        detail: "复制内容后，这里会展示每日变化",
+                        icon: "chart.line.flattrend.xyaxis"
+                    )
+                    .frame(height: 210)
                 } else {
                     trendChart
                 }
@@ -148,627 +201,698 @@ struct StatsSettingsView: View {
         }
     }
 
-    private var trendChart: some View {
-        let maxValue = viewModel.trend.map(\.count).max() ?? 1
+    private var trendSummary: String {
+        let total = viewModel.trend.reduce(0) { partialResult, point in
+            partialResult + point.count
+        }
+        let average = viewModel.trend.isEmpty ? 0 : Double(total) / Double(viewModel.trend.count)
+        return "近 \(viewModel.trendDays) 天共 \(total.formatted()) 次，日均 \(average.formatted(.number.precision(.fractionLength(1)))) 次"
+    }
 
-        return Chart(viewModel.trend) { point in
-            BarMark(
-                x: .value("日期", point.date, unit: .day),
-                y: .value("次数", point.count)
-            )
-            .foregroundStyle(
-                hoveredTrendDate == point.date
-                    ? Color.accentColor.opacity(1.0).gradient
-                    : (hoveredTrendDate == nil
-                        ? Color.accentColor.gradient
-                        : Color.accentColor.opacity(0.25).gradient)
-            )
-            .cornerRadius(2)
+    private var trendChart: some View {
+        let maximumCount = max(5, viewModel.trend.map(\.count).max() ?? 0)
+        let average = viewModel.trend.isEmpty
+            ? 0
+            : Double(viewModel.trend.reduce(0) { $0 + $1.count }) / Double(viewModel.trend.count)
+
+        return Chart {
+            ForEach(viewModel.trend) { point in
+                AreaMark(
+                    x: .value("日期", point.date, unit: .day),
+                    y: .value("复制次数", point.count)
+                )
+                .interpolationMethod(.catmullRom)
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [Color.accentColor.opacity(0.24), Color.accentColor.opacity(0.015)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+
+                LineMark(
+                    x: .value("日期", point.date, unit: .day),
+                    y: .value("复制次数", point.count)
+                )
+                .interpolationMethod(.catmullRom)
+                .lineStyle(StrokeStyle(lineWidth: 2.4, lineCap: .round, lineJoin: .round))
+                .foregroundStyle(Color.accentColor.gradient)
+
+                if hoveredTrendDate == point.date {
+                    PointMark(
+                        x: .value("日期", point.date, unit: .day),
+                        y: .value("复制次数", point.count)
+                    )
+                    .symbolSize(58)
+                    .foregroundStyle(Color.accentColor)
+                    .annotation(position: .top, spacing: 10) {
+                        trendTooltip(for: point)
+                    }
+                }
+            }
+
+            RuleMark(y: .value("日均", average))
+                .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 5]))
+                .foregroundStyle(Color.secondary.opacity(0.38))
+                .annotation(position: .top, alignment: .trailing) {
+                    Text("日均 \(average.formatted(.number.precision(.fractionLength(1))))")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
         }
         .chartXAxis {
-            AxisMarks(values: .stride(by: .day)) { value in
-                if let date = value.as(Date.self) {
-                    AxisValueLabel(StatsService.formatShortDate(date))
-                    AxisGridLine()
+            AxisMarks(values: .automatic(desiredCount: viewModel.trendDays == 7 ? 7 : 6)) { value in
+                AxisValueLabel {
+                    if let date = value.as(Date.self) {
+                        Text(StatsService.formatShortDate(date))
+                    }
                 }
+                .foregroundStyle(Color.secondary.opacity(0.72))
+                AxisTick().foregroundStyle(Color.clear)
             }
         }
         .chartYAxis {
-            AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { value in
+            AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) {
                 AxisValueLabel()
-                AxisGridLine()
+                    .foregroundStyle(Color.secondary.opacity(0.72))
+                AxisGridLine(stroke: StrokeStyle(lineWidth: 0.6))
+                    .foregroundStyle(Color.secondary.opacity(0.14))
+                AxisTick().foregroundStyle(Color.clear)
             }
         }
-        .chartYScale(domain: 0...max(maxValue, 5))
+        .chartYScale(domain: 0...maximumCount)
+        .chartPlotStyle { plotArea in
+            plotArea
+                .background(Color.primary.opacity(0.012))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
         .chartOverlay { proxy in
-            GeometryReader { geo in
+            GeometryReader { geometry in
                 Rectangle()
                     .fill(.clear)
                     .contentShape(Rectangle())
                     .onContinuousHover { phase in
                         switch phase {
                         case .active(let location):
-                            handleTrendHover(location: location, proxy: proxy, geo: geo)
-                            hoveredTrendLocation = location
+                            handleTrendHover(location: location, proxy: proxy, geometry: geometry)
                         case .ended:
                             hoveredTrendDate = nil
                             hoveredTrendLocation = nil
                         }
                     }
-
-                if let date = hoveredTrendDate,
-                   let point = viewModel.trend.first(where: { $0.date == date }),
-                   let loc = hoveredTrendLocation,
-                   let plotAnchor = proxy.plotFrame {
-                    let plotFrame = geo[plotAnchor]
-                    let tipX = min(max(loc.x, tooltipWidth / 2), plotFrame.width - tooltipWidth / 2)
-                    let tipY = max(loc.y - tooltipHeight - 6, 4)
-                    trendTooltip(for: point)
-                        .frame(width: tooltipWidth)
-                        .position(x: tipX, y: tipY)
-                        .transition(.opacity.combined(with: .scale(scale: 0.95)))
-                }
             }
         }
-        .frame(height: 180)
+        .frame(height: 228)
         .animation(hoverAnimation, value: hoveredTrendDate)
-        .animation(hoverAnimation, value: hoveredTrendLocation)
+        .accessibilityLabel("复制趋势")
+        .accessibilityValue(trendSummary)
     }
 
-    private func handleTrendHover(location: CGPoint, proxy: ChartProxy, geo: GeometryProxy) {
-        guard let plotFrame = proxy.plotFrame else {
+    private func handleTrendHover(
+        location: CGPoint,
+        proxy: ChartProxy,
+        geometry: GeometryProxy
+    ) {
+        guard let plotAnchor = proxy.plotFrame else {
             hoveredTrendDate = nil
             hoveredTrendLocation = nil
             return
         }
-        let origin = geo[plotFrame].origin
-        let relX = location.x - origin.x
-        guard relX >= 0, relX <= geo[plotFrame].width else {
+        let plotFrame = geometry[plotAnchor]
+        guard plotFrame.contains(location) else {
             hoveredTrendDate = nil
             hoveredTrendLocation = nil
             return
         }
-        if let date: Date = proxy.value(atX: relX, as: Date.self) {
-            let calendar = Calendar.current
-            let dayStart = calendar.startOfDay(for: date)
-            if viewModel.trend.contains(where: { $0.date == dayStart }) {
-                hoveredTrendDate = dayStart
-            } else {
-                hoveredTrendDate = nil
-            }
-        } else {
+        let relativeX = location.x - plotFrame.origin.x
+        guard let date = proxy.value(atX: relativeX, as: Date.self) else {
             hoveredTrendDate = nil
+            hoveredTrendLocation = nil
+            return
         }
+        let day = Calendar.current.startOfDay(for: date)
+        guard viewModel.trend.contains(where: { $0.date == day }) else {
+            hoveredTrendDate = nil
+            hoveredTrendLocation = nil
+            return
+        }
+        hoveredTrendDate = day
+        hoveredTrendLocation = location
     }
 
     private func trendTooltip(for point: DailyTrendPoint) -> some View {
-        VStack(spacing: 2) {
+        VStack(alignment: .leading, spacing: 3) {
             Text(StatsService.formatDate(point.date))
-                .font(.system(size: 11, weight: .medium))
-            Text("\(point.count) 次复制")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(.secondary)
+            Text("\(point.count.formatted()) 次复制")
                 .font(.system(size: 12, weight: .semibold))
+                .monospacedDigit()
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
-        .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 6))
-        .shadow(color: .black.opacity(0.1), radius: 3, y: 1)
-        .padding(.top, 4)
+        .frame(width: chartTooltipWidth, alignment: .leading)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.1), radius: 8, y: 3)
     }
 
-    private var emptyChartPlaceholder: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "chart.bar")
-                .font(.system(size: 28))
-                .foregroundColor(.secondary)
-            Text("暂无趋势数据")
-                .font(.system(size: 13))
-                .foregroundColor(.secondary)
+    // MARK: - Distribution And Insights
+
+    private var distributionAndInsights: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .top, spacing: 12) {
+                typeDistributionCard
+                    .frame(minWidth: 300, maxWidth: .infinity)
+                insightCard
+                    .frame(minWidth: 300, maxWidth: .infinity)
+            }
+
+            VStack(spacing: 12) {
+                typeDistributionCard
+                insightCard
+            }
         }
-        .frame(maxWidth: .infinity)
-        .frame(height: 180)
     }
 
-    // MARK: - Section 3: Type Distribution
-
-    private var typeDistributionSection: some View {
-        SettingsCard(title: "内容类型分布", icon: "chart.pie") {
+    private var typeDistributionCard: some View {
+        dashboardCard(
+            title: "内容构成",
+            subtitle: "按当前保留记录统计",
+            icon: "square.stack.3d.down.right"
+        ) {
             if viewModel.typeDistribution.isEmpty {
-                VStack(spacing: 8) {
-                    Image(systemName: "chart.pie")
-                        .font(.system(size: 28))
-                        .foregroundColor(.secondary)
-                    Text("暂无类型数据")
-                        .font(.system(size: 13))
-                        .foregroundColor(.secondary)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 24)
+                emptyState(
+                    title: "暂无内容数据",
+                    detail: "复制不同内容后可查看类型占比",
+                    icon: "chart.bar.xaxis"
+                )
+                .frame(height: 220)
             } else {
-                HStack(spacing: 20) {
-                    pieChart
-                    typeLegend
+                VStack(alignment: .leading, spacing: 13) {
+                    distributionStrip
+
+                    ForEach(viewModel.typeDistribution) { item in
+                        distributionRow(item)
+                    }
                 }
                 .animation(hoverAnimation, value: hoveredType)
             }
         }
     }
 
-    private var pieChart: some View {
-        let total = viewModel.typeDistribution.reduce(0) { $0 + $1.count }
+    private var distributionStrip: some View {
+        let total = max(1, viewModel.typeDistribution.reduce(0) { $0 + $1.count })
 
         return Chart(viewModel.typeDistribution) { item in
-            SectorMark(
-                angle: .value("数量", item.count),
-                innerRadius: .ratio(0.5),
-                outerRadius: hoveredType == item.type ? .ratio(1.0) : .ratio(0.92),
-                angularInset: 1.5
+            BarMark(
+                x: .value("数量", item.count),
+                y: .value("全部内容", "全部内容")
             )
             .foregroundStyle(
                 typeColor(for: item.type)
-                    .opacity(hoveredType == nil || hoveredType == item.type ? 1.0 : 0.3)
+                    .opacity(hoveredType == nil || hoveredType == item.type ? 1 : 0.25)
             )
         }
+        .chartXScale(domain: 0...total)
+        .chartXAxis(.hidden)
+        .chartYAxis(.hidden)
         .chartLegend(.hidden)
-        .chartOverlay { proxy in
-            GeometryReader { geo in
-                Rectangle()
-                    .fill(.clear)
-                    .contentShape(Rectangle())
-                    .onContinuousHover { phase in
-                        switch phase {
-                        case .active(let location):
-                            handlePieHover(location: location, proxy: proxy, geo: geo, total: total)
-                        case .ended:
-                            hoveredType = nil
-                        }
-                    }
-            }
-        }
-        .frame(width: 140, height: 140)
-        .overlay {
-            if let hovered = hoveredType,
-               let item = viewModel.typeDistribution.first(where: { $0.type == hovered }) {
-                pieTooltip(for: item)
-                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
-            }
-        }
-        .animation(hoverAnimation, value: hoveredType)
+        .frame(height: 14)
+        .clipShape(Capsule())
+        .accessibilityLabel("内容类型分布")
+        .accessibilityValue("共 \(total.formatted()) 条记录")
     }
 
-    private func handlePieHover(location: CGPoint, proxy: ChartProxy, geo: GeometryProxy, total: Int) {
-        guard total > 0,
-              let plotFrame = proxy.plotFrame else {
-            hoveredType = nil
-            return
-        }
-        let frame = geo[plotFrame]
-        let center = CGPoint(x: frame.midX, y: frame.midY)
-        let dx = location.x - center.x
-        let dy = location.y - center.y
-        let dist = sqrt(dx * dx + dy * dy)
-        let outerR = min(frame.width, frame.height) / 2
-        let innerR = outerR * 0.5
+    private func distributionRow(_ item: TypeDistributionItem) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: typeIcon(for: item.type))
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(typeColor(for: item.type))
+                .frame(width: 25, height: 25)
+                .background(typeColor(for: item.type).opacity(0.12), in: RoundedRectangle(cornerRadius: 7))
 
-        guard dist >= innerR, dist <= outerR else {
-            hoveredType = nil
-            return
-        }
-
-        // Compute angle: 0 at top (12 o'clock), clockwise
-        var angle = atan2(dx, -dy)
-        if angle < 0 { angle += 2 * .pi }
-
-        // Find which sector this angle falls into
-        var cumulative: Double = 0
-        for item in viewModel.typeDistribution {
-            let fraction = Double(item.count) / Double(total)
-            let sectorAngle = fraction * 2 * .pi
-            if angle >= cumulative && angle < cumulative + sectorAngle {
-                hoveredType = item.type
-                return
-            }
-            cumulative += sectorAngle
-        }
-        hoveredType = nil
-    }
-
-    private func pieTooltip(for item: TypeDistributionItem) -> some View {
-        VStack(spacing: 2) {
             Text(item.type.displayName)
                 .font(.system(size: 11, weight: .medium))
-            Text("\(item.count) · \(String(format: "%.1f%%", item.percentage))")
-                .font(.system(size: 12, weight: .semibold))
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
-        .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 6))
-        .shadow(color: .black.opacity(0.1), radius: 3, y: 1)
-    }
+                .frame(width: 48, alignment: .leading)
 
-    private var typeLegend: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ForEach(viewModel.typeDistribution) { item in
-                HStack(spacing: 8) {
-                    Circle()
-                        .fill(typeColor(for: item.type))
-                        .frame(width: 8, height: 8)
-                    Text(item.type.displayName)
-                        .font(.system(size: 12, weight: .medium))
-                    Spacer()
-                    Text(String(format: "%.0f%%", item.percentage))
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundColor(.secondary)
-                    Text("\(item.count)")
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundColor(.secondary)
-                        .frame(width: 48, alignment: .trailing)
-                }
-                .padding(.horizontal, 4)
-                .padding(.vertical, 2)
-                .background(
-                    hoveredType == item.type
-                        ? Color.primary.opacity(0.06)
-                        : Color.clear
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 4))
-                .contentShape(Rectangle())
-                .onHover { isHovered in
-                    withAnimation(hoverAnimation) {
-                        hoveredType = isHovered ? item.type : nil
-                    }
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Color.primary.opacity(0.055))
+                    Capsule()
+                        .fill(typeColor(for: item.type).gradient)
+                        .frame(width: max(4, geometry.size.width * item.percentage / 100))
                 }
             }
+            .frame(height: 6)
+
+            Text("\(item.count.formatted())")
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .frame(minWidth: 30, alignment: .trailing)
+
+            Text(item.percentage.formatted(.number.precision(.fractionLength(0))) + "%")
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .frame(width: 34, alignment: .trailing)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func typeColor(for type: ClipboardContentType) -> Color {
-        switch type {
-        case .text: return .blue
-        case .link: return .green
-        case .markdown: return .purple
-        case .json: return .orange
-        case .image: return .pink
-        case .file: return .brown
-        case .color: return .yellow
-        }
-    }
-
-    // MARK: - Section 4: Insights
-
-    private var insightsSection: some View {
-        SettingsCard(title: "使用洞察", icon: "lightbulb") {
-            HStack(alignment: .top, spacing: 20) {
-                sourceAppsColumn
-                extremesColumn
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
+        .background(
+            hoveredType == item.type ? Color.primary.opacity(0.045) : Color.clear,
+            in: RoundedRectangle(cornerRadius: 8)
+        )
+        .contentShape(Rectangle())
+        .onHover { isHovered in
+            withAnimation(hoverAnimation) {
+                hoveredType = isHovered ? item.type : nil
             }
         }
+        .accessibilityElement(children: .combine)
     }
 
-    private var sourceAppsColumn: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("来源 Top 5")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(.secondary)
-
-            if viewModel.topSourceApps.isEmpty {
-                Text("暂无来源数据")
-                    .font(.system(size: 12))
-                    .foregroundColor(.secondary)
-                    .padding(.top, 4)
-            } else {
-                ForEach(viewModel.topSourceApps) { stat in
-                    HStack(spacing: 8) {
-                        Text(stat.appName)
-                            .font(.system(size: 12))
-                            .lineLimit(1)
-                        Spacer()
-                        Text("\(stat.count)")
-                            .font(.system(size: 12, design: .monospaced))
-                            .foregroundColor(.secondary)
-                    }
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var extremesColumn: some View {
-        let ext = viewModel.extremes
-
-        return VStack(alignment: .leading, spacing: 8) {
-            Text("极值与累计")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(.secondary)
-
-            insightRow(
-                title: "最长文本",
-                value: ext?.longestTextChars.map { "\($0) 字符" } ?? "无"
-            )
-            insightRow(
-                title: "最大图片",
-                value: ext?.largestImageSize ?? "无"
-            )
-            insightRow(
-                title: "最大文件",
-                value: ext?.largestFileDisplay ?? "无"
-            )
-            insightRow(
-                title: "最早记录",
-                value: ext?.earliestRecordDate.map { StatsService.formatDate($0) } ?? "无"
-            )
-            insightRow(
-                title: "累计收藏",
-                value: "\(ext?.totalFavorites ?? 0) 条"
-            )
-            insightRow(
-                title: "累计置顶",
-                value: "\(ext?.totalPinned ?? 0) 条"
-            )
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func insightRow(title: String, value: String) -> some View {
-        HStack {
-            Text(title)
-                .font(.system(size: 12))
-            Spacer()
-            Text(value)
-                .font(.system(size: 12, design: .monospaced))
-                .foregroundColor(.secondary)
-                .lineLimit(1)
-        }
-    }
-
-    // MARK: - Section 5: Translation Usage
-
-    private var translationUsageSection: some View {
-        SettingsCard(
-            title: "翻译调用统计",
-            icon: "chart.bar.doc.horizontal",
-            footer: "调用按日期、服务配置和模型聚合。大模型 Token 来自服务响应；密钥仅显示不可逆指纹，不会暴露完整凭据。"
+    private var insightCard: some View {
+        dashboardCard(
+            title: "使用洞察",
+            subtitle: "常用来源与数据极值",
+            icon: "sparkles"
         ) {
             VStack(alignment: .leading, spacing: 16) {
-                HStack(spacing: 12) {
-                    Picker("", selection: $viewModel.translationUsageDays) {
-                        Text("今天").tag(1)
-                        Text("近 7 天").tag(7)
-                        Text("近 30 天").tag(30)
-                    }
-                    .pickerStyle(.segmented)
-                    .frame(width: 240)
-                    .onChange(of: viewModel.translationUsageDays) { _, _ in
-                        clearTranslationChartHover()
-                        viewModel.reloadTranslationUsage()
-                    }
+                sourceAppsSection
+                Divider().opacity(0.55)
+                extremesGrid
+            }
+        }
+    }
 
-                    Spacer()
+    private var sourceAppsSection: some View {
+        let maximumCount = max(1, viewModel.topSourceApps.map(\.count).max() ?? 0)
 
-                    Picker("", selection: $viewModel.translationUsageFilter) {
-                        ForEach(TranslationUsageFilter.allCases) { filter in
-                            Text(filter.displayName).tag(filter)
+        return VStack(alignment: .leading, spacing: 9) {
+            Text("高频来源")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+
+            if viewModel.topSourceApps.isEmpty {
+                Text("暂无来源应用数据")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 18)
+            } else {
+                ForEach(Array(viewModel.topSourceApps.enumerated()), id: \.element.id) { index, stat in
+                    HStack(spacing: 9) {
+                        Text("\(index + 1)")
+                            .font(.system(size: 9, weight: .semibold, design: .rounded))
+                            .foregroundStyle(index == 0 ? Color.accentColor : Color.secondary)
+                            .frame(width: 18, height: 18)
+                            .background(Color.primary.opacity(0.05), in: Circle())
+
+                        Text(stat.appName)
+                            .font(.system(size: 11, weight: .medium))
+                            .lineLimit(1)
+                            .frame(width: 78, alignment: .leading)
+
+                        GeometryReader { geometry in
+                            Capsule()
+                                .fill(Color.primary.opacity(0.055))
+                                .overlay(alignment: .leading) {
+                                    Capsule()
+                                        .fill(Color.accentColor.opacity(index == 0 ? 0.9 : 0.42))
+                                        .frame(
+                                            width: max(
+                                                4,
+                                                geometry.size.width * CGFloat(stat.count) / CGFloat(maximumCount)
+                                            )
+                                        )
+                                }
                         }
-                    }
-                    .pickerStyle(.segmented)
-                    .frame(width: 220)
-                    .onChange(of: viewModel.translationUsageFilter) { _, _ in
-                        clearTranslationChartHover()
-                    }
-                }
+                        .frame(height: 5)
 
-                if viewModel.filteredTranslationUsage.isEmpty {
-                    Text("所选时段暂无翻译调用记录")
-                        .font(.system(size: 12))
-                        .foregroundColor(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.vertical, 20)
-                } else {
-                    translationUsageSummaryStrip
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Label("调用趋势", systemImage: "chart.xyaxis.line")
-                                .font(.system(size: 12, weight: .semibold))
-                            Spacer()
-                            translationUsageLegend
-                        }
-                        translationUsageTrendChart
+                        Text(stat.count.formatted())
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .frame(minWidth: 30, alignment: .trailing)
                     }
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Label("服务调用排行", systemImage: "chart.bar.xaxis")
-                                .font(.system(size: 12, weight: .semibold))
-                            Spacer()
-                            Text("最多展示 6 项")
-                                .font(.system(size: 10))
-                                .foregroundColor(.secondary)
-                        }
-                        translationUsageServiceChart
-                    }
-
-                    Divider()
-
-                    HStack {
-                        Text("调用明细")
-                            .font(.system(size: 12, weight: .semibold))
-                        Spacer()
-                        Text("\(viewModel.translationUsageSummary.requestCount) 次")
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundColor(.secondary)
-                    }
-
-                    ForEach(viewModel.filteredTranslationUsage) { usage in
-                        translationUsageRow(usage)
-                        if usage.id != viewModel.filteredTranslationUsage.last?.id {
-                            Divider()
-                        }
-                    }
+                    .accessibilityElement(children: .combine)
                 }
             }
         }
     }
 
-    private var translationUsageSummaryStrip: some View {
-        let summary = viewModel.translationUsageSummary
-
-        return HStack(spacing: 0) {
-            translationUsageSummaryCell(
-                title: "调用",
-                value: summary.requestCount.formatted(),
-                subtitle: "次"
+    private var extremesGrid: some View {
+        LazyVGrid(
+            columns: Array(repeating: GridItem(.flexible(minimum: 100), spacing: 8), count: 2),
+            spacing: 8
+        ) {
+            insightTile(
+                title: "最长文本",
+                value: viewModel.extremes?.longestTextChars.map { "\($0.formatted()) 字符" } ?? "无",
+                icon: "text.alignleft"
             )
-            verticalDivider
-            translationUsageSummaryCell(
-                title: "成功率",
-                value: String(format: "%.0f%%", summary.successRate * 100),
-                subtitle: "失败 \(summary.failedCount)"
+            insightTile(
+                title: "最大图片",
+                value: viewModel.extremes?.largestImageSize ?? "无",
+                icon: "photo"
             )
-            translationUsageUnitSummaryCells
+            insightTile(
+                title: "累计收藏",
+                value: "\((viewModel.extremes?.totalFavorites ?? 0).formatted()) 条",
+                icon: "star.fill"
+            )
+            insightTile(
+                title: "累计置顶",
+                value: "\((viewModel.extremes?.totalPinned ?? 0).formatted()) 条",
+                icon: "pin.fill"
+            )
+            insightTile(
+                title: "最大文件",
+                value: viewModel.extremes?.largestFileDisplay ?? "无",
+                icon: "doc.fill"
+            )
+            insightTile(
+                title: "最早记录",
+                value: viewModel.extremes?.earliestRecordDate.map { StatsService.formatDate($0) } ?? "无",
+                icon: "calendar"
+            )
         }
-        .padding(.vertical, 8)
-        .background(Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 12))
     }
 
-    private func translationUsageSummaryCell(
-        title: String,
-        value: String,
-        subtitle: String
-    ) -> some View {
-        VStack(spacing: 3) {
-            Text(title)
-                .font(.system(size: 10))
-                .foregroundColor(.secondary)
+    private func insightTile(title: String, value: String, icon: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label(title, systemImage: icon)
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(.secondary)
             Text(value)
-                .font(.system(size: 16, weight: .semibold, design: .rounded))
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
                 .lineLimit(1)
-                .minimumScaleFactor(0.75)
-            Text(subtitle)
-                .font(.system(size: 9))
-                .foregroundColor(.secondary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
+                .minimumScaleFactor(0.72)
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(9)
+        .background(Color.primary.opacity(0.028), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .accessibilityElement(children: .combine)
+    }
+
+    // MARK: - Translation Usage
+
+    private var translationUsageCard: some View {
+        dashboardCard(
+            title: "翻译活动",
+            subtitle: "调用量、稳定性与服务消耗",
+            icon: "character.bubble.fill"
+        ) {
+            VStack(alignment: .leading, spacing: 16) {
+                translationFilters
+
+                if viewModel.filteredTranslationUsage.isEmpty {
+                    emptyState(
+                        title: "所选范围暂无翻译记录",
+                        detail: "完成翻译后会按服务和日期聚合展示",
+                        icon: "character.bubble"
+                    )
+                    .frame(height: 190)
+                } else {
+                    translationMetricGrid
+                    translationCharts
+                    translationDetails
+                }
+
+                Label(
+                    "密钥仅显示不可逆指纹；大模型 Token 以服务返回结果为准。",
+                    systemImage: "lock.shield"
+                )
+                .font(.system(size: 10))
+                .foregroundStyle(.tertiary)
+            }
+        }
+    }
+
+    private var translationFilters: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 12) {
+                translationDaysPicker
+                Spacer(minLength: 12)
+                translationTypePicker
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                translationDaysPicker
+                translationTypePicker
+            }
+        }
+    }
+
+    private var translationDaysPicker: some View {
+        Picker("翻译统计范围", selection: $viewModel.translationUsageDays) {
+            Text("今天").tag(1)
+            Text("7 天").tag(7)
+            Text("30 天").tag(30)
+        }
+        .labelsHidden()
+        .pickerStyle(.segmented)
+        .controlSize(.small)
+        .frame(width: 196)
+        .onChange(of: viewModel.translationUsageDays) { _, _ in
+            clearTranslationChartHover()
+            viewModel.reloadTranslationUsage()
+        }
+    }
+
+    private var translationTypePicker: some View {
+        Picker("翻译调用类型", selection: $viewModel.translationUsageFilter) {
+            ForEach(TranslationUsageFilter.allCases) { filter in
+                Text(filter.displayName).tag(filter)
+            }
+        }
+        .labelsHidden()
+        .pickerStyle(.segmented)
+        .controlSize(.small)
+        .frame(width: 196)
+        .onChange(of: viewModel.translationUsageFilter) { _, _ in
+            clearTranslationChartHover()
+        }
     }
 
     @ViewBuilder
-    private var translationUsageUnitSummaryCells: some View {
-        switch viewModel.translationUsageFilter {
-        case .api:
-            verticalDivider
-            translationUsageSummaryCell(
-                title: "输入字符",
-                value: viewModel.translationUsageSummary.sourceCharacterCount.formatted(),
-                subtitle: "字符"
-            )
-            verticalDivider
-            translationUsageSummaryCell(
-                title: "输出字符",
-                value: viewModel.translationUsageSummary.translatedCharacterCount.formatted(),
-                subtitle: "字符"
-            )
-        case .llm:
-            verticalDivider
-            translationUsageSummaryCell(
-                title: "输入 Token",
-                value: viewModel.translationUsageSummary.promptTokenCount > 0
-                    ? viewModel.translationUsageSummary.promptTokenCount.formatted()
-                    : "—",
-                subtitle: viewModel.translationUsageSummary.promptTokenCount > 0 ? "服务返回" : "服务未返回"
-            )
-            verticalDivider
-            translationUsageSummaryCell(
-                title: "输出 Token",
-                value: viewModel.translationUsageSummary.completionTokenCount > 0
-                    ? viewModel.translationUsageSummary.completionTokenCount.formatted()
-                    : "—",
-                subtitle: viewModel.translationUsageSummary.completionTokenCount > 0 ? "服务返回" : "服务未返回"
-            )
-        case .all:
-            let apiSummary = viewModel.translationAPIUsageSummary
-            let llmSummary = viewModel.translationLLMUsageSummary
-            let apiCharacterCount = apiSummary.sourceCharacterCount + apiSummary.translatedCharacterCount
-            let llmTokenCount = llmSummary.promptTokenCount + llmSummary.completionTokenCount
+    private var translationMetricGrid: some View {
+        let summary = viewModel.translationUsageSummary
 
-            verticalDivider
-            translationUsageSummaryCell(
-                title: "API 字符",
-                value: apiCharacterCount.formatted(),
-                subtitle: "入 \(apiSummary.sourceCharacterCount.formatted()) / 出 \(apiSummary.translatedCharacterCount.formatted())"
+        LazyVGrid(
+            columns: Array(repeating: GridItem(.flexible(minimum: 92), spacing: 8), count: 4),
+            spacing: 8
+        ) {
+            translationMetric(
+                title: "调用",
+                value: summary.requestCount.formatted(),
+                detail: "失败 \(summary.failedCount.formatted())",
+                color: .blue
             )
-            verticalDivider
-            translationUsageSummaryCell(
-                title: "大模型 Token",
-                value: llmTokenCount > 0 ? llmTokenCount.formatted() : "—",
-                subtitle: llmTokenCount > 0
-                    ? "入 \(llmSummary.promptTokenCount.formatted()) / 出 \(llmSummary.completionTokenCount.formatted())"
-                    : "服务未返回"
+            translationMetric(
+                title: "成功率",
+                value: (summary.successRate * 100).formatted(.number.precision(.fractionLength(0))) + "%",
+                detail: "成功 \(summary.successCount.formatted())",
+                color: summary.failedCount == 0 ? .green : .orange
             )
+
+            switch viewModel.translationUsageFilter {
+            case .api:
+                translationMetric(
+                    title: "输入字符",
+                    value: summary.sourceCharacterCount.formatted(),
+                    detail: "原文",
+                    color: .cyan
+                )
+                translationMetric(
+                    title: "输出字符",
+                    value: summary.translatedCharacterCount.formatted(),
+                    detail: "译文",
+                    color: .teal
+                )
+            case .llm:
+                translationMetric(
+                    title: "输入 Token",
+                    value: summary.promptTokenCount > 0 ? summary.promptTokenCount.formatted() : "—",
+                    detail: summary.promptTokenCount > 0 ? "服务返回" : "暂无数据",
+                    color: .indigo
+                )
+                translationMetric(
+                    title: "输出 Token",
+                    value: summary.completionTokenCount > 0 ? summary.completionTokenCount.formatted() : "—",
+                    detail: summary.completionTokenCount > 0 ? "服务返回" : "暂无数据",
+                    color: .purple
+                )
+            case .all:
+                let apiSummary = viewModel.translationAPIUsageSummary
+                let modelSummary = viewModel.translationLLMUsageSummary
+                let apiCharacters = apiSummary.sourceCharacterCount + apiSummary.translatedCharacterCount
+                let modelTokens = modelSummary.promptTokenCount + modelSummary.completionTokenCount
+
+                translationMetric(
+                    title: "API 字符",
+                    value: apiCharacters.formatted(),
+                    detail: "输入 + 输出",
+                    color: .cyan
+                )
+                translationMetric(
+                    title: "模型 Token",
+                    value: modelTokens > 0 ? modelTokens.formatted() : "—",
+                    detail: modelTokens > 0 ? "输入 + 输出" : "暂无数据",
+                    color: .purple
+                )
+            }
+        }
+    }
+
+    private func translationMetric(
+        title: String,
+        value: String,
+        detail: String,
+        color: Color
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 5) {
+                Circle()
+                    .fill(color)
+                    .frame(width: 6, height: 6)
+                Text(title)
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
+            Text(value)
+                .font(.system(size: 17, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            Text(detail)
+                .font(.system(size: 9))
+                .foregroundStyle(.tertiary)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, minHeight: 66, alignment: .leading)
+        .padding(10)
+        .background(color.opacity(0.07), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(color.opacity(0.1), lineWidth: 1)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var translationCharts: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .top, spacing: 12) {
+                translationTrendPanel
+                    .frame(minWidth: 300, maxWidth: .infinity)
+                translationServicePanel
+                    .frame(minWidth: 300, maxWidth: .infinity)
+            }
+
+            VStack(spacing: 12) {
+                translationTrendPanel
+                translationServicePanel
+            }
+        }
+    }
+
+    private var translationTrendPanel: some View {
+        chartPanel(title: "调用趋势", icon: "chart.xyaxis.line") {
+            VStack(alignment: .leading, spacing: 8) {
+                translationUsageLegend
+                translationUsageTrendChart
+            }
+        }
+    }
+
+    private var translationServicePanel: some View {
+        chartPanel(title: "服务排行", icon: "chart.bar.xaxis") {
+            translationUsageServiceChart
         }
     }
 
     private var translationUsageLegend: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             if viewModel.translationUsageFilter != .llm {
-                translationUsageLegendItem(title: "API", color: translationUsageKindColor(TranslationUsageKind.api.rawValue))
+                translationUsageLegendItem(
+                    title: "API",
+                    color: translationUsageKindColor(TranslationUsageKind.api.rawValue)
+                )
             }
             if viewModel.translationUsageFilter != .api {
-                translationUsageLegendItem(title: "大模型", color: translationUsageKindColor(TranslationUsageKind.llm.rawValue))
+                translationUsageLegendItem(
+                    title: "大模型",
+                    color: translationUsageKindColor(TranslationUsageKind.llm.rawValue)
+                )
             }
         }
     }
 
     private func translationUsageLegendItem(title: String, color: Color) -> some View {
-        HStack(spacing: 4) {
-            Circle()
+        HStack(spacing: 5) {
+            Capsule()
                 .fill(color)
-                .frame(width: 6, height: 6)
+                .frame(width: 12, height: 4)
             Text(title)
-                .font(.system(size: 10))
-                .foregroundColor(.secondary)
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(.secondary)
         }
     }
 
     private var translationUsageTrendChart: some View {
         let points = viewModel.translationUsageDailyPoints
-        let maximumRequestCount = max(1, points.map(\.requestCount).max() ?? 1)
+        let maximumRequestCount = max(5, points.map(\.requestCount).max() ?? 0)
 
-        return Chart(points) { point in
-            BarMark(
-                x: .value("日期", point.date, unit: .day),
-                y: .value("调用", point.requestCount)
-            )
-            .position(by: .value("类型", translationUsageKindLabel(point.usageKind)))
-            .foregroundStyle(
-                translationUsageKindColor(point.usageKind)
-                    .opacity(
-                        hoveredTranslationTrendDate == nil || hoveredTranslationTrendDate == point.date
-                            ? 1.0
-                            : 0.25
+        return Chart {
+            ForEach(points) { point in
+                LineMark(
+                    x: .value("日期", point.date, unit: .day),
+                    y: .value("调用", point.requestCount),
+                    series: .value("类型", translationUsageKindLabel(point.usageKind))
+                )
+                .interpolationMethod(.catmullRom)
+                .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                .foregroundStyle(
+                    translationUsageKindColor(point.usageKind)
+                        .opacity(
+                            hoveredTranslationTrendDate == nil || hoveredTranslationTrendDate == point.date
+                                ? 1
+                                : 0.25
+                        )
+                )
+
+                if hoveredTranslationTrendDate == point.date {
+                    PointMark(
+                        x: .value("日期", point.date, unit: .day),
+                        y: .value("调用", point.requestCount)
                     )
-                    .gradient
-            )
-            .cornerRadius(2)
-        }
-        .chartXAxis {
-            AxisMarks(values: .stride(by: .day)) { value in
-                if let date = value.as(Date.self) {
-                    AxisValueLabel(StatsService.formatShortDate(date))
-                    AxisGridLine()
+                    .symbolSize(42)
+                    .foregroundStyle(translationUsageKindColor(point.usageKind))
                 }
             }
         }
-        .chartYAxis {
-            AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) {
-                AxisValueLabel()
-                AxisGridLine()
+        .chartXAxis {
+            AxisMarks(values: .automatic(desiredCount: viewModel.translationUsageDays == 30 ? 5 : 4)) { value in
+                AxisValueLabel {
+                    if let date = value.as(Date.self) {
+                        Text(StatsService.formatShortDate(date))
+                    }
+                }
+                .foregroundStyle(Color.secondary.opacity(0.68))
+                AxisTick().foregroundStyle(Color.clear)
             }
         }
-        .chartYScale(domain: 0...max(maximumRequestCount, 5))
+        .chartYAxis {
+            AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) {
+                AxisValueLabel().foregroundStyle(Color.secondary.opacity(0.68))
+                AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
+                    .foregroundStyle(Color.secondary.opacity(0.12))
+                AxisTick().foregroundStyle(Color.clear)
+            }
+        }
+        .chartYScale(domain: 0...maximumRequestCount)
         .chartLegend(.hidden)
         .chartOverlay { proxy in
             GeometryReader { geometry in
@@ -778,7 +902,11 @@ struct StatsSettingsView: View {
                     .onContinuousHover { phase in
                         switch phase {
                         case .active(let location):
-                            handleTranslationTrendHover(location: location, proxy: proxy, geometry: geometry)
+                            handleTranslationTrendHover(
+                                location: location,
+                                proxy: proxy,
+                                geometry: geometry
+                            )
                         case .ended:
                             hoveredTranslationTrendDate = nil
                             hoveredTranslationTrendLocation = nil
@@ -788,20 +916,20 @@ struct StatsSettingsView: View {
                 if let hoveredDate = hoveredTranslationTrendDate,
                    let location = hoveredTranslationTrendLocation {
                     let hoveredPoints = points.filter { $0.date == hoveredDate }
-                    let tooltipHeight = CGFloat(40 + hoveredPoints.count * 42)
+                    let tooltipHeight = CGFloat(44 + hoveredPoints.count * 40)
                     translationUsageTrendTooltip(date: hoveredDate, points: hoveredPoints)
                         .frame(width: translationTooltipWidth)
                         .position(
                             x: tooltipX(for: location, in: geometry, width: translationTooltipWidth),
                             y: tooltipY(for: location, in: geometry, height: tooltipHeight)
                         )
-                        .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                        .transition(.opacity.combined(with: .scale(scale: 0.97)))
                 }
             }
         }
-        .frame(height: 168)
+        .frame(height: 176)
         .animation(hoverAnimation, value: hoveredTranslationTrendDate)
-        .animation(hoverAnimation, value: hoveredTranslationTrendLocation)
+        .accessibilityLabel("翻译调用趋势")
     }
 
     private var translationUsageServiceChart: some View {
@@ -817,29 +945,25 @@ struct StatsSettingsView: View {
                 translationUsageKindColor(point.usageKind)
                     .opacity(
                         hoveredTranslationServiceID == nil || hoveredTranslationServiceID == point.id
-                            ? 1.0
-                            : 0.25
+                            ? 0.9
+                            : 0.22
                     )
                     .gradient
             )
-            .cornerRadius(2)
-            .annotation(position: .trailing) {
+            .cornerRadius(4)
+            .annotation(position: .trailing, spacing: 5) {
                 Text(point.requestCount.formatted())
-                    .font(.system(size: 9, design: .monospaced))
-                    .foregroundColor(
-                        Color.secondary.opacity(
-                            hoveredTranslationServiceID == nil || hoveredTranslationServiceID == point.id
-                                ? 1.0
-                                : 0.25
-                        )
-                    )
+                    .font(.system(size: 8, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.secondary)
             }
         }
-        .chartXScale(domain: 0...Double(maximumRequestCount + max(1, maximumRequestCount / 5)))
+        .chartXScale(domain: 0...Double(maximumRequestCount + max(1, maximumRequestCount / 4)))
         .chartXAxis {
-            AxisMarks(position: .bottom, values: .automatic(desiredCount: 4)) {
-                AxisValueLabel()
-                AxisGridLine()
+            AxisMarks(position: .bottom, values: .automatic(desiredCount: 3)) {
+                AxisValueLabel().foregroundStyle(Color.secondary.opacity(0.68))
+                AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
+                    .foregroundStyle(Color.secondary.opacity(0.12))
+                AxisTick().foregroundStyle(Color.clear)
             }
         }
         .chartYAxis {
@@ -848,6 +972,7 @@ struct StatsSettingsView: View {
                     if let identifier = value.as(String.self),
                        let point = points.first(where: { $0.id == identifier }) {
                         Text(point.displayName)
+                            .font(.system(size: 9))
                             .lineLimit(1)
                     }
                 }
@@ -881,15 +1006,41 @@ struct StatsSettingsView: View {
                         .frame(width: translationTooltipWidth)
                         .position(
                             x: tooltipX(for: location, in: geometry, width: translationTooltipWidth),
-                            y: tooltipY(for: location, in: geometry, height: 82)
+                            y: tooltipY(for: location, in: geometry, height: 86)
                         )
-                        .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                        .transition(.opacity.combined(with: .scale(scale: 0.97)))
                 }
             }
         }
-        .frame(height: max(120, CGFloat(points.count) * 31))
+        .frame(height: max(176, CGFloat(points.count) * 29))
         .animation(hoverAnimation, value: hoveredTranslationServiceID)
-        .animation(hoverAnimation, value: hoveredTranslationServiceLocation)
+        .accessibilityLabel("翻译服务调用排行")
+    }
+
+    private var translationDetails: some View {
+        DisclosureGroup(isExpanded: $showsTranslationDetails) {
+            LazyVStack(spacing: 0) {
+                ForEach(viewModel.filteredTranslationUsage) { usage in
+                    translationUsageRow(usage)
+                    if usage.id != viewModel.filteredTranslationUsage.last?.id {
+                        Divider().opacity(0.45)
+                    }
+                }
+            }
+            .padding(.top, 10)
+        } label: {
+            HStack {
+                Label("调用明细", systemImage: "list.bullet.rectangle")
+                    .font(.system(size: 11, weight: .semibold))
+                Spacer()
+                Text("\(viewModel.translationUsageSummary.requestCount.formatted()) 次")
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            }
+            .contentShape(Rectangle())
+        }
+        .padding(12)
+        .background(Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     private func handleTranslationTrendHover(
@@ -958,19 +1109,23 @@ struct StatsSettingsView: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 7) {
             Text(StatsService.formatDate(date))
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(.secondary)
+
             ForEach(points) { point in
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 5) {
                         Circle()
                             .fill(translationUsageKindColor(point.usageKind))
                             .frame(width: 6, height: 6)
                         Text(translationUsageKindLabel(point.usageKind))
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.system(size: 10, weight: .semibold))
                         Spacer()
-                        Text("调用 \(point.requestCount) · 成功 \(point.successCount) · 失败 \(point.failedCount)")
-                            .font(.system(size: 10, design: .monospaced))
+                        Text("\(point.requestCount.formatted()) 次")
+                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
                     }
+                    Text("成功 \(point.successCount.formatted()) · 失败 \(point.failedCount.formatted())")
+                        .font(.system(size: 9, design: .monospaced))
                     Text(translationUsageUnitDetail(
                         usageKind: point.usageKind,
                         sourceCharacterCount: point.sourceCharacterCount,
@@ -978,34 +1133,36 @@ struct StatsSettingsView: View {
                         promptTokenCount: point.promptTokenCount,
                         completionTokenCount: point.completionTokenCount
                     ))
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundColor(.secondary)
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundStyle(.secondary)
                 }
             }
         }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 7)
-        .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 6))
-        .shadow(color: .black.opacity(0.1), radius: 3, y: 1)
+        .padding(10)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.1), radius: 8, y: 3)
     }
 
     private func translationUsageServiceTooltip(_ point: TranslationUsageServicePoint) -> some View {
         VStack(alignment: .leading, spacing: 5) {
-            HStack(spacing: 5) {
+            HStack(spacing: 6) {
                 Circle()
                     .fill(translationUsageKindColor(point.usageKind))
                     .frame(width: 6, height: 6)
                 Text(point.displayName)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 10, weight: .semibold))
                     .lineLimit(1)
                 Spacer()
                 Text(translationUsageKindLabel(point.usageKind))
-                    .font(.system(size: 10))
-                    .foregroundColor(.secondary)
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(.secondary)
             }
-            Text("调用 \(point.requestCount) · 成功 \(point.successCount) · 失败 \(point.failedCount)")
-                .font(.system(size: 10, design: .monospaced))
+            Text("调用 \(point.requestCount.formatted()) · 成功 \(point.successCount.formatted()) · 失败 \(point.failedCount.formatted())")
+                .font(.system(size: 9, design: .monospaced))
             Text(translationUsageUnitDetail(
                 usageKind: point.usageKind,
                 sourceCharacterCount: point.sourceCharacterCount,
@@ -1013,14 +1170,62 @@ struct StatsSettingsView: View {
                 promptTokenCount: point.promptTokenCount,
                 completionTokenCount: point.completionTokenCount
             ))
-            .font(.system(size: 10, design: .monospaced))
-            .foregroundColor(.secondary)
+            .font(.system(size: 9, design: .monospaced))
+            .foregroundStyle(.secondary)
         }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 7)
-        .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 6))
-        .shadow(color: .black.opacity(0.1), radius: 3, y: 1)
+        .padding(10)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.1), radius: 8, y: 3)
+    }
+
+    private func translationUsageRow(_ usage: TranslationUsageStat) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(StatsService.formatShortDate(usage.date))
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 36, alignment: .leading)
+                Text(usage.providerName)
+                    .font(.system(size: 11, weight: .semibold))
+                    .lineLimit(1)
+                Text(translationUsageKindLabel(usage.usageKind))
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(translationUsageKindColor(usage.usageKind))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(
+                        translationUsageKindColor(usage.usageKind).opacity(0.1),
+                        in: Capsule()
+                    )
+                Spacer()
+                Text("\(usage.requestCount.formatted()) 次 · 成功 \(usage.successCount.formatted())")
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack(spacing: 10) {
+                Text("密钥 \(usage.credentialFingerprint)")
+                if !usage.modelName.isEmpty {
+                    Text("模型 \(usage.modelName)")
+                }
+                Text(translationUsageUnitDetail(
+                    usageKind: usage.usageKind,
+                    sourceCharacterCount: usage.sourceCharacterCount,
+                    translatedCharacterCount: usage.translatedCharacterCount,
+                    promptTokenCount: usage.promptTokenCount,
+                    completionTokenCount: usage.completionTokenCount
+                ))
+            }
+            .font(.system(size: 9, design: .monospaced))
+            .foregroundStyle(.tertiary)
+            .lineLimit(1)
+        }
+        .padding(.vertical, 9)
+        .accessibilityElement(children: .combine)
     }
 
     private func translationUsageUnitDetail(
@@ -1055,46 +1260,100 @@ struct StatsSettingsView: View {
         hoveredTranslationServiceLocation = nil
     }
 
-    private func translationUsageRow(_ usage: TranslationUsageStat) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(StatsService.formatShortDate(usage.date))
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundColor(.secondary)
-                    .frame(width: 34, alignment: .leading)
-                Text(usage.providerName)
+    // MARK: - Shared Presentation
+
+    private func dashboardCard<Content: View>(
+        title: String,
+        subtitle: String,
+        icon: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 15) {
+            HStack(spacing: 10) {
+                Image(systemName: icon)
                     .font(.system(size: 12, weight: .semibold))
-                    .lineLimit(1)
-                Text(translationUsageKindLabel(usage.usageKind))
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(.secondary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Capsule().fill(Color.primary.opacity(0.06)))
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 29, height: 29)
+                    .background(Color.accentColor.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.system(size: 13, weight: .semibold))
+                    Text(subtitle)
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
                 Spacer()
-                Text("\(usage.requestCount) 次 · 成功 \(usage.successCount)")
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundColor(.secondary)
             }
 
-            HStack(spacing: 10) {
-                Text("密钥 \(usage.credentialFingerprint)")
-                if !usage.modelName.isEmpty {
-                    Text("模型 \(usage.modelName)")
-                }
-                if usage.usageKind == TranslationUsageKind.llm.rawValue {
-                    Text(
-                        usage.promptTokenCount + usage.completionTokenCount > 0
-                            ? "Token \(usage.promptTokenCount) 入 / \(usage.completionTokenCount) 出"
-                            : "Token 服务未返回"
-                    )
-                } else {
-                    Text("字符 \(usage.sourceCharacterCount) 入 / \(usage.translatedCharacterCount) 出")
-                }
-            }
-            .font(.system(size: 11, design: .monospaced))
-            .foregroundColor(.secondary)
-            .lineLimit(1)
+            content()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(17)
+        .background(
+            Color(nsColor: .controlBackgroundColor).opacity(0.76),
+            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.primary.opacity(0.065), lineWidth: 1)
+        }
+    }
+
+    private func chartPanel<Content: View>(
+        title: String,
+        icon: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label(title, systemImage: icon)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.secondary)
+            content()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(Color.primary.opacity(0.023), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    private func emptyState(title: String, detail: String, icon: String) -> some View {
+        VStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 24, weight: .light))
+                .foregroundStyle(.tertiary)
+            Text(title)
+                .font(.system(size: 12, weight: .semibold))
+            Text(detail)
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func typeIcon(for type: ClipboardContentType) -> String {
+        switch type {
+        case .text: return "text.alignleft"
+        case .link: return "link"
+        case .markdown: return "text.badge.checkmark"
+        case .json: return "curlybraces"
+        case .image: return "photo"
+        case .file: return "doc"
+        case .color: return "paintpalette"
+        }
+    }
+
+    private func typeColor(for type: ClipboardContentType) -> Color {
+        switch type {
+        case .text: return .blue
+        case .link: return .green
+        case .markdown: return .purple
+        case .json: return .orange
+        case .image: return .pink
+        case .file: return .brown
+        case .color: return .yellow
         }
     }
 
