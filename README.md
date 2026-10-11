@@ -11,7 +11,8 @@ PasteDeck is a native macOS clipboard manager for quickly searching, previewing,
 - Opens from the menu bar or the global shortcut `Command + Shift + V`.
 - Login launches remain silent in the menu bar; reopening the running app shows the clipboard panel.
 - Click a card to select it, or double-click it to paste it immediately.
-- Menu bar dropdown includes a stats overview header showing today's copies, total items, and cache size.
+- Menu bar dropdown includes a stats overview header showing today's copies, total items, and cache size, plus a quota block with progress bars for Codex 5-hour/weekly windows and WorkBuddy remaining credits, a one-click refresh, and a shortcut to the quota settings pane.
+- Shows local quota balances in a dedicated settings pane: Codex (ChatGPT desktop) plan status, 5-hour and weekly rate-limit windows, and rate-limit reset credits are queried through the local codex app-server without network access; WorkBuddy (Tencent CodeBuddy) per-package totals, usage, and remaining credits are read from the local desktop credential file and fetched directly from Tencent's official billing endpoint with automatic token renewal. An optional settings toggle displays compact balances (`C` remaining percent and `W` remaining credits) next to the menu bar icon, turning red when a balance runs low.
 - Includes a visual, scenario-based Feature Guide in Settings and the menu bar, covering everyday actions, organization, previews, translation, analytics, and maintenance without a wall of text.
 - Provides fast keyboard navigation that keeps the selected card fully visible at every panel size, plus favorite filters, custom collections, pinning, deletion, and batch paste.
 - Supports horizontal and vertical panel layouts with vertical styles: compact list, large cards, and adaptive grid.
@@ -214,7 +215,8 @@ PasteDeck 是一个原生 macOS 剪贴板管理器，用浮动面板快速搜索
 - 支持菜单栏打开，也支持全局快捷键 `Command + Shift + V`。
 - 开机登录后静默常驻菜单栏；重新打开已运行的应用时，会显示剪贴板主面板。
 - 单击卡片可选中，双击卡片可立即粘贴。
-- 菜单栏下拉菜单内嵌统计概览，展示今日复制次数、总条数和缓存占用。
+- 菜单栏下拉菜单内嵌统计概览，展示今日复制次数、总条数和缓存占用；并新增额度区块，以进度条展示 Codex 5 小时 / 每周额度窗口与 WorkBuddy 剩余积分，支持一键刷新和跳转额度设置页。
+- 新增“额度”设置页，完整展示本机余额：Codex（ChatGPT 桌面版）套餐状态、5 小时 / 每周速率窗口与重置卡通过本机 codex app-server 查询，不访问网络；WorkBuddy（腾讯 CodeBuddy）各积分包总额 / 已用 / 剩余读取本地桌面版凭证后直连腾讯官方计费接口，token 失效自动续期。设置中开启开关后，菜单栏图标旁会显示紧凑余额（C 剩余百分比、W 剩余积分），余额不足时自动变红。
 - 菜单栏和设置页均提供“功能指南”：按快速开始、查找整理、预览编辑、翻译、统计、个性化六个场景，用卡片、三步操作和快捷键帮助理解全部功能。
 - 支持键盘导航，并会按当前面板可视区域自动滚动选中卡片；同时支持收藏筛选、自定义收藏夹、系统“翻译”分类、置顶、删除和批量粘贴。翻译分类固定在“收藏”之后，不能删除、改名或排序。
 - 支持横向和竖向面板布局，竖向提供紧凑列表、大卡片和自适应网格三种样式。
@@ -236,7 +238,7 @@ PasteDeck 是一个原生 macOS 剪贴板管理器，用浮动面板快速搜索
 - 关闭或点击气泡外部后，原文本仍处于选中状态也不会再次弹出气泡；重新鼠标划选时，即使文本相同也会重新触发。
 - 统计面板采用响应式仪表盘布局：顶部 KPI 卡片展示今日复制、历史条目和缓存占用；折线与面积图突出 7/30 天趋势和日均基线；内容构成、来源排行、极值记录会随窗口宽度切换单栏/双栏。翻译模块支持今天/近 7 天/近 30 天及全部/API/大模型筛选，API 用量按输入/输出字符统计，大模型用量按服务返回的输入/输出 Token 统计；趋势和服务排行支持鼠标悬停详情，低频调用明细默认折叠。
 - 设置窗口支持拖动边缘自由调整大小，默认以更宽的仪表盘尺寸打开，并保留 760×520 的安全最小尺寸。
-- 主题支持：亮色、暗色或跟随系统外观。
+- 主题支持：亮色、暗色或跟随系统外观；主题风格提供默认、赛博、柔和、胶片四套配色，切换后所有窗口实时生效。
 - 历史记录使用 SwiftData 本地存储，图片缓存位于 `~/Library/Caches/PasteDeck/images/`。图片按内容 SHA-256 命名，相同图片共享一个文件；图片采用、最终引用删除和缓存维护经过同一串行边界，避免并发清理在历史记录保存前删除图片。
 
 ## 界面预览

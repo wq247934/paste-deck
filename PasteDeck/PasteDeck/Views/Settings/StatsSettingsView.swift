@@ -9,6 +9,7 @@ import SwiftUI
 import Charts
 
 struct StatsSettingsView: View {
+    @Environment(\.themeColors) private var themeColors
     @StateObject private var viewModel = StatsViewModel()
     @State private var hoveredTrendDate: Date?
     @State private var hoveredTrendLocation: CGPoint?
@@ -163,7 +164,7 @@ struct StatsSettingsView: View {
                 HStack {
                     HStack(spacing: 6) {
                         Circle()
-                            .fill(Color.accentColor)
+                            .fill(themeColors.accent)
                             .frame(width: 7, height: 7)
                         Text("每日复制")
                             .font(.system(size: 11, weight: .medium))
@@ -224,7 +225,7 @@ struct StatsSettingsView: View {
                 .interpolationMethod(.catmullRom)
                 .foregroundStyle(
                     LinearGradient(
-                        colors: [Color.accentColor.opacity(0.24), Color.accentColor.opacity(0.015)],
+                        colors: [themeColors.accent.opacity(0.24), themeColors.accent.opacity(0.015)],
                         startPoint: .top,
                         endPoint: .bottom
                     )
@@ -236,7 +237,7 @@ struct StatsSettingsView: View {
                 )
                 .interpolationMethod(.catmullRom)
                 .lineStyle(StrokeStyle(lineWidth: 2.4, lineCap: .round, lineJoin: .round))
-                .foregroundStyle(Color.accentColor.gradient)
+                .foregroundStyle(themeColors.accent.gradient)
 
                 if hoveredTrendDate == point.date {
                     PointMark(
@@ -244,7 +245,7 @@ struct StatsSettingsView: View {
                         y: .value("复制次数", point.count)
                     )
                     .symbolSize(58)
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(themeColors.accent)
                     .annotation(position: .top, spacing: 10) {
                         trendTooltip(for: point)
                     }
@@ -507,7 +508,7 @@ struct StatsSettingsView: View {
                     HStack(spacing: 9) {
                         Text("\(index + 1)")
                             .font(.system(size: 9, weight: .semibold, design: .rounded))
-                            .foregroundStyle(index == 0 ? Color.accentColor : Color.secondary)
+                            .foregroundStyle(index == 0 ? themeColors.accent : Color.secondary)
                             .frame(width: 18, height: 18)
                             .background(Color.primary.opacity(0.05), in: Circle())
 
@@ -521,7 +522,7 @@ struct StatsSettingsView: View {
                                 .fill(Color.primary.opacity(0.055))
                                 .overlay(alignment: .leading) {
                                     Capsule()
-                                        .fill(Color.accentColor.opacity(index == 0 ? 0.9 : 0.42))
+                                        .fill(themeColors.accent.opacity(index == 0 ? 0.9 : 0.42))
                                         .frame(
                                             width: max(
                                                 4,
@@ -1272,9 +1273,9 @@ struct StatsSettingsView: View {
             HStack(spacing: 10) {
                 Image(systemName: icon)
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(themeColors.accent)
                     .frame(width: 29, height: 29)
-                    .background(Color.accentColor.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+                    .background(themeColors.accent.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
@@ -1362,6 +1363,6 @@ struct StatsSettingsView: View {
     }
 
     private func translationUsageKindColor(_ usageKind: String) -> Color {
-        usageKind == TranslationUsageKind.llm.rawValue ? .purple : .accentColor
+        usageKind == TranslationUsageKind.llm.rawValue ? .purple : themeColors.accent
     }
 }

@@ -19,6 +19,7 @@ enum SettingsWindowLayout {
 }
 
 struct SettingsWindow: View {
+    @Environment(\.themeColors) private var themeColors
     @State private var selectedPane: SettingsPane
 
     /// 允许外部指定初次打开时选中的设置页，例如从菜单栏直接进入统计。
@@ -69,7 +70,7 @@ struct SettingsWindow: View {
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundColor(.white)
                     .frame(width: 34, height: 34)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.accentColor))
+                    .background(RoundedRectangle(cornerRadius: 8).fill(themeColors.accent))
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text("PasteDeck")
@@ -128,6 +129,8 @@ struct SettingsWindow: View {
             AppearanceSettingsView()
         case .translation:
             TranslationSettingsView()
+        case .quota:
+            QuotaSettingsView()
         case .advanced:
             AdvancedSettingsView()
         case .help:
@@ -145,6 +148,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
     case favorites
     case appearance
     case translation
+    case quota
     case advanced
     case help
 
@@ -160,6 +164,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .favorites: return "收藏夹"
         case .appearance: return "外观"
         case .translation: return "翻译"
+        case .quota: return "额度"
         case .advanced: return "高级"
         case .help: return "帮助"
         }
@@ -175,6 +180,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .favorites: return "管理收藏夹名称和顺序"
         case .appearance: return "主题和剪贴板面板布局"
         case .translation: return "划词、截图、快捷键与翻译服务"
+        case .quota: return "Codex 与 WorkBuddy 余额"
         case .advanced: return "预览配置和数据维护"
         case .help: return "用场景化导览快速上手所有功能"
         }
@@ -190,6 +196,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .favorites: return "star"
         case .appearance: return "paintpalette"
         case .translation: return "character.book.closed"
+        case .quota: return "gauge.with.needle"
         case .advanced: return "slider.horizontal.3"
         case .help: return "questionmark.circle"
         }
@@ -203,11 +210,11 @@ extension Notification.Name {
 
 private enum PasteDeckVersion {
     static var short: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.16.0"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.17.1"
     }
 
     static var build: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "217"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "220"
     }
 
     static var display: String {
@@ -216,6 +223,7 @@ private enum PasteDeckVersion {
 }
 
 private struct SettingsNavigationButton: View {
+    @Environment(\.themeColors) private var themeColors
     let pane: SettingsPane
     let isSelected: Bool
     let action: () -> Void
@@ -235,7 +243,7 @@ private struct SettingsNavigationButton: View {
             .padding(.vertical, 8)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(isSelected ? Color.accentColor : Color.clear)
+                    .fill(isSelected ? themeColors.accent : Color.clear)
             )
             .contentShape(RoundedRectangle(cornerRadius: 8))
         }
@@ -244,15 +252,16 @@ private struct SettingsNavigationButton: View {
 }
 
 private struct SettingsPaneHeader: View {
+    @Environment(\.themeColors) private var themeColors
     let pane: SettingsPane
 
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: pane.icon)
                 .font(.system(size: 16, weight: .semibold))
-                .foregroundColor(.accentColor)
+                .foregroundColor(themeColors.accent)
                 .frame(width: 34, height: 34)
-                .background(RoundedRectangle(cornerRadius: 8).fill(Color.accentColor.opacity(0.12)))
+                .background(RoundedRectangle(cornerRadius: 8).fill(themeColors.accent.opacity(0.12)))
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(pane.title)
@@ -360,7 +369,7 @@ struct SettingsDivider: View {
     }
 }
 
-private struct SettingsStatusPill: View {
+struct SettingsStatusPill: View {
     let text: String
     let color: Color
 
@@ -374,7 +383,7 @@ private struct SettingsStatusPill: View {
     }
 }
 
-private struct SettingsNotice: View {
+struct SettingsNotice: View {
     let text: String
     let systemImage: String
 
@@ -408,13 +417,14 @@ private struct SettingsTag<Content: View>: View {
     }
 }
 
-private enum SettingsButtonTone {
+enum SettingsButtonTone {
     case primary
     case secondary
     case destructive
 }
 
-private struct SettingsActionButtonStyle: ButtonStyle {
+struct SettingsActionButtonStyle: ButtonStyle {
+    @Environment(\.themeColors) private var themeColors
     @Environment(\.isEnabled) private var isEnabled
 
     var tone: SettingsButtonTone = .secondary
@@ -441,7 +451,7 @@ private struct SettingsActionButtonStyle: ButtonStyle {
         guard isEnabled else { return .secondary }
         switch tone {
         case .primary:
-            return .accentColor
+            return themeColors.accent
         case .secondary:
             return .primary
         case .destructive:
@@ -453,7 +463,7 @@ private struct SettingsActionButtonStyle: ButtonStyle {
         let pressedBoost = configuration.isPressed ? 0.06 : 0
         switch tone {
         case .primary:
-            return Color.accentColor.opacity(0.12 + pressedBoost)
+            return themeColors.accent.opacity(0.12 + pressedBoost)
         case .secondary:
             return Color.primary.opacity(0.055 + pressedBoost)
         case .destructive:
@@ -464,7 +474,7 @@ private struct SettingsActionButtonStyle: ButtonStyle {
     private var borderColor: Color {
         switch tone {
         case .primary:
-            return Color.accentColor.opacity(0.16)
+            return themeColors.accent.opacity(0.16)
         case .secondary:
             return Color.primary.opacity(0.06)
         case .destructive:
@@ -640,6 +650,7 @@ struct GeneralSettingsView: View {
 // MARK: - Hotkey Settings
 
 struct HotkeySettingsView: View {
+    @Environment(\.themeColors) private var themeColors
     @Environment(\.modelContext) private var modelContext
     @Query private var settings: [AppSettings]
 
@@ -667,12 +678,12 @@ struct HotkeySettingsView: View {
                     HStack(spacing: 8) {
                         Text(isRecording ? "按下新的快捷键..." : shortcutDisplay)
                             .font(.system(size: 13, weight: .semibold, design: .rounded))
-                            .foregroundColor(isRecording ? .accentColor : .primary)
+                            .foregroundColor(isRecording ? themeColors.accent : .primary)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 5)
                             .background(
                                 RoundedRectangle(cornerRadius: 6)
-                                    .fill(isRecording ? Color.accentColor.opacity(0.12) : Color.primary.opacity(0.08))
+                                    .fill(isRecording ? themeColors.accent.opacity(0.12) : Color.primary.opacity(0.08))
                         )
                         Button {
                             if isRecording {
@@ -1805,6 +1816,7 @@ private struct CleanupPreviewKeyboardMonitor: NSViewRepresentable {
 // MARK: - Filter Settings
 
 struct FilterSettingsView: View {
+    @Environment(\.themeColors) private var themeColors
     @Environment(\.modelContext) private var modelContext
     @Query private var settings: [AppSettings]
 
@@ -1935,7 +1947,7 @@ struct FilterSettingsView: View {
                                         Spacer()
 
                                         Image(systemName: "plus.circle.fill")
-                                            .foregroundColor(.accentColor)
+                                            .foregroundColor(themeColors.accent)
                                             .font(.system(size: 15))
                                     }
                                     .padding(.vertical, 7)
@@ -2152,6 +2164,7 @@ struct FavoritesSettingsView: View {
 // MARK: - Collection Row View (支持改名)
 
 struct CollectionRowView: View {
+    @Environment(\.themeColors) private var themeColors
     let collection: FavoriteCollection
     let onDelete: () -> Void
 
@@ -2172,7 +2185,7 @@ struct CollectionRowView: View {
     var body: some View {
         HStack {
             Image(systemName: collection.isDefault ? "star.fill" : (collection.isTranslation ? "character.book.closed" : "folder"))
-                .foregroundColor(collection.isDefault ? .yellow : (collection.isTranslation ? .accentColor : .secondary))
+                .foregroundColor(collection.isDefault ? themeColors.starColor : (collection.isTranslation ? themeColors.accent : .secondary))
 
             if isEditing {
                 TextField("收藏夹名称", text: $editedName)
@@ -2196,7 +2209,7 @@ struct CollectionRowView: View {
                     .foregroundColor(.white)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
-                    .background(Capsule().fill(Color.accentColor.opacity(0.7)))
+                    .background(Capsule().fill(themeColors.badgeBackground))
             }
 
             if collection.isTranslation {
@@ -2205,7 +2218,7 @@ struct CollectionRowView: View {
                     .foregroundColor(.white)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
-                    .background(Capsule().fill(Color.accentColor.opacity(0.7)))
+                    .background(Capsule().fill(themeColors.badgeBackground))
             }
 
             Spacer()
@@ -2293,6 +2306,21 @@ struct AppearanceSettingsView: View {
                     .labelsHidden()
                     .frame(width: 230)
                 }
+
+                SettingsDivider()
+
+                SettingsRow(title: "主题风格", subtitle: "为界面选择一套视觉风格，收藏星标等颜色会跟随变化") {
+                    ThemeStylePicker(
+                        selection: Binding(
+                            get: { ThemeStyle(rawValue: appSettings.themeStyle ?? 0) ?? .default },
+                            set: {
+                                appSettings.themeStyle = $0.rawValue
+                                try? modelContext.save()
+                                NotificationCenter.default.post(name: .themeStyleDidChange, object: nil)
+                            }
+                        )
+                    )
+                }
             }
 
             SettingsCard(title: "剪贴板面板", icon: "rectangle.split.2x1") {
@@ -2337,6 +2365,73 @@ struct AppearanceSettingsView: View {
             }
         }
     }
+}
+
+struct ThemeStylePicker: View {
+    @Binding var selection: ThemeStyle
+    @Environment(\.themeColors) private var themeColors
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ForEach(ThemeStyle.allCases) { style in
+                Button(action: { selection = style }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: style.iconName)
+                            .font(.system(size: 12, weight: .semibold))
+                        Text(style.displayName)
+                            .font(.system(size: 12, weight: .semibold))
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .foregroundColor(isSelected(style) ? selectedTextColor(for: style) : .primary)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(isSelected(style) ? selectedBackgroundColor(for: style) : Color.primary.opacity(0.045))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(isSelected(style) ? selectedBorderColor(for: style) : Color.primary.opacity(0.06), lineWidth: 1)
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func isSelected(_ style: ThemeStyle) -> Bool {
+        selection == style
+    }
+
+    private func selectedBackgroundColor(for style: ThemeStyle) -> Color {
+        switch style {
+        case .default: return themeColors.accent.opacity(0.12)
+        case .cyber: return Color.cyan.opacity(0.16)
+        case .soft: return Color.pink.opacity(0.14)
+        case .film: return Color.orange.opacity(0.14)
+        }
+    }
+
+    private func selectedBorderColor(for style: ThemeStyle) -> Color {
+        switch style {
+        case .default: return themeColors.accent
+        case .cyber: return Color.cyan.opacity(0.8)
+        case .soft: return Color.pink.opacity(0.8)
+        case .film: return Color.orange.opacity(0.8)
+        }
+    }
+
+    private func selectedTextColor(for style: ThemeStyle) -> Color {
+        switch style {
+        case .default: return themeColors.accent
+        case .cyber: return Color.cyan
+        case .soft: return Color.pink
+        case .film: return Color.orange
+        }
+    }
+}
+
+extension ThemeStyle: Identifiable {
+    var id: Int { rawValue }
 }
 
 // MARK: - Advanced Settings

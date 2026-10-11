@@ -118,6 +118,8 @@ struct ClipCardView: View, Equatable {
     let onDelete: () -> Void
     var onRemoveFromCleanupQueue: (() -> Void)? = nil
 
+    @Environment(\.themeColors) private var themeColors
+
     @State private var isEditingTitle = false
     @State private var titleDraft = ""
 
@@ -154,14 +156,14 @@ struct ClipCardView: View, Equatable {
         }
         .frame(width: resolvedLayoutMetrics.width)
         .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(isMultiSelected ? Color.accentColor.opacity(0.08) : Color.primary.opacity(0.03))
+            RoundedRectangle(cornerRadius: themeColors.cardCornerRadius)
+                .fill(isMultiSelected ? themeColors.cardBackgroundMultiSelected : themeColors.cardBackground.opacity(0.6))
         )
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .clipShape(RoundedRectangle(cornerRadius: themeColors.cardCornerRadius))
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: themeColors.cardCornerRadius)
                 .stroke(
-                    isSelected ? Color.accentColor : Color.clear,
+                    isSelected ? themeColors.accent : Color.clear,
                     lineWidth: isMultiSelected ? 3 : 2
                 )
         )
@@ -170,7 +172,7 @@ struct ClipCardView: View, Equatable {
                 if item.isPinned {
                     Image(systemName: "pin.fill")
                         .font(.system(size: 10))
-                        .foregroundColor(.accentColor)
+                        .foregroundColor(themeColors.accent)
                 }
 
                 // 收藏星标
@@ -179,13 +181,13 @@ struct ClipCardView: View, Equatable {
                 }) {
                     Image(systemName: item.isFavorite ? "star.fill" : "star")
                         .font(.system(size: 12))
-                        .foregroundColor(item.isFavorite ? .yellow : .gray.opacity(0.5))
+                        .foregroundColor(item.isFavorite ? themeColors.starColor : .gray.opacity(0.5))
                 }
                 .buttonStyle(.plain)
             }
             .padding(6)
         }
-        .shadow(color: .black.opacity(0.1), radius: isSelected ? 8 : 2, x: 0, y: isSelected ? 4 : 1)
+        .shadow(color: themeColors.shadow, radius: isSelected ? 8 : 2, x: 0, y: isSelected ? 4 : 1)
         .contextMenu {
             cardContextMenu
         }
@@ -290,7 +292,7 @@ struct ClipCardView: View, Equatable {
                     .lineLimit(1)
                     .padding(.horizontal, 4)
                     .padding(.vertical, 1)
-                    .background(Capsule().fill(Color.accentColor.opacity(0.75)))
+                    .background(Capsule().fill(themeColors.badgeBackground))
             }
 
             if nonDefault.count > 1 {
@@ -354,7 +356,7 @@ struct ClipCardView: View, Equatable {
         VStack(alignment: .leading, spacing: 7) {
             Image(systemName: "link")
                 .font(.system(size: 17, weight: .semibold))
-                .foregroundColor(.accentColor)
+                .foregroundColor(themeColors.accent)
 
             if let websiteName = item.linkWebsiteName {
                 Text(websiteName)
@@ -462,6 +464,7 @@ struct CompactClipRowView: View, Equatable {
     /// 删除当前记录的回调。
     let onDelete: () -> Void
 
+    @Environment(\.themeColors) private var themeColors
     @State private var isEditingTitle = false
     @State private var titleDraft = ""
 
@@ -508,13 +511,13 @@ struct CompactClipRowView: View, Equatable {
                 if item.isPinned {
                     Image(systemName: "pin.fill")
                         .font(.system(size: 9, weight: .semibold))
-                        .foregroundColor(.accentColor)
+                        .foregroundColor(themeColors.accent)
                 }
 
                 Button(action: onToggleFavorite) {
                     Image(systemName: item.isFavorite ? "star.fill" : "star")
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(item.isFavorite ? .yellow : .secondary.opacity(0.65))
+                        .foregroundColor(item.isFavorite ? themeColors.starColor : .secondary.opacity(0.65))
                 }
                 .buttonStyle(.plain)
             }
@@ -524,11 +527,11 @@ struct CompactClipRowView: View, Equatable {
         .frame(height: 72)
         .background(
             RoundedRectangle(cornerRadius: 10)
-                .fill(isMultiSelected ? Color.accentColor.opacity(0.1) : Color.primary.opacity(0.035))
+                .fill(isMultiSelected ? themeColors.cardBackgroundMultiSelected : themeColors.cardBackground.opacity(0.6))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 10)
-                .stroke(isSelected ? Color.accentColor : Color.primary.opacity(0.04), lineWidth: isSelected ? 2 : 1)
+                .stroke(isSelected ? themeColors.accent : themeColors.border, lineWidth: isSelected ? 2 : 1)
         )
         .contentShape(RoundedRectangle(cornerRadius: 10))
         .contextMenu {
@@ -588,7 +591,7 @@ struct CompactClipRowView: View, Equatable {
     private func thumbnailIcon(_ systemName: String) -> some View {
         Image(systemName: systemName)
             .font(.system(size: 19, weight: .medium))
-            .foregroundColor(.accentColor)
+            .foregroundColor(themeColors.accent)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
@@ -627,7 +630,7 @@ struct CompactClipRowView: View, Equatable {
                 .lineLimit(1)
                 .padding(.horizontal, 4)
                 .padding(.vertical, 1)
-                .background(Capsule().fill(Color.accentColor.opacity(0.78)))
+                .background(Capsule().fill(themeColors.badgeBackground))
         }
     }
 }

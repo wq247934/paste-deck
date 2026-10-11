@@ -248,7 +248,8 @@ class MainPanelController: NSObject, NSWindowDelegate {
         }, openSettingsHandler: { [weak self] in
             self?.openSettingsFromPanel()
         })
-        .modelContainer(AppModelContainer.container))
+        .modelContainer(AppModelContainer.container)
+        .themeStyled())
 
         hostingView.frame = visualEffectView.bounds
         hostingView.autoresizingMask = NSView.AutoresizingMask([.width, .height])

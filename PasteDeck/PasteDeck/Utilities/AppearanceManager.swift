@@ -41,6 +41,20 @@ extension AppTheme {
     }
 }
 
+extension AppTheme {
+    /// 根据主题风格生成对应的 ColorScheme；主要用于 SwiftUI 环境注入。
+    func colorSchemeForThemeStyle(_ style: ThemeStyle) -> ColorScheme {
+        switch self {
+        case .system:
+            return NSApp.effectiveAppearance.isDark ? .dark : .light
+        case .light:
+            return .light
+        case .dark:
+            return .dark
+        }
+    }
+}
+
 extension NSAppearance {
     /// 判断当前外观是否为深色（考虑高对比度等变体）。
     var isDark: Bool {
@@ -52,6 +66,8 @@ extension NSAppearance {
 extension Notification.Name {
     /// 设置中的外观模式变更后广播，让已打开的窗口实时更新 appearance。
     static let appearanceModeDidChange = Notification.Name("appearanceModeDidChange")
+    /// 主题风格（default/cyber/soft/film）变更后广播。
+    static let themeStyleDidChange = Notification.Name("themeStyleDidChange")
 }
 
 /// 读取当前 AppSettings 外观模式并解析为 NSAppearance。

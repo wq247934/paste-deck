@@ -124,6 +124,7 @@
 - [x] 亮色主题
 - [x] 暗色主题
 - [x] 跟随系统
+- [x] 主题风格：默认/赛博/柔和/胶片四套配色（ThemeStyle），主面板、卡片、预览、设置和翻译窗口统一生效并实时切换
 - [x] 主面板、预览窗口、设置页统一生效（AppearanceManager）
 
 ### 11. OCR
@@ -146,6 +147,17 @@
 - [x] 键盘焦点测试（KeyboardFocusPanelTests）
 - [x] 链接标题服务测试（LinkTitleServiceTests）
 - [x] 图片资产生命周期测试（ClipboardAssetLifecycleTests），覆盖共享引用、待采用/最终删除交错、待采用期间维护保护和 files 目录隔离
+- [x] 余额查询测试（QuotaServiceTests），覆盖 Codex 快照解析、WorkBuddy 字符串容量解析与排序、倒计时/紧凑数字格式化
+
+### 14. 额度查询
+
+- [x] 设置新增“额度”页：Codex（ChatGPT 桌面版）套餐状态、5 小时 / 每周速率窗口、重置卡列表与失败提示
+- [x] 设置“额度”页展示 WorkBuddy（腾讯 CodeBuddy）账号、付费状态、订阅方案、凭证有效期与各积分包总额/已用/剩余
+- [x] Codex 通过本机 codex app-server JSON-RPC（stdio）查询，不访问网络；兼容 ChatGPT.app 与旧版 Codex.app
+- [x] WorkBuddy 读取本地桌面版凭证文件直连腾讯官方计费接口；token 失效自动用 refreshToken 续期并原子写回凭证
+- [x] 菜单栏下拉菜单内嵌额度区块：Codex 5 小时 / 每周窗口与 WorkBuddy 剩余积分进度条、一键刷新、跳转额度详情
+- [x] 设置开关：把 Codex 剩余百分比与 WorkBuddy 剩余积分显示在菜单栏图标旁，余额不足自动变红，开启后按固定间隔后台刷新
+- [x] 额度 UI 按设计稿重构：设置页双品牌色 hero 卡片 + 账户订阅/合计可用/积分包面板；菜单区块品牌色进度条、富文本数值与“额度详情…”按钮行
 
 ---
 

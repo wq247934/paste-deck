@@ -69,6 +69,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var settingsWindow: NSWindow?
     private var settingsWindowFrame: NSRect?
     private var settingsKeyMonitor: Any?
+    private var isMenuBarQuotaDisplayEnabled = false
+    private var quotaStatusObserver: NSObjectProtocol?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Setup UI first (status bar is always available)
@@ -85,6 +87,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         removeSettingsAppearanceObserver()
         if let settingsKeyMonitor {
             NSEvent.removeMonitor(settingsKeyMonitor)
+        }
+        if let quotaStatusObserver {
+            NotificationCenter.default.removeObserver(quotaStatusObserver)
         }
     }
 
@@ -125,6 +130,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             },
             openTranslationSettings: { [weak self] in
                 self?.openSettings(pane: .translation)
+            },
+            openQuotaSettings: { [weak self] in
+                self?.openSettings(pane: .quota)
             },
             openSettings: { [weak self] in
                 self?.openSettings(pane: .general)
@@ -173,6 +181,30 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // 翻译协调器独立注册 Option+D / Option+S / Option+A，并按设置启停划词监听。
         TranslationCoordinator.shared.start()
 
+        // 额度查询：按设置应用菜单栏余额显示，并延迟做首次后台刷新，避免抢占启动。
+        let quotaMenuBarEnabled = appSettings.showQuotaInMenuBar ?? false
+        QuotaStatusManager.shared.setMenuBarDisplayEnabled(quotaMenuBarEnabled)
+        applyMenuBarQuotaDisplay(enabled: quotaMenuBarEnabled)
+        quotaStatusObserver = NotificationCenter.default.addObserver(
+            forName: QuotaStatusManager.statusDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.refreshMenuBarQuotaTitle()
+            }
+        }
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(quotaMenuBarDisplaySettingDidChange(_:)),
+            name: QuotaStatusManager.menuBarDisplayDidChange,
+            object: nil
+        )
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            QuotaStatusManager.shared.refreshIfStale(maxAge: 0)
+        }
+
         // 监听快捷键变更通知（设置页修改快捷键后发送）
         NotificationCenter.default.addObserver(
             self,
@@ -197,6 +229,36 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         // Main panel is created lazily on first use so app launch does not
         // pay the SwiftUI/SwiftData history-loading cost.
+    }
+
+    // MARK: - Menu Bar Quota Display
+
+    /// 应用“菜单栏显示余额”开关：调整状态项长度并刷新文本。
+    private func applyMenuBarQuotaDisplay(enabled: Bool) {
+        isMenuBarQuotaDisplayEnabled = enabled
+        guard let statusItem else { return }
+
+        if enabled {
+            statusItem.length = NSStatusItem.variableLength
+            refreshMenuBarQuotaTitle()
+        } else {
+            statusItem.button?.attributedTitle = NSAttributedString()
+            statusItem.button?.toolTip = nil
+            statusItem.length = NSStatusItem.squareLength
+        }
+    }
+
+    /// 余额快照变化后重写菜单栏文本；未开启显示或暂无数据时仅保留图标。
+    private func refreshMenuBarQuotaTitle() {
+        guard isMenuBarQuotaDisplayEnabled, let button = statusItem?.button else { return }
+        button.attributedTitle = QuotaStatusManager.shared.menuBarAttributedTitle ?? NSAttributedString()
+        button.toolTip = QuotaStatusManager.shared.menuBarToolTip
+    }
+
+    @objc private func quotaMenuBarDisplaySettingDidChange(_ notification: Notification) {
+        let enabled = (notification.userInfo?[QuotaStatusManager.menuBarDisplayEnabledKey] as? Bool) ?? false
+        QuotaStatusManager.shared.setMenuBarDisplayEnabled(enabled)
+        applyMenuBarQuotaDisplay(enabled: enabled)
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -232,6 +294,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         let settingsView = SettingsWindow(initialPane: pane)
             .modelContainer(AppModelContainer.container)
+            .themeStyled()
         let hostingController = NSHostingController(rootView: settingsView)
         let window = NSWindow(contentViewController: hostingController)
         window.title = "PasteDeck 设置"

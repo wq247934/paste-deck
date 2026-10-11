@@ -755,6 +755,7 @@ struct SourceAppFilterMenu: View {
     let sourceApps: [String]
     let onSelect: (String?) -> Void
 
+    @Environment(\.themeColors) private var themeColors
     @State private var isHovering = false
 
     private var isActive: Bool {
@@ -784,7 +785,7 @@ struct SourceAppFilterMenu: View {
             HStack(spacing: 6) {
                 Image(systemName: isActive ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(isActive ? .accentColor : .secondary)
+                    .foregroundColor(isActive ? themeColors.accent : .secondary)
 
                 Text("来源")
                     .font(.system(size: 12, weight: .medium))
@@ -823,14 +824,14 @@ struct SourceAppFilterMenu: View {
 
     private var backgroundColor: Color {
         if isActive {
-            return Color.accentColor.opacity(isHovering ? 0.16 : 0.12)
+            return themeColors.accent.opacity(isHovering ? 0.16 : 0.12)
         }
         return Color.primary.opacity(isHovering ? 0.08 : 0.045)
     }
 
     private var borderColor: Color {
         if isActive {
-            return Color.accentColor.opacity(isHovering ? 0.26 : 0.18)
+            return themeColors.accent.opacity(isHovering ? 0.26 : 0.18)
         }
         return Color.primary.opacity(isHovering ? 0.1 : 0.05)
     }
@@ -856,6 +857,7 @@ struct FavoriteFilterTabs: View {
     let collections: [ClipboardCollectionSnapshot]
     let onCreateCollection: (String) -> Void
 
+    @Environment(\.themeColors) private var themeColors
     @State private var showNewCollectionSheet = false
     @State private var newCollectionName = "新建收藏夹"
 
@@ -876,7 +878,7 @@ struct FavoriteFilterTabs: View {
                                 .padding(.vertical, 6)
                                 .background(
                                     Capsule()
-                                        .fill(selectedFilter == option ? Color.accentColor : Color.clear)
+                                        .fill(selectedFilter == option ? themeColors.accent : Color.clear)
                                 )
                         }
                         .buttonStyle(.plain)
@@ -1413,7 +1415,8 @@ struct VirtualizedCardList: NSViewRepresentable {
         }
 
         func configure<V: View>(_ rootView: V) {
-            let erased = AnyView(rootView)
+            // 卡片由独立 NSHostingView 承载，环境不会从主面板传入，需在根部注入主题。
+            let erased = AnyView(rootView.themeStyled())
             if let hostingView {
                 hostingView.rootView = erased
             } else {

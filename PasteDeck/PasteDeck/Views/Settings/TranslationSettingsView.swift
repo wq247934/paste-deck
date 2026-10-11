@@ -22,6 +22,7 @@ private enum TranslationShortcutAction: String, Identifiable {
 }
 
 struct TranslationSettingsView: View {
+    @Environment(\.themeColors) private var themeColors
     @Environment(\.modelContext) private var modelContext
     @Query private var settings: [AppSettings]
 
@@ -368,7 +369,7 @@ struct TranslationSettingsView: View {
             if let selectedIndex {
                 Text(selectedIndex == 0 ? "默认" : "\(selectedIndex + 1)")
                     .font(.system(size: 10, weight: .semibold))
-                    .foregroundColor(selectedIndex == 0 ? .accentColor : .secondary)
+                    .foregroundColor(selectedIndex == 0 ? themeColors.accent : .secondary)
                     .frame(minWidth: 30)
 
                 Button {
@@ -470,9 +471,9 @@ struct TranslationSettingsView: View {
         HStack(spacing: 12) {
             Image(systemName: systemImage)
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(.accentColor)
+                .foregroundColor(themeColors.accent)
                 .frame(width: 32, height: 32)
-                .background(Color.accentColor.opacity(0.1), in: RoundedRectangle(cornerRadius: 9))
+                .background(themeColors.accent.opacity(0.1), in: RoundedRectangle(cornerRadius: 9))
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
@@ -610,7 +611,7 @@ struct TranslationSettingsView: View {
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14))
         .overlay(
             RoundedRectangle(cornerRadius: 14)
-                .stroke(configuration.enabled ? Color.accentColor.opacity(0.28) : Color.primary.opacity(0.07), lineWidth: 1)
+                .stroke(configuration.enabled ? themeColors.accent.opacity(0.28) : Color.primary.opacity(0.07), lineWidth: 1)
         )
     }
 

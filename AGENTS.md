@@ -79,6 +79,9 @@ Only perform these steps when the user explicitly asks to publish a release.
 - `Services/PasteService.swift` - Writes selected content to NSPasteboard and simulates paste with CGEvent
 - `Services/ImageOCRService.swift` - Runs Vision OCR for copied images and persists searchable text
 - `Services/TranslateService.swift` - Baidu Translate integration used by the preview window
+- `Services/CodexQuotaService.swift` - Queries local Codex/ChatGPT rate limits via the codex app-server JSON-RPC (stdio); no network access
+- `Services/WorkBuddyQuotaService.swift` - Reads the local WorkBuddy desktop credential file and queries Tencent's billing endpoint, renewing tokens atomically
+- `Services/QuotaStatusManager.swift` - Central quota cache and refresh scheduling; builds menu bar balance text and dropdown quota blocks
 - `Services/PreviewConfig.swift` - Preview sizing and mode preferences
 
 ### UI Layer
@@ -90,6 +93,7 @@ Only perform these steps when the user explicitly asks to publish a release.
 - `Views/Preview/CodeHighlightView.swift` - Editable code preview and syntax highlighting
 - `Views/Preview/MarkdownRenderedText.swift` - Markdown rendering support
 - `Views/Settings/SettingsWindow.swift` - Settings tabs (General, Hotkey, History, Filter, Favorites, Appearance, Advanced)
+- `Views/Settings/QuotaSettingsView.swift` - Quota pane showing Codex/WorkBuddy balances with a menu bar display toggle
 
 ### Key Data Flow
 1. User copies content -> `ClipboardMonitor` detects change via `changeCount`

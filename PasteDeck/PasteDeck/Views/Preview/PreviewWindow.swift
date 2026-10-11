@@ -762,6 +762,7 @@ private enum CodeSnippetPreviewDetector {
 }
 
 private struct EditablePlainTextPreview: View {
+    @Environment(\.themeColors) private var themeColors
     let text: String
     let title: String
     var systemImage: String = "text.alignleft"
@@ -801,7 +802,7 @@ private struct EditablePlainTextPreview: View {
                         .frame(width: 24, height: 24)
                 }
                 .buttonStyle(.plain)
-                .foregroundColor(isEditing ? .accentColor : .secondary)
+                .foregroundColor(isEditing ? themeColors.accent : .secondary)
                 .help(isEditing ? "保存编辑" : "编辑内容")
             }
             .padding(.horizontal, 14)
@@ -856,6 +857,7 @@ private struct EditablePlainTextPreview: View {
 }
 
 private struct EditableColorPreview: View {
+    @Environment(\.themeColors) private var themeColors
     let hex: String
     let error: String?
     let onSave: (String) -> Bool
@@ -881,7 +883,7 @@ private struct EditableColorPreview: View {
                         .frame(width: 24, height: 24)
                 }
                 .buttonStyle(.plain)
-                .foregroundColor(isEditing ? .accentColor : .secondary)
+                .foregroundColor(isEditing ? themeColors.accent : .secondary)
                 .help(isEditing ? "保存颜色" : "编辑颜色")
             }
             .padding(.horizontal, 14)
@@ -1280,7 +1282,7 @@ class PreviewWindowController: NSObject, NSWindowDelegate {
         let previewView = PreviewWindow(item: item, windowSize: windowSize, allowsResizing: allowsResizing, onClose: { [weak self] in
             self?.performClose()
         })
-        let hostingController = NSHostingController(rootView: previewView)
+        let hostingController = NSHostingController(rootView: previewView.themeStyled())
 
         var styleMask: NSWindow.StyleMask = [.titled, .closable, .fullSizeContentView]
         if allowsResizing {

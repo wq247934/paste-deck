@@ -165,6 +165,7 @@ final class AutomaticSelectionTranslationBubbleController {
             model: model,
             onExpand: onExpand
         )
+        .themeStyled()
         let hostingController = NSHostingController(rootView: rootView)
         let panel = AutomaticSelectionTranslationBubblePanel(
             contentRect: NSRect(origin: .zero, size: bubbleSize),
@@ -235,6 +236,7 @@ final class AutomaticSelectionTranslationBubbleController {
 }
 
 private struct AutomaticSelectionTranslationBubbleView: View {
+    @Environment(\.themeColors) private var themeColors
     /// 本次划词气泡的服务、选择和请求状态。
     @ObservedObject var model: AutomaticSelectionTranslationBubbleModel
     /// 用户主动放大时进入原完整翻译工作区的回调。
@@ -313,7 +315,7 @@ private struct AutomaticSelectionTranslationBubbleView: View {
         HStack(spacing: 7) {
             Image(systemName: model.selectedService?.kind == .llm ? "sparkles" : "character.book.closed.fill")
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(.accentColor)
+                .foregroundColor(themeColors.accent)
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(model.selectedService?.displayName ?? "未配置翻译服务")

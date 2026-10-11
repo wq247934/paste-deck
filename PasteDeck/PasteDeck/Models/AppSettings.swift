@@ -93,6 +93,8 @@ final class AppSettings {
     /// 应用黑名单的 bundle identifier 列表，用于跳过指定来源应用的剪贴板记录。
     var blacklistedApps: [String]
     var themeMode: Int
+    /// 主题风格原始值；nil 兼容旧版本数据并按跟随系统主题处理。
+    var themeStyle: Int?
     /// 旧版卡片尺寸原始值（0 小、1 中、2 大）；仅为兼容已有 SwiftData 数据保留，主面板布局不再读取。
     var cardSize: Int
     /// 主面板方向原始值（0 横向、1 竖向）；nil 用于兼容尚未保存该设置的旧版本数据。
@@ -139,6 +141,9 @@ final class AppSettings {
     /// 是否在复制公共网页链接后后台获取网页标题；nil 兼容旧版本并按关闭处理。
     var fetchLinkTitles: Bool?
 
+    /// 是否把 Codex / WorkBuddy 余额直接显示在菜单栏图标旁；nil 兼容旧数据并按关闭处理。
+    var showQuotaInMenuBar: Bool?
+
     init() {
         self.launchAtLogin = true
         self.hotkeyKeyCode = 9
@@ -149,6 +154,7 @@ final class AppSettings {
         self.cacheSizeLimit = 500
         self.blacklistedApps = []
         self.themeMode = 0
+        self.themeStyle = 0
         self.cardSize = 1
         self.panelOrientationRawValue = nil
         self.verticalPanelStyleRawValue = nil
@@ -170,6 +176,7 @@ final class AppSettings {
         self.llmTranslationConfigurationsJSON = nil
         self.statsBackfilledAt = nil
         self.fetchLinkTitles = false
+        self.showQuotaInMenuBar = false
     }
 
     /// 主面板布局方向；nil 或未知原始值按横向处理，确保旧数据库与未来值均能安全回退。

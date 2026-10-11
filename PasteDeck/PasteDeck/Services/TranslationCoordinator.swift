@@ -1400,7 +1400,7 @@ private final class TranslationWindowController: NSObject, NSWindowDelegate {
 
         let viewModel = TranslationViewModel(sourceText: text, mode: mode)
         let rootView = TranslationWorkspaceView(model: viewModel)
-        let hostingController = NSHostingController(rootView: rootView)
+        let hostingController = NSHostingController(rootView: rootView.themeStyled())
         let window = TranslationWorkspaceWindow(contentViewController: hostingController)
         window.identifier = translationWorkspaceWindowIdentifier
         window.title = "PasteDeck 翻译"
@@ -1439,7 +1439,7 @@ private final class TranslationWindowController: NSObject, NSWindowDelegate {
         let viewModel = TranslationViewModel(sourceText: workspace.sourceText, mode: .input)
         guard viewModel.restoreHistory(itemID: itemID) else { return }
         let rootView = TranslationWorkspaceView(model: viewModel)
-        let hostingController = NSHostingController(rootView: rootView)
+        let hostingController = NSHostingController(rootView: rootView.themeStyled())
         let window = TranslationWorkspaceWindow(contentViewController: hostingController)
         window.identifier = translationWorkspaceWindowIdentifier
         window.title = "PasteDeck 翻译"
@@ -1487,6 +1487,7 @@ private final class TranslationWindowController: NSObject, NSWindowDelegate {
 }
 
 private struct TranslationWorkspaceView: View {
+    @Environment(\.themeColors) private var themeColors
     @ObservedObject var model: TranslationViewModel
     @FocusState private var sourceFocused: Bool
     @State private var pendingLLMConfiguration: LLMTranslationConfiguration?
@@ -1602,7 +1603,7 @@ private struct TranslationWorkspaceView: View {
                 .frame(width: 36, height: 36)
                 .background(
                     LinearGradient(
-                        colors: [.accentColor, .accentColor.opacity(0.68)],
+                        colors: [themeColors.accent, themeColors.accent.opacity(0.68)],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     ),
@@ -1663,7 +1664,7 @@ private struct TranslationWorkspaceView: View {
                 .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12))
                 .overlay(
                     RoundedRectangle(cornerRadius: 12)
-                        .stroke(sourceFocused ? Color.accentColor.opacity(0.5) : Color.primary.opacity(0.07), lineWidth: 1)
+                        .stroke(sourceFocused ? themeColors.accent.opacity(0.5) : Color.primary.opacity(0.07), lineWidth: 1)
                 )
 
             HStack(spacing: 10) {

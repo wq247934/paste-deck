@@ -9,6 +9,7 @@
 import SwiftUI
 
 struct HelpCenterView: View {
+    @Environment(\.themeColors) private var themeColors
     @State private var selectedTopic: HelpTopic = .getStarted
 
     var body: some View {
@@ -22,12 +23,14 @@ struct HelpCenterView: View {
     }
 
     private var hero: some View {
-        HStack(spacing: 16) {
+        let tint = selectedTopic.tint(themeAccent: themeColors.accent)
+
+        return HStack(spacing: 16) {
             Image(systemName: selectedTopic.icon)
                 .font(.system(size: 25, weight: .semibold))
                 .foregroundStyle(.white)
                 .frame(width: 58, height: 58)
-                .background(Circle().fill(selectedTopic.tint.gradient))
+                .background(Circle().fill(tint.gradient))
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(selectedTopic.headline)
@@ -42,19 +45,19 @@ struct HelpCenterView: View {
 
             Text(selectedTopic.badge)
                 .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(selectedTopic.tint)
+                .foregroundStyle(tint)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
-                .background(Capsule().fill(selectedTopic.tint.opacity(0.12)))
+                .background(Capsule().fill(tint.opacity(0.12)))
         }
         .padding(18)
         .background(
             RoundedRectangle(cornerRadius: 14)
-                .fill(selectedTopic.tint.opacity(0.08))
+                .fill(tint.opacity(0.08))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 14)
-                .stroke(selectedTopic.tint.opacity(0.15), lineWidth: 1)
+                .stroke(tint.opacity(0.15), lineWidth: 1)
         )
     }
 
@@ -70,6 +73,7 @@ struct HelpCenterView: View {
                 ForEach(HelpTopic.allCases) { topic in
                     HelpTopicButton(
                         topic: topic,
+                        themeAccent: themeColors.accent,
                         isSelected: selectedTopic == topic
                     ) {
                         selectedTopic = topic
@@ -81,13 +85,15 @@ struct HelpCenterView: View {
 
     private var guide: some View {
         VStack(alignment: .leading, spacing: 10) {
+            let tint = selectedTopic.tint(themeAccent: themeColors.accent)
+
             HStack {
                 Text("跟着做，只要三步")
                     .font(.system(size: 14, weight: .semibold))
                 Spacer()
                 Text(selectedTopic.actionLabel)
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(selectedTopic.tint)
+                    .foregroundStyle(tint)
             }
 
             HStack(alignment: .top, spacing: 10) {
@@ -95,7 +101,7 @@ struct HelpCenterView: View {
                     HelpStepCard(
                         index: index + 1,
                         step: selectedTopic.steps[index],
-                        tint: selectedTopic.tint
+                        tint: tint
                     )
                 }
             }
@@ -131,17 +137,20 @@ struct HelpCenterView: View {
 
 private struct HelpTopicButton: View {
     let topic: HelpTopic
+    let themeAccent: Color
     let isSelected: Bool
     let action: () -> Void
 
     var body: some View {
+        let tint = topic.tint(themeAccent: themeAccent)
+
         Button(action: action) {
             HStack(spacing: 10) {
                 Image(systemName: topic.icon)
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(topic.tint)
+                    .foregroundStyle(tint)
                     .frame(width: 30, height: 30)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(topic.tint.opacity(0.12)))
+                    .background(RoundedRectangle(cornerRadius: 8).fill(tint.opacity(0.12)))
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(topic.title)
@@ -157,18 +166,18 @@ private struct HelpTopicButton: View {
                 if isSelected {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(topic.tint)
+                        .foregroundStyle(tint)
                 }
             }
             .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 10)
-                    .fill(isSelected ? topic.tint.opacity(0.1) : Color.primary.opacity(0.03))
+                    .fill(isSelected ? tint.opacity(0.1) : Color.primary.opacity(0.03))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 10)
-                    .stroke(isSelected ? topic.tint.opacity(0.35) : Color.primary.opacity(0.06), lineWidth: 1)
+                    .stroke(isSelected ? tint.opacity(0.35) : Color.primary.opacity(0.06), lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
@@ -274,9 +283,9 @@ private enum HelpTopic: String, CaseIterable, Identifiable {
         }
     }
 
-    var tint: Color {
+    func tint(themeAccent: Color) -> Color {
         switch self {
-        case .getStarted: return .accentColor
+        case .getStarted: return themeAccent
         case .findAndOrganize: return .indigo
         case .previewAndEdit: return .orange
         case .translate: return .purple
