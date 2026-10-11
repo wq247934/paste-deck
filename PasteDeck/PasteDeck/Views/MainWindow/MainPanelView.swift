@@ -183,11 +183,17 @@ struct MainPanelView: View {
     /// 用户手动关闭上下文工具面板；切换选中卡片后自动恢复显示。
     @State private var isContextPanelDismissed = false
 
-    /// 上下文工具面板宽度（含左缘拖拽手柄）；可在面板左边缘拖拽调整并持久化。
-    @AppStorage("PasteDeck.ContextPanel.Width") private var contextPanelWidth: Double = 312
-    private static let contextPanelWidthRange: ClosedRange<Double> = 260...420
     /// 面板右侧预留固定空间所需的最小卡片可用宽度；不足时改为覆盖式面板。
     private static let contextPanelMinimumCardArea: CGFloat = 460
+
+    /// 上下文工具面板的宽度与拖拽手柄共享同一个状态对象。
+    ///
+    /// 宽度不再用 @AppStorage 直接读盘：拖拽手柄是原生覆盖层，
+    /// 它无法读取 SwiftUI 的 @AppStorage，而直接查 UserDefaults 又会在
+    /// key 从未被写入时返回 0，导致条带算不出来、手柄静默失效。
+    /// 统一由 PanelResizeHandleState 持有宽度，拖拽结束时才落盘。
+    @ObservedObject private var resizeHandleState = PanelResizeHandleState.shared
+    private var contextPanelWidth: Double { resizeHandleState.width }
 
     var closeHandler: (() -> Void)?
     var openSettingsHandler: (() -> Void)?
@@ -291,8 +297,7 @@ struct MainPanelView: View {
     /// 这里不回写，避免用旧值覆盖用户刚拖出的结果；
     /// 面板每次显示时由 refreshPersistedWidth() 从磁盘重新加载。
     private func syncResizeHandleState() {
-        resizeHandleState.width = contextPanelWidth
-        resizeHandleState.isEnabled = contextPanelModel != nil
+        resizeHandleState.setEnabled(contextPanelModel != nil)
     }
 
     /// 上下文工具面板的展示模型：选中的单张卡片与其识别结果。
@@ -301,7 +306,16 @@ struct MainPanelView: View {
         let matches: [ContentRecognizer.Match]
     }
 
+    /// 内容识别的结果按卡片缓存，避免每次 body 求值都重新扫描内容。
+    private static let recognitionCacheLimit = 64
+
+    /// 按卡片 id 缓存识别结果，快照内容变化时自动失效。
+    @State private var recognitionCache: [UUID: ContextPanelModel] = [:]
+
     /// 当前选中卡片（无多选、非用户关闭）对应的上下文工具模型。
+    ///
+    /// 识别结果按快照缓存：ContentRecognizer 会对整段内容做格式识别，
+    /// 而本视图在搜索输入、选择变化时都会重新求值 body，必须避免重复计算。
     private var contextPanelModel: ContextPanelModel? {
         guard !isContextPanelDismissed else { return nil }
         // 多选状态下不推荐工具：内容来源不唯一。
@@ -309,7 +323,16 @@ struct MainPanelView: View {
         guard let snapshot = historyStore.filteredItems.first(where: { $0.id == selectedItemID }) else {
             return nil
         }
+        if let cached = recognitionCache[snapshot.id], cached.snapshot == snapshot {
+            guard !cached.matches.isEmpty else { return nil }
+            return ContextPanelModel(snapshot: snapshot, matches: cached.matches)
+        }
+
         let matches = ContentRecognizer.recognize(snapshot)
+        if recognitionCache.count >= Self.recognitionCacheLimit {
+            recognitionCache.removeAll(keepingCapacity: true)
+        }
+        recognitionCache[snapshot.id] = ContextPanelModel(snapshot: snapshot, matches: matches)
         guard !matches.isEmpty else { return nil }
         return ContextPanelModel(snapshot: snapshot, matches: matches)
     }
@@ -325,9 +348,6 @@ struct MainPanelView: View {
         }
         .onChange(of: contextPanelModel?.snapshot.id) { _, _ in
             syncResizeHandleState()
-        }
-        .onChange(of: contextPanelWidth) { _, newValue in
-            resizeHandleState.width = newValue
         }
         .onChange(of: isContextPanelDismissed) { _, _ in
             syncResizeHandleState()
@@ -385,6 +405,9 @@ struct MainPanelView: View {
             focusSearch()
         }
         .onReceive(NotificationCenter.default.publisher(for: .panelDidShow)) { _ in
+            // 面板每次显示都从磁盘恢复宽度：单例只初始化一次，
+            // 否则重启后会沿用内存中的旧宽度。
+            resizeHandleState.refreshPersistedWidth()
             historyStore.loadIfNeeded()
             setSourceAppFilter(nil)
             selectDefaultCard()
@@ -437,8 +460,11 @@ struct MainPanelView: View {
     }
 
     /// 面板左缘的宽度拖拽手柄（视觉部分）。
-    @ObservedObject private var resizeHandleState = PanelResizeHandleState.shared
-
+    ///
+    /// 事件由 PanelResizeHandleOverlayView（MainPanelController 安装的原生
+    /// 覆盖层）处理：主面板 isMovableByWindowBackground 会吞掉 SwiftUI 手势，
+    /// 只有 mouseDownCanMoveWindow = false 的原生视图能接管拖拽。
+    /// 握把会随 hover / 拖拽实时加粗，指明当前可拖拽。
     private var contextPanelResizeHandle: some View {
         Capsule()
             .fill(Color.primary.opacity(

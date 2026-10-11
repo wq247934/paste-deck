@@ -175,8 +175,8 @@
 - [x] IPv4/子网工具：格式校验、地址类型（私网/公网/回环/链路本地/CGNAT/组播/保留）、CIDR 前缀、子网掩码与通配符、网络/广播地址、可用范围与数量、一键复制；正确处理 /0、/31、/32
 - [x] 额度查看工具：搜索“额度/codex/workbuddy/余额”直达；完全复用 QuotaStatusManager 缓存刷新逻辑与设置页共享展示组件，设置页额度功能保持不变
 - [x] 兼容性保障：内容识别纯内存无网络无磁盘扫描；工具复制结果只写 NSPasteboard 不触发模拟粘贴；卡片区文本编辑器（面板输入框）持有焦点时方向键/回车/空格/删除全部放行，不误触发粘贴或预览
-- [x] 上下文工具面板宽度可拖拽调整（左边缘手柄，260–420pt，AppStorage 持久化）
-- [x] 单元测试：TimestampMathTests、IPv4MathTests、ContentRecognizerTests、ToolSearchServiceTests、DateMathTests、IPGeoServiceTests、PreviewWindowDetectionTests 覆盖解析、边界、误判防护、搜索排序、工作日历与归属地解析
+- [x] 上下文工具面板宽度可拖拽调整（左边缘手柄，260–420pt，拖拽结束时持久化）；宽度以 `PanelResizeHandleState` 为唯一真相来源，原生命中测试与 SwiftUI 布局共享该状态，禁止在命中路径直接读取 UserDefaults（key 未写入时读数为 0，会导致手柄静默失效）
+- [x] 单元测试：TimestampMathTests、IPv4MathTests、ContentRecognizerTests、ToolSearchServiceTests、DateMathTests、IPGeoServiceTests、PreviewWindowDetectionTests、PanelResizeHandleTests 覆盖解析、边界、误判防护、搜索排序、工作日历、归属地解析与拖拽手柄命中/持久化行为
 
 ---
 
