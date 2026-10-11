@@ -71,6 +71,7 @@ build/
 
 # AI 工具本地记忆/会话文件
 .workbuddy/
+.zcode/
 
 # macOS
 .DS_Store
