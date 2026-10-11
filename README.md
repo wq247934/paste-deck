@@ -12,6 +12,7 @@ PasteDeck is a native macOS clipboard manager for quickly searching, previewing,
 - Login launches remain silent in the menu bar; reopening the running app shows the clipboard panel.
 - Click a card to select it, or double-click it to paste it immediately.
 - Menu bar dropdown includes a stats overview header showing today's copies, total items, and cache size, plus a quota block with progress bars for Codex 5-hour/weekly windows and WorkBuddy remaining credits, a one-click refresh, and a shortcut to the quota settings pane.
+- Built-in smart toolbox: searching matches tools by name, alias, keyword, and description alongside clipboard history; selecting a timestamp or IPv4 card recommends the matching tool in a right-hand context panel; tools open in an independent popup window and never touch the clipboard history database. First-party tools include a full time & date calculator (timestamp conversion, date difference, date arithmetic, working-day calculation with built-in 2024-2025 Chinese legal holiday data, date counting, English date formats, world time converter, and a keyboard-driven stopwatch), IPv4/subnet calculation (address validation, address type, CIDR, mask, network/broadcast, usable range with `/0` `/31` `/32` edge cases, plus optional online geolocation/ISP lookup via ipwho.is with ipinfo.io fallback that only fires when you click the button), and a quota viewer that reuses the Codex/WorkBuddy services from the settings pane. The context panel width is draggable and remembered.
 - Shows local quota balances in a dedicated settings pane: Codex (ChatGPT desktop) plan status, 5-hour and weekly rate-limit windows, and rate-limit reset credits are queried through the local codex app-server without network access; WorkBuddy (Tencent CodeBuddy) per-package totals, usage, and remaining credits are read from the local desktop credential file and fetched directly from Tencent's official billing endpoint with automatic token renewal. An optional settings toggle displays compact balances (`C` remaining percent and `W` remaining credits) next to the menu bar icon, turning red when a balance runs low.
 - Includes a visual, scenario-based Feature Guide in Settings and the menu bar, covering everyday actions, organization, previews, translation, analytics, and maintenance without a wall of text.
 - Provides fast keyboard navigation that keeps the selected card fully visible at every panel size, plus favorite filters, custom collections, pinning, deletion, and batch paste.
@@ -99,15 +100,15 @@ Clipboard polling uses `NSPasteboard`; it does not require Accessibility by itse
 | `Option + S` | Capture a screen region, OCR, and translate (customizable) |
 | `Option + A` | Open the input translation window (customizable) |
 | `Command + F` | Focus search |
-| `Left` / `Right` | Move between cards |
+| `Left` / `Right` | Move between cards (cursor movement inside search/tools input) |
 | `Shift + Left` / `Shift + Right` | Extend multi-selection |
-| `Up` / `Down` | Page through cards |
+| `Up` / `Down` | Page through cards; while search matches tools, step through tool results |
 | `Tab` | Switch filter tab |
-| `Enter` | Paste selected item |
+| `Enter` | Paste selected item; in search, opens the highlighted tool, otherwise focuses history |
 | `Shift + Enter` | Paste selected item as plain text |
 | `Space` | Preview selected item |
 | `Delete` | Delete selected item |
-| `Esc` | Close preview or panel |
+| `Esc` | Close tool popup first, then preview or panel |
 
 ## Supported Content
 
@@ -168,6 +169,24 @@ Clipboard polling uses `NSPasteboard`; it does not require Accessibility by itse
 - `HelpCenterView` — scenario-based, card-led feature guide with three-step workflows and contextual shortcuts.
 - `StatsSettingsView` / `StatsViewModel` — responsive statistics dashboard with KPI cards, interactive trend charts, content composition, source insights, and translation usage details.
 
+### 智能工具箱（Tools/）
+- `ToolDescriptor` / `ToolContext` — 稳定的工具元数据（ID、名称、SF Symbol、描述、关键词、别名）与打开上下文（搜索或选中卡片、预填文本）。
+- `BuiltinTool` / `ToolRegistry` — 内置工具枚举与集中注册查询，每个工具拥有独立界面。
+- `ToolSearchService` — 独立于剪贴板搜索的工具搜索：关键词打分 + 严格内容建议，不影响历史搜索性能。
+- `ContentRecognizer` — 剪贴板快照的纯内存识别（Unix 时间戳、IPv4/CIDR），无网络请求和磁盘扫描。
+- `TimestampMath` / `IPv4Math` — 基于 Foundation `Date`/`Calendar`/`TimeZone` 与 `UInt32` 位运算的纯计算逻辑，含单元测试。
+- `ToolWindowController` — 独立工具弹窗管理，参考预览窗口实现，关闭后把焦点交还搜索框。
+- `ContextToolPanel` — 右侧上下文工具面板，跟随卡片选择切换，与工具弹窗共用界面。
+
+### Smart Toolbox (Tools/)
+- `ToolDescriptor` / `ToolContext` — stable tool metadata (ID, name, SF Symbol, summary, keywords, aliases) and the launch context (search vs. selected card, prefilled text).
+- `BuiltinTool` / `ToolRegistry` — built-in tool enum with per-tool views and the central registry/lookup.
+- `ToolSearchService` — independent tool-side search with keyword scoring and strict content-based suggestions; never touches the clipboard history store.
+- `ContentRecognizer` — pure in-memory recognition of clipboard snapshots (Unix timestamps, IPv4/CIDR) with no network or disk access.
+- `TimestampMath` / `IPv4Math` — pure conversion/subnet logic built on Foundation `Date`/`Calendar`/`TimeZone` and `UInt32` bit math, covered by unit tests.
+- `ToolWindowController` — independent tool popup window management modeled on the preview window, with focus handed back to the search field on close.
+- `ContextToolPanel` — right-hand context panel that follows card selection and shares tool views with the popup window.
+
 ### Utilities
 - `AppearanceManager` centralizes theme → `NSAppearance` resolution for the main panel, preview window, and settings window.
 - `ImageFilePreview` handles image file preview rendering.
@@ -216,6 +235,7 @@ PasteDeck 是一个原生 macOS 剪贴板管理器，用浮动面板快速搜索
 - 开机登录后静默常驻菜单栏；重新打开已运行的应用时，会显示剪贴板主面板。
 - 单击卡片可选中，双击卡片可立即粘贴。
 - 菜单栏下拉菜单内嵌统计概览，展示今日复制次数、总条数和缓存占用；并新增额度区块，以进度条展示 Codex 5 小时 / 每周额度窗口与 WorkBuddy 剩余积分，支持一键刷新和跳转额度设置页。
+- 内置智能工具箱：搜索同时匹配工具（名称、别名、关键词、描述）与剪贴板历史；选中时间戳或 IPv4 卡片时，右侧上下文面板自动推荐对应工具；工具在独立弹窗中打开，不写入历史数据库。首批内置工具包括完整的时间日期计算器（时间戳转换、计算日期差、推算日期、推算工作日（内置 2024–2025 年法定节假日与调休数据）、工作天数、英文日期格式、世界时间转换器、键盘秒表）、IPv4/子网计算（地址校验、地址类型、CIDR、掩码、网络/广播地址、可用范围，正确处理 /0、/31、/32；支持点击按钮在线查询归属地与运营商，主源 ipwho.is、备源 ipinfo.io，私网地址不发起查询）和额度查看（复用设置页的 Codex/WorkBuddy 服务）。侧边栏左边缘支持拖拽调整宽度并记住。
 - 新增“额度”设置页，完整展示本机余额：Codex（ChatGPT 桌面版）套餐状态、5 小时 / 每周速率窗口与重置卡通过本机 codex app-server 查询，不访问网络；WorkBuddy（腾讯 CodeBuddy）各积分包总额 / 已用 / 剩余读取本地桌面版凭证后直连腾讯官方计费接口，token 失效自动续期。设置中开启开关后，菜单栏图标旁会显示紧凑余额（C 剩余百分比、W 剩余积分），余额不足时自动变红。
 - 菜单栏和设置页均提供“功能指南”：按快速开始、查找整理、预览编辑、翻译、统计、个性化六个场景，用卡片、三步操作和快捷键帮助理解全部功能。
 - 支持键盘导航，并会按当前面板可视区域自动滚动选中卡片；同时支持收藏筛选、自定义收藏夹、系统“翻译”分类、置顶、删除和批量粘贴。翻译分类固定在“收藏”之后，不能删除、改名或排序。
@@ -304,15 +324,15 @@ PasteDeck 需要辅助功能权限来读取前台应用选中文字，并模拟 
 | `Option + S` | 区域截图、OCR 并翻译（可自定义） |
 | `Option + A` | 打开输入翻译窗口（可自定义） |
 | `Command + F` | 聚焦搜索框 |
-| `Left` / `Right` | 在卡片间移动 |
+| `Left` / `Right` | 在卡片间移动（搜索框与工具输入框内为移动光标） |
 | `Shift + Left` / `Shift + Right` | 扩展多选 |
-| `Up` / `Down` | 翻页浏览卡片 |
+| `Up` / `Down` | 翻页浏览卡片；搜索命中工具时逐个选择工具结果 |
 | `Tab` | 切换筛选标签 |
-| `Enter` | 粘贴选中项目 |
+| `Enter` | 粘贴选中项目；搜索时若已高亮工具则打开工具，否则进入历史区 |
 | `Shift + Enter` | 以纯文本粘贴 |
 | `Space` | 预览选中项目 |
 | `Delete` | 删除选中项目 |
-| `Esc` | 关闭预览或面板 |
+| `Esc` | 优先关闭工具弹窗，其次预览或面板 |
 
 ## 测试
 

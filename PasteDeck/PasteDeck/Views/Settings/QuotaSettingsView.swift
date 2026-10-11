@@ -13,7 +13,7 @@ import SwiftUI
 import SwiftData
 
 /// Codex / WorkBuddy 的品牌展示色。
-private enum QuotaBrandColor {
+enum QuotaBrandColor {
     static let codex = Color.teal
     static let workBuddy = Color.yellow
 }
@@ -529,7 +529,7 @@ struct QuotaSettingsView: View {
 // MARK: - 面板卡片
 
 /// 设置页额度面板的统一卡片：彩色图标 + 标题行 + 分隔线 + 内容区。
-private struct QuotaPanelCard<Trailing: View, Content: View>: View {
+struct QuotaPanelCard<Trailing: View, Content: View>: View {
     let icon: String
     let iconTint: Color
     let title: String
@@ -576,7 +576,7 @@ private struct QuotaPanelCard<Trailing: View, Content: View>: View {
     }
 }
 
-private struct QuotaPanelRow<Value: View>: View {
+struct QuotaPanelRow<Value: View>: View {
     let title: String
     @ViewBuilder var value: () -> Value
 
@@ -591,7 +591,7 @@ private struct QuotaPanelRow<Value: View>: View {
     }
 }
 
-private struct QuotaPanelDivider: View {
+struct QuotaPanelDivider: View {
     var body: some View {
         Rectangle()
             .fill(Color.primary.opacity(0.05))
@@ -602,7 +602,7 @@ private struct QuotaPanelDivider: View {
 
 // MARK: - 进度条与占位状态
 
-private struct QuotaProgressBar: View {
+struct QuotaProgressBar: View {
     let fraction: Double
     let color: Color
     var track: Color = Color.primary.opacity(0.08)
@@ -621,7 +621,7 @@ private struct QuotaProgressBar: View {
     }
 }
 
-private struct QuotaHeroLoadingState: View {
+struct QuotaHeroLoadingState: View {
     let tint: Color
 
     var body: some View {
@@ -638,7 +638,7 @@ private struct QuotaHeroLoadingState: View {
     }
 }
 
-private struct QuotaHeroErrorState: View {
+struct QuotaHeroErrorState: View {
     let text: String
 
     var body: some View {
@@ -659,7 +659,7 @@ private struct QuotaHeroErrorState: View {
     }
 }
 
-private struct QuotaHeroInactiveState: View {
+struct QuotaHeroInactiveState: View {
     let label: String
     let tint: Color
 

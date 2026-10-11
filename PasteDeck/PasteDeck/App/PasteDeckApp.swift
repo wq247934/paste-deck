@@ -456,12 +456,18 @@ enum AppModelContainer {
             TranslationUsageSnapshot.self
         ])
 
-        let appSupportURL = try! FileManager.default.url(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask,
-            appropriateFor: nil,
-            create: true
-        )
+        let appSupportURL: URL
+        if let overridePath = ProcessInfo.processInfo.environment["PASTEDECK_STORE_URL"] {
+            // 测试支撑：允许 QA 运行使用隔离的存储目录，避免触碰真实历史数据。
+            appSupportURL = URL(fileURLWithPath: overridePath, isDirectory: true)
+        } else {
+            appSupportURL = try! FileManager.default.url(
+                for: .applicationSupportDirectory,
+                in: .userDomainMask,
+                appropriateFor: nil,
+                create: true
+            )
+        }
 
         let pasteDeckURL = appSupportURL.appendingPathComponent("com.pastedeck.app")
         try? FileManager.default.createDirectory(at: pasteDeckURL, withIntermediateDirectories: true)

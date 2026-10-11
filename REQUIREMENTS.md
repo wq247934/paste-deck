@@ -148,6 +148,7 @@
 - [x] 链接标题服务测试（LinkTitleServiceTests）
 - [x] 图片资产生命周期测试（ClipboardAssetLifecycleTests），覆盖共享引用、待采用/最终删除交错、待采用期间维护保护和 files 目录隔离
 - [x] 余额查询测试（QuotaServiceTests），覆盖 Codex 快照解析、WorkBuddy 字符串容量解析与排序、倒计时/紧凑数字格式化
+- [x] 智能工具箱测试（TimestampMathTests / IPv4MathTests / ContentRecognizerTests / ToolSearchServiceTests），覆盖时间戳与子网纯计算、内容识别误判防护和工具搜索打分
 
 ### 14. 额度查询
 
@@ -158,6 +159,24 @@
 - [x] 菜单栏下拉菜单内嵌额度区块：Codex 5 小时 / 每周窗口与 WorkBuddy 剩余积分进度条、一键刷新、跳转额度详情
 - [x] 设置开关：把 Codex 剩余百分比与 WorkBuddy 剩余积分显示在菜单栏图标旁，余额不足自动变红，开启后按固定间隔后台刷新
 - [x] 额度 UI 按设计稿重构：设置页双品牌色 hero 卡片 + 账户订阅/合计可用/积分包面板；菜单区块品牌色进度条、富文本数值与“额度详情…”按钮行
+
+### 15. 智能工具箱
+
+- [x] 工具基础架构：ToolDescriptor（稳定唯一 ID、名称、SF Symbol、描述、关键词、别名）、ToolRegistry（集中注册查询）、ToolContext（打开来源与预填文本）；全部为原生 SwiftUI/AppKit，不引入 WebView 或插件引擎
+- [x] 统一搜索：继续使用现有搜索框，工具结果与剪贴板历史分组展示、互不依赖；工具搜索走独立的 ToolSearchService，不触碰 ClipboardHistoryStore 与 SwiftData
+- [x] 内容建议：搜索词本身是合法时间戳或 IPv4 时推荐对应工具并支持预填；手机号、订单号等普通数字不触发
+- [x] 独立工具弹窗：从搜索结果点击工具弹出独立窗口（不占用上下文面板）；关闭后保留搜索关键词与结果并把焦点交还搜索框；Esc 优先关闭工具弹窗
+- [x] 主面板焦点保护：打开工具弹窗不会导致主面板失焦自动隐藏；焦点恢复通过 MainPanelController 统一生命周期机制完成
+- [x] 修复空格预览回归：预览窗口改用 identifier 检测（themeStyled() 包裹后 NSHostingView<PreviewWindow> 类型检测恒为 false，导致按空格时主面板被误判为无辅助窗口而自动隐藏）
+- [x] 右侧上下文工具面板：选中时间戳/IPv4 卡片时自动推荐工具并内嵌工具界面，跟随卡片切换更新；多选或无匹配时不显示；支持手动关闭；宽窗口固定右侧空间、窄窗口覆盖式展示，不挤压卡片、不修改保存的窗口尺寸
+- [x] 时间戳转换工具：Unix 秒/毫秒双向转换、本地/UTC/指定时区切换、ISO 8601 输出、实时当前时间戳、一键复制；严格位数与范围校验，拒绝手机号等误判；基于 Foundation Date/Calendar/TimeZone
+- [x] 时间日期计算器完整分区（uTools 式左导航，窄容器自动切换顶部胶囊导航）：计算日期差（含时分秒）、推算日期（天/周/月/年、前后方向）、推算工作日与工作天数（内置 2024–2025 年法定节假日与调休补班数据，范围外退化为周末估算并提示）、英文日期格式转换（美式/英式）、世界时间转换器（多时区勾选 + 全选/全不选/反选）、在线秒表（A 开始/暂停、S 计次、C 复位，计次记录）；往年今日暂以占位提示
+- [x] IPv4 归属地/运营商在线查询：仅在用户点击按钮时向 ipwho.is 发送该 IP（备源 ipinfo.io 自动兜底），私网/回环/保留地址直接拒绝查询，结果含归属地、运营商、ASN、时区并标注数据来源；同一 IP 结果会话内缓存
+- [x] IPv4/子网工具：格式校验、地址类型（私网/公网/回环/链路本地/CGNAT/组播/保留）、CIDR 前缀、子网掩码与通配符、网络/广播地址、可用范围与数量、一键复制；正确处理 /0、/31、/32
+- [x] 额度查看工具：搜索“额度/codex/workbuddy/余额”直达；完全复用 QuotaStatusManager 缓存刷新逻辑与设置页共享展示组件，设置页额度功能保持不变
+- [x] 兼容性保障：内容识别纯内存无网络无磁盘扫描；工具复制结果只写 NSPasteboard 不触发模拟粘贴；卡片区文本编辑器（面板输入框）持有焦点时方向键/回车/空格/删除全部放行，不误触发粘贴或预览
+- [x] 上下文工具面板宽度可拖拽调整（左边缘手柄，260–420pt，AppStorage 持久化）
+- [x] 单元测试：TimestampMathTests、IPv4MathTests、ContentRecognizerTests、ToolSearchServiceTests、DateMathTests、IPGeoServiceTests、PreviewWindowDetectionTests 覆盖解析、边界、误判防护、搜索排序、工作日历与归属地解析
 
 ---
 

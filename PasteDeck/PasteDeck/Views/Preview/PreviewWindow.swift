@@ -32,7 +32,9 @@ class MainWindowReference {
     static var window: NSWindow?
 }
 
-private let previewWindowIdentifier = NSUserInterfaceItemIdentifier("PasteDeckPreviewWindow")
+/// 预览窗口的稳定标识。主面板的失焦保护依赖它识别预览窗口
+/// （themeStyled() 之后 hosting view 的泛型类型不再匹配旧检测）。
+let previewWindowIdentifier = NSUserInterfaceItemIdentifier("PasteDeckPreviewWindow")
 
 private enum PreviewWindowLayout {
     static let defaultWindowSize = CGSize(width: 600, height: 500)

@@ -16,6 +16,8 @@ extension Notification.Name {
     static let clearSelection = Notification.Name("clearSelection")
     static let panelDidShow = Notification.Name("panelDidShow")
     static let panelDidRequestCardFocus = Notification.Name("panelDidRequestCardFocus")
+    /// 工具弹窗关闭后主面板焦点恢复的统一目标：聚焦搜索框。
+    static let panelDidRequestSearchFocus = Notification.Name("panelDidRequestSearchFocus")
     static let toggleMainPanel = Notification.Name("toggleMainPanel")
     static let openSettingsWindow = Notification.Name("openSettingsWindow")
     /// 既有项目的置顶/收藏夹归属被就地修改（不改变 @Query 数组成员），需要刷新过滤缓存
@@ -170,6 +172,23 @@ struct MainPanelView: View {
     /// 预览窗口控制器（需要持有以防止被释放）
     @State private var previewController: PreviewWindowController?
 
+    /// 独立工具弹窗控制器（需要持有以防止被释放）
+    @State private var toolWindowController: ToolWindowController?
+
+    /// 统一搜索命中的工具结果；仅在搜索词非空时计算。
+    @State private var toolMatches: [ToolSearchService.Result] = []
+    /// 键盘当前高亮的工具结果下标；nil 表示尚未用键盘选择工具。
+    @State private var toolHighlightIndex: Int?
+
+    /// 用户手动关闭上下文工具面板；切换选中卡片后自动恢复显示。
+    @State private var isContextPanelDismissed = false
+
+    /// 上下文工具面板宽度（含左缘拖拽手柄）；可在面板左边缘拖拽调整并持久化。
+    @AppStorage("PasteDeck.ContextPanel.Width") private var contextPanelWidth: Double = 312
+    private static let contextPanelWidthRange: ClosedRange<Double> = 260...420
+    /// 面板右侧预留固定空间所需的最小卡片可用宽度；不足时改为覆盖式面板。
+    private static let contextPanelMinimumCardArea: CGFloat = 460
+
     var closeHandler: (() -> Void)?
     var openSettingsHandler: (() -> Void)?
 
@@ -177,6 +196,11 @@ struct MainPanelView: View {
 
     private var appSettings: AppSettings? {
         settings.first
+    }
+
+    /// 是否处于统一搜索状态（搜索词非空）。搜索为空时主面板维持原有剪贴板界面。
+    private var isSearchActive: Bool {
+        !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private var panelOrientation: PanelOrientation {
@@ -261,12 +285,53 @@ struct MainPanelView: View {
         selectDefaultCard()
     }
 
+    /// 把侧边栏可见性同步给原生拖拽手柄覆盖层。
+    ///
+    /// 宽度本身由 PanelResizeHandleState 持有（含拖拽中的实时值），
+    /// 这里不回写，避免用旧值覆盖用户刚拖出的结果；
+    /// 面板每次显示时由 refreshPersistedWidth() 从磁盘重新加载。
+    private func syncResizeHandleState() {
+        resizeHandleState.width = contextPanelWidth
+        resizeHandleState.isEnabled = contextPanelModel != nil
+    }
+
+    /// 上下文工具面板的展示模型：选中的单张卡片与其识别结果。
+    private struct ContextPanelModel: Equatable {
+        let snapshot: ClipboardItemSnapshot
+        let matches: [ContentRecognizer.Match]
+    }
+
+    /// 当前选中卡片（无多选、非用户关闭）对应的上下文工具模型。
+    private var contextPanelModel: ContextPanelModel? {
+        guard !isContextPanelDismissed else { return nil }
+        // 多选状态下不推荐工具：内容来源不唯一。
+        guard selectedItems.count <= 1, let selectedItemID else { return nil }
+        guard let snapshot = historyStore.filteredItems.first(where: { $0.id == selectedItemID }) else {
+            return nil
+        }
+        let matches = ContentRecognizer.recognize(snapshot)
+        guard !matches.isEmpty else { return nil }
+        return ContextPanelModel(snapshot: snapshot, matches: matches)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             panelHeader
-            panelContent
+            mainContentArea
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onAppear {
+            syncResizeHandleState()
+        }
+        .onChange(of: contextPanelModel?.snapshot.id) { _, _ in
+            syncResizeHandleState()
+        }
+        .onChange(of: contextPanelWidth) { _, newValue in
+            resizeHandleState.width = newValue
+        }
+        .onChange(of: isContextPanelDismissed) { _, _ in
+            syncResizeHandleState()
+        }
         .preferredColorScheme(preferredColorScheme)
         .onAppear {
             historyStore.loadIfNeeded()
@@ -274,8 +339,9 @@ struct MainPanelView: View {
             selectDefaultCard()
             focusCards()
         }
-        .onChange(of: searchText) { _, _ in
-            historyStore.setSearchText(searchText)
+        .onChange(of: searchText) { _, newValue in
+            historyStore.setSearchText(newValue)
+            refreshToolMatches(for: newValue)
         }
         .onChange(of: selectedFilter) { _, _ in
             historyStore.setFilter(selectedFilter)
@@ -311,7 +377,12 @@ struct MainPanelView: View {
             setSourceAppFilter(nil)
             historyStore.setSearchText("")
             historyStore.setFilter(.all)
+            toolMatches = []
+            toolHighlightIndex = nil
             selectDefaultCard()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .panelDidRequestSearchFocus)) { _ in
+            focusSearch()
         }
         .onReceive(NotificationCenter.default.publisher(for: .panelDidShow)) { _ in
             historyStore.loadIfNeeded()
@@ -320,15 +391,71 @@ struct MainPanelView: View {
             focusCards()
             clearMultiSelection()
         }
+        .onChange(of: selectedItemID) { _, _ in
+            // 切换选中卡片后重新允许上下文工具面板自动展示。
+            isContextPanelDismissed = false
+        }
         .onReceive(NotificationCenter.default.publisher(for: .panelDidRequestCardFocus)) { _ in
             focusCards()
         }
         .background(keyboardEventMonitor)
     }
 
+    /// 主内容区：卡片列表（含搜索工具分组）+ 右侧上下文工具面板。
+    /// 宽度足够时面板占据固定右侧空间（宽度可拖拽调整）；不足时改为
+    /// 覆盖在卡片上方，不挤压卡片、不改变用户保存的窗口尺寸。
+    private var mainContentArea: some View {
+        GeometryReader { geometry in
+            let panelWidth = CGFloat(contextPanelWidth)
+            let canShareRow = geometry.size.width - panelWidth >= Self.contextPanelMinimumCardArea
+            let reservesSpace = canShareRow && contextPanelModel != nil
+
+            ZStack(alignment: .trailing) {
+                panelContent
+                    .padding(.trailing, reservesSpace ? panelWidth : 0)
+
+                if let contextPanelModel {
+                    HStack(spacing: 0) {
+                        contextPanelResizeHandle
+                        ContextToolPanel(
+                            snapshot: contextPanelModel.snapshot,
+                            matches: contextPanelModel.matches,
+                            onClose: {
+                                isContextPanelDismissed = true
+                            }
+                        )
+                        .frame(width: panelWidth - 12)
+                    }
+                    .padding(.trailing, 10)
+                    .padding(.vertical, 8)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                }
+            }
+            .animation(.easeOut(duration: 0.16), value: contextPanelModel?.snapshot.id)
+            .animation(.easeOut(duration: 0.16), value: isContextPanelDismissed)
+        }
+    }
+
+    /// 面板左缘的宽度拖拽手柄（视觉部分）。
+    @ObservedObject private var resizeHandleState = PanelResizeHandleState.shared
+
+    private var contextPanelResizeHandle: some View {
+        Capsule()
+            .fill(Color.primary.opacity(
+                resizeHandleState.isDragging || resizeHandleState.isHovering ? 0.55 : 0.22
+            ))
+            .frame(width: 3, height: 44)
+            .frame(width: 12)
+            .frame(maxHeight: .infinity)
+            .animation(.easeOut(duration: 0.12), value: resizeHandleState.isHovering)
+            .animation(.easeOut(duration: 0.12), value: resizeHandleState.isDragging)
+    }
+
     @ViewBuilder
     private var panelContent: some View {
-        if historyStore.isLoading && historyStore.filteredItems.isEmpty {
+        if isSearchActive {
+            searchResultsContent
+        } else if historyStore.isLoading && historyStore.filteredItems.isEmpty {
             ProgressView()
                 .controlSize(.small)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -337,6 +464,52 @@ struct MainPanelView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             virtualizedList
+        }
+    }
+
+    /// 统一搜索内容：上方为命中的工具分组，下方保持原有剪贴板历史分组。
+    /// 工具与历史互不依赖：只有工具命中时仍展示工具，只有历史命中时只展示历史。
+    @ViewBuilder
+    private var searchResultsContent: some View {
+        VStack(spacing: 0) {
+            if historyStore.isLoading && historyStore.filteredItems.isEmpty {
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                if !toolMatches.isEmpty {
+                    ToolSearchResultsView(
+                        results: toolMatches,
+                        highlightedIndex: toolHighlightIndex,
+                        onHoverHighlight: { toolHighlightIndex = $0 },
+                        onOpen: openToolWindow
+                    )
+                    .padding(.horizontal, panelOrientation == .horizontal ? 20 : 16)
+                    .padding(.top, 10)
+                    .padding(.bottom, 4)
+                }
+
+                if historyStore.filteredItems.isEmpty {
+                    VStack(spacing: 10) {
+                        if toolMatches.isEmpty {
+                            EmptyStateView()
+                        } else {
+                            Image(systemName: "clipboard.on.clipboard")
+                                .font(.system(size: 32))
+                                .foregroundColor(.secondary.opacity(0.7))
+                            Text("无匹配的剪贴板记录")
+                                .font(.system(size: 13))
+                                .foregroundColor(.secondary)
+                            Text("可继续使用上方工具，或修改搜索关键词")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary.opacity(0.75))
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    virtualizedList
+                }
+            }
         }
     }
 
@@ -376,6 +549,8 @@ struct MainPanelView: View {
             selectedFilter: $selectedFilter,
             focusRequest: cardFocusRequest,
             filterOptions: filterOptions,
+            hasSelectableToolResults: !toolMatches.isEmpty && isSearchActive,
+            isSearchFieldFocused: isSearchFocused,
             onLeftArrow: handleLeftArrow,
             onRightArrow: handleRightArrow,
             onUpArrow: handleUpArrow,
@@ -384,7 +559,8 @@ struct MainPanelView: View {
             onEscape: closePreviewOrPanel,
             onSpace: previewSelectedItem,
             onDelete: deleteSelectedItem,
-            onCmdF: focusSearch
+            onCmdF: focusSearch,
+            onToolHighlightMove: moveToolHighlight
         )
     }
 
@@ -520,6 +696,13 @@ struct MainPanelView: View {
 
     private func handleEnter(_ shiftHeld: Bool) {
         if focusZone == .search {
+            // 统一搜索：已用 ↑↓ 高亮工具时 Enter 打开该工具，否则维持原有行为
+            // （焦点回到卡片区并选中第一条历史）。
+            if let highlightIndex = toolHighlightIndex,
+               toolMatches.indices.contains(highlightIndex) {
+                openToolWindow(toolMatches[highlightIndex])
+                return
+            }
             focusCards()
             if !historyStore.filteredItems.isEmpty {
                 selectedIndex = 0
@@ -532,6 +715,72 @@ struct MainPanelView: View {
         }
     }
 
+    /// 统一搜索中用 ↑↓ 选择工具结果。
+    private func moveToolHighlight(_ direction: ScrollDirection) {
+        guard !toolMatches.isEmpty else { return }
+
+        switch direction {
+        case .down:
+            switch toolHighlightIndex {
+            case .none:
+                toolHighlightIndex = 0
+            case .some(let current) where current + 1 < toolMatches.count:
+                toolHighlightIndex = current + 1
+            case .some:
+                // 已到最后一个工具，进入下方历史分组。
+                toolHighlightIndex = nil
+                focusCards()
+            }
+        case .up:
+            switch toolHighlightIndex {
+            case .some(let current) where current > 0:
+                toolHighlightIndex = current - 1
+            case .some:
+                // 回到第一个工具：取消高亮，把上键交还给搜索框光标。
+                toolHighlightIndex = nil
+            case .none:
+                break
+            }
+        }
+    }
+
+    /// 刷新统一搜索命中的工具。工具数量固定且字段极小，同步计算即可，
+    /// 不会对普通搜索性能造成可感知影响。
+    private func refreshToolMatches(for query: String) {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            if !toolMatches.isEmpty {
+                toolMatches = []
+            }
+            if toolHighlightIndex != nil {
+                toolHighlightIndex = nil
+            }
+            return
+        }
+        toolMatches = ToolSearchService.search(trimmed)
+        toolHighlightIndex = nil
+    }
+
+    // MARK: - Tool Window
+
+    /// 从统一搜索结果打开独立工具弹窗。主面板与搜索状态保持不变，
+    /// 工具窗口关闭后由 ToolWindowController 恢复搜索框焦点。
+    private func openToolWindow(_ result: ToolSearchService.Result) {
+        openToolWindow(
+            tool: result.tool,
+            context: .forSearch(prefillSuggestion: result.prefilledText)
+        )
+    }
+
+    private func openToolWindow(tool: BuiltinTool, context: ToolContext) {
+        let controller = toolWindowController ?? ToolWindowController()
+        toolWindowController = controller
+        controller.show(tool: tool, context: context) {
+            // 关闭后清除引用；焦点恢复由 restorePanelFocus(preferringSearchFocus:) 统一处理。
+            self.toolWindowController = nil
+        }
+    }
+
     private func previewSelectedItem() {
         guard let selectedItemID else { return }
         previewItem(id: selectedItemID)
@@ -539,6 +788,14 @@ struct MainPanelView: View {
 
     private func focusSearch() {
         focusZone = .search
+        if isSearchFocused {
+            // 面板重新成为 key 而焦点状态值未变化时，SwiftUI 不会重新应用字段焦点
+            // （工具弹窗关闭恢复搜索框焦点的场景）。重置一次让搜索框真正成为第一响应者。
+            isSearchFocused = false
+            DispatchQueue.main.async {
+                isSearchFocused = true
+            }
+        }
     }
 
     // MARK: - Selection Logic
@@ -1476,6 +1733,10 @@ struct KeyboardEventMonitorView: NSViewRepresentable {
     @Binding var selectedFilter: ClipboardFilterOption
     let focusRequest: Int
     let filterOptions: [ClipboardFilterOption]
+    /// 统一搜索存在可键盘选择的工具结果时，搜索框内的 ↑↓ 用于工具高亮。
+    var hasSelectableToolResults: Bool = false
+    /// 搜索框当前是否持有焦点；用于把搜索框与其他文本编辑器区分开。
+    var isSearchFieldFocused: Bool = false
     var onLeftArrow: ((Bool) -> Void)?
     var onRightArrow: ((Bool) -> Void)?
     var onUpArrow: ((Bool) -> Void)?
@@ -1485,6 +1746,8 @@ struct KeyboardEventMonitorView: NSViewRepresentable {
     var onSpace: (() -> Void)?
     var onDelete: (() -> Void)?
     var onCmdF: (() -> Void)?
+    /// 搜索框内 ↑↓ 移动工具高亮。
+    var onToolHighlightMove: ((ScrollDirection) -> Void)?
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -1494,7 +1757,7 @@ struct KeyboardEventMonitorView: NSViewRepresentable {
         let view = CardFocusNSView()
         context.coordinator.startMonitor()
         context.coordinator.lastFocusRequest = focusRequest
-        requestCardFocus(for: view)
+        requestCardFocus(for: view, coordinator: context.coordinator)
         return view
     }
 
@@ -1502,11 +1765,15 @@ struct KeyboardEventMonitorView: NSViewRepresentable {
         context.coordinator.parent = self
         guard context.coordinator.lastFocusRequest != focusRequest else { return }
         context.coordinator.lastFocusRequest = focusRequest
-        requestCardFocus(for: nsView)
+        requestCardFocus(for: nsView, coordinator: context.coordinator)
     }
 
-    private func requestCardFocus(for view: NSView) {
-        DispatchQueue.main.async {
+    private func requestCardFocus(for view: NSView, coordinator: Coordinator) {
+        DispatchQueue.main.async { [weak coordinator] in
+            guard let coordinator else { return }
+            // 队列执行时校验最新意图：若期间已切换为搜索框焦点（如工具窗口
+            // 关闭后的恢复流程），放弃这次卡片聚焦，避免抢回搜索框焦点。
+            guard coordinator.parent.focusZone == .cards else { return }
             guard let window = view.window,
                   window.isVisible,
                   window.isKeyWindow else { return }
@@ -1553,6 +1820,15 @@ struct KeyboardEventMonitorView: NSViewRepresentable {
                       eventWindow.level == .popUpMenu else {
                     return event
                 }
+                // 独立工具弹窗持有焦点时，Esc 优先关闭工具窗口本身，
+                // 主面板的 Esc 行为在其关闭并恢复焦点后照常可用。
+                if eventWindow.identifier == ToolWindowController.windowIdentifier {
+                    NotificationCenter.default.post(
+                        name: ToolWindowController.toolWindowShouldClose,
+                        object: eventWindow
+                    )
+                    return nil
+                }
                 parent.onEscape?()
                 return nil
             }
@@ -1571,13 +1847,30 @@ struct KeyboardEventMonitorView: NSViewRepresentable {
                 return nil
             }
 
-            // ===== 搜索模式：只拦截 Enter 和 Cmd+F，其余全部交给 TextField =====
+            // 非搜索框的文本编辑器（上下文工具面板输入框）持有焦点时，
+            // 方向键、空格、回车、删除全部交给文本编辑，避免误触发粘贴/预览，
+            // 也避免旧 focusZone 状态误拦截。
+            if Self.isEditingText && !parent.isSearchFieldFocused {
+                return event
+            }
+
+            // ===== 搜索模式：拦截 Enter、Cmd+F 与工具高亮导航，其余全部交给 TextField =====
             if parent.focusZone == .search {
-                if keyCode == 36 { // Enter -> 焦点回到卡片区
+                if keyCode == 36 { // Enter -> 焦点回到卡片区（或打开高亮工具）
                     parent.onEnter?(false)
                     return nil
                 }
-                // 其余按键（方向键、空格、删除等）全部交给搜索栏自然处理
+                if parent.hasSelectableToolResults {
+                    if keyCode == 125 { // Down -> 下一个工具
+                        parent.onToolHighlightMove?(.down)
+                        return nil
+                    }
+                    if keyCode == 126 { // Up -> 上一个工具
+                        parent.onToolHighlightMove?(.up)
+                        return nil
+                    }
+                }
+                // 其余按键（左右方向键、空格、删除等）全部交给搜索栏自然处理
                 return event
             }
 
@@ -1604,8 +1897,6 @@ struct KeyboardEventMonitorView: NSViewRepresentable {
                 parent.onSpace?()
                 return nil
             case 51: // Delete
-                // 如果当前焦点在文本输入控件中，放行让 TextField 处理
-                if Self.isEditingText { return event }
                 parent.onDelete?()
                 return nil
             case 48: // Tab
@@ -1647,6 +1938,8 @@ struct KeyboardEventMonitorView: NSViewRepresentable {
         }
     }
 }
+
+// MARK: - Context Panel Resize Handle
 
 // MARK: - Empty State
 

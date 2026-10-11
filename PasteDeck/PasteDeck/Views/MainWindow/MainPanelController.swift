@@ -168,6 +168,12 @@ enum MainPanelFrameGeometry {
     }
 }
 
+/// 聚焦恢复的目标区域。
+private enum PanelFocusDestination {
+    case cards
+    case search
+}
+
 /// Manages the main floating panel for clipboard history display
 class MainPanelController: NSObject, NSWindowDelegate {
     private var panel: KeyboardFocusPanel?
@@ -193,6 +199,12 @@ class MainPanelController: NSObject, NSWindowDelegate {
 
     /// Keeps transient menu or window changes from closing the panel while its key status is being established.
     private var isEstablishingFocus = false
+
+    /// 下一次聚焦循环应聚焦的目标区域。由 restorePanelFocus(preferringSearchFocus:) 设置，
+    /// 仅在聚焦循环进行中（isEstablishingFocus）生效，让 requestCardFocus 的全部调用点
+    /// （windowDidBecomeKey / establishPanelFocus / confirmPanelFocus）发出一致的目标，
+    /// 避免异步确认把搜索框焦点又抢回卡片区。
+    private var pendingFocusDestination: PanelFocusDestination = .cards
 
     /// Debounce timer to prevent rapid toggle from key repeat
     private var lastToggleTime: Date = Date.distantPast
@@ -257,6 +269,15 @@ class MainPanelController: NSObject, NSWindowDelegate {
 
         panel.contentView = visualEffectView
         self.panel = panel
+
+        // 侧边栏宽度拖拽手柄：常驻原生覆盖层，铺满整窗但只在侧边栏左缘
+        // 条带命中（PanelResizeHandleState.isEnabled 控制开关）。
+        // 必须挂在 hosting 视图之上：NSHostingView 不会把
+        // mouseDownCanMoveWindow 协商下传给内嵌视图，SwiftUI 手势无法
+        // 从 isMovableByWindowBackground 的窗口拖动里接管事件。
+        let resizeHandleOverlay = PanelResizeHandleOverlayView()
+        visualEffectView.addSubview(resizeHandleOverlay, positioned: .above, relativeTo: nil)
+
         restorePanelFrame(for: initialOrientation)
 
         // 按当前外观模式渲染（浅色/深色/跟随系统）。
@@ -296,9 +317,12 @@ class MainPanelController: NSObject, NSWindowDelegate {
 
     // MARK: - Public Methods
 
-    /// 预览窗口关闭后，通过与快捷键呼出相同的路径恢复主面板键盘焦点。
-    func restorePanelFocus() {
+    /// 预览窗口等辅助窗口关闭后，通过与快捷键呼出相同的路径恢复主面板键盘焦点。
+    /// - Parameter preferringSearchFocus: true 表示恢复后聚焦搜索框（工具弹窗场景），
+    ///   false 维持原有行为聚焦卡片区。
+    func restorePanelFocus(preferringSearchFocus: Bool = false) {
         guard isVisible, panel?.isVisible == true else { return }
+        pendingFocusDestination = preferringSearchFocus ? .search : .cards
         establishPanelFocus()
     }
 
@@ -318,6 +342,7 @@ class MainPanelController: NSObject, NSWindowDelegate {
 
         canCloseOnResignKey = false
         isVisible = true
+        pendingFocusDestination = .cards
 
         // 通知 MainPanelView 重置焦点和选中状态
         NotificationCenter.default.post(name: .panelDidShow, object: nil)
@@ -332,6 +357,7 @@ class MainPanelController: NSObject, NSWindowDelegate {
         focusRequestGeneration &+= 1
         pendingResignGeneration = nil
         isEstablishingFocus = false
+        pendingFocusDestination = .cards
         canCloseOnResignKey = false
         isVisible = false
         panel?.orderOut(nil)
@@ -501,26 +527,41 @@ class MainPanelController: NSObject, NSWindowDelegate {
             return
         }
 
-        isEstablishingFocus = false
-        canCloseOnResignKey = true
+        // 聚焦循环的最后一次请求：趁 isEstablishingFocus 仍为 true，
+        // 让 restorePanelFocus 声明的目标（搜索框/卡片区）在此生效。
         requestCardFocus()
+        isEstablishingFocus = false
+        pendingFocusDestination = .cards
+        canCloseOnResignKey = true
     }
 
     private func requestCardFocus() {
-        NotificationCenter.default.post(name: .panelDidRequestCardFocus, object: panel)
+        let destination = isEstablishingFocus ? pendingFocusDestination : .cards
+        NotificationCenter.default.post(
+            name: destination == .search ? .panelDidRequestSearchFocus : .panelDidRequestCardFocus,
+            object: panel
+        )
     }
 
     private var hasPresentedAuxiliaryWindow: Bool {
+        // 预览窗口必须按 identifier 识别：rootView 经 themeStyled() 包裹后，
+        // hosting view 的运行时泛型类型不是 NSHostingView<PreviewWindow>，
+        // 旧的类型检测恒为 false，导致空格预览时主面板被误判为无辅助窗口而自动隐藏。
         let hasPreviewWindow = NSApp.windows.contains { window in
-            window.isVisible && window.contentViewController?.view is NSHostingView<PreviewWindow>
+            window.isVisible && window.identifier == previewWindowIdentifier
         }
         // 翻译工作区从主面板打开后会接管 key window。它和普通预览一样属于应用内辅助窗口，
         // 必须在失焦判断中保留主面板，避免 hidePanel() 进一步执行 NSApp.hide(nil) 把新窗口立即隐藏。
         let hasTranslationWorkspace = NSApp.windows.contains { window in
             window.isVisible && window.identifier == translationWorkspaceWindowIdentifier
         }
+        // 统一搜索打开的独立工具弹窗：主面板让出 key 后必须保持可见，
+        // 工具窗口关闭时再由 restorePanelFocus 把焦点交还给搜索框。
+        let hasToolWindow = NSApp.windows.contains { window in
+            window.isVisible && window.identifier == ToolWindowController.windowIdentifier
+        }
         let hasSheet = panel?.attachedSheet != nil
-        return hasPreviewWindow || hasTranslationWorkspace || hasSheet
+        return hasPreviewWindow || hasTranslationWorkspace || hasToolWindow || hasSheet
     }
 
     /// AppKit posts resign-key before the destination window is always final.
@@ -581,6 +622,7 @@ class MainPanelController: NSObject, NSWindowDelegate {
         focusRequestGeneration &+= 1
         pendingResignGeneration = nil
         isEstablishingFocus = false
+        pendingFocusDestination = .cards
         canCloseOnResignKey = false
         isVisible = false
     }
