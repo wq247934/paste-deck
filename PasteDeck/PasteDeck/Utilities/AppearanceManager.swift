@@ -2,11 +2,9 @@
 //  AppearanceManager.swift
 //  PasteDeck
 //
-//  Centralizes theme → NSAppearance resolution so that the main panel,
-//  preview window, and settings window all reflect the user's chosen
-//  appearance mode (system / light / dark) consistently.
-//
-//  Created on 2026-07-07.
+//  Manages macOS system appearance resolution for PasteDeck 2.0.
+//  In PasteDeck 2.0, the entire app automatically and dynamically follows
+//  the native macOS system appearance (light and dark mode).
 //
 
 import AppKit
@@ -16,42 +14,14 @@ import SwiftData
 // MARK: - AppTheme 扩展
 
 extension AppTheme {
-    /// 对应的 NSAppearance。`.system` 返回 nil（让窗口跟随 macOS 外观）。
+    /// 对应的 NSAppearance。默认返回 nil（让窗口自动跟随 macOS 系统外观）。
     var nsAppearance: NSAppearance? {
-        switch self {
-        case .system:
-            return nil
-        case .light:
-            return NSAppearance(named: .aqua)
-        case .dark:
-            return NSAppearance(named: .darkAqua)
-        }
+        nil
     }
 
     /// 用于代码/文本预览等需要显式明暗选项的场合。
     var codePreviewTheme: CodePreviewTheme {
-        switch self {
-        case .system:
-            return NSApp.effectiveAppearance.isDark ? .dark : .light
-        case .light:
-            return .light
-        case .dark:
-            return .dark
-        }
-    }
-}
-
-extension AppTheme {
-    /// 根据主题风格生成对应的 ColorScheme；主要用于 SwiftUI 环境注入。
-    func colorSchemeForThemeStyle(_ style: ThemeStyle) -> ColorScheme {
-        switch self {
-        case .system:
-            return NSApp.effectiveAppearance.isDark ? .dark : .light
-        case .light:
-            return .light
-        case .dark:
-            return .dark
-        }
+        NSApp.effectiveAppearance.isDark ? .dark : .light
     }
 }
 
@@ -64,25 +34,18 @@ extension NSAppearance {
 }
 
 extension Notification.Name {
-    /// 设置中的外观模式变更后广播，让已打开的窗口实时更新 appearance。
+    /// 兼容已有通知名称引用。
     static let appearanceModeDidChange = Notification.Name("appearanceModeDidChange")
-    /// 主题风格（default/cyber/soft/film）变更后广播。
     static let themeStyleDidChange = Notification.Name("themeStyleDidChange")
 }
 
-/// 读取当前 AppSettings 外观模式并解析为 NSAppearance。
+/// 解析系统外观：默认 nil 保证窗口完全跟随 macOS 系统设置。
 struct AppearanceResolver {
-    /// 从默认 ModelContainer 读取主题模式，失败时回退到 system。
     static var currentThemeMode: AppTheme {
-        let context = ModelContext(AppModelContainer.container)
-        let descriptor = FetchDescriptor<AppSettings>()
-        guard let settings = try? context.fetch(descriptor).first else {
-            return .system
-        }
-        return AppTheme(rawValue: settings.themeMode) ?? .system
+        .system
     }
 
     static var currentAppearance: NSAppearance? {
-        currentThemeMode.nsAppearance
+        nil
     }
 }

@@ -11,6 +11,10 @@
 import SwiftUI
 import SwiftData
 
+extension Notification.Name {
+    static let openWorkbench = Notification.Name("openWorkbench")
+}
+
 @main
 struct PasteDeckApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
@@ -76,6 +80,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // Setup UI first (status bar is always available)
         setupStatusBar()
 
+        WorkbenchWindowController.shared.onOpenSettings = { [weak self] in
+            self?.openSettings(pane: .general)
+        }
+
         // Start services (HotKeyManager handles accessibility permission gracefully)
         setupServices()
     }
@@ -107,6 +115,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
 
         let (menu, delegate) = StatusMenuBuilder.buildMenu(
+            openWorkbench: { [weak self] in
+                self?.openWorkbench()
+            },
             openMainPanel: { [weak self] in
                 self?.openMainPanel()
             },
@@ -215,6 +226,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         NotificationCenter.default.addObserver(
             self,
+            selector: #selector(openWorkbench),
+            name: .openWorkbench,
+            object: nil
+        )
+
+        NotificationCenter.default.addObserver(
+            self,
             selector: #selector(openSettings as () -> Void),
             name: .openSettingsWindow,
             object: nil
@@ -272,6 +290,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     // MARK: - Menu Actions
+
+    @objc private func openWorkbench() {
+        WorkbenchWindowController.shared.showWorkbench()
+    }
 
     @objc private func openMainPanel() {
         mainPanelControllerForUse().showPanel()
@@ -358,7 +380,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         let windowMenu = NSMenu(title: "窗口")
 
-        let closeItem = NSMenuItem(title: "关闭", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        let closeItem = NSMenuItem(title: "关闭", action: #selector(handleCloseWindowMenuItem(_:)), keyEquivalent: "w")
+        closeItem.target = self
         windowMenu.addItem(closeItem)
 
         windowMenu.addItem(NSMenuItem.separator())
@@ -379,6 +402,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         } else {
             NSApp.mainMenu?.addItem(menuItem)
         }
+    }
+
+    /// 统一响应系统菜单的 ⌘W 快捷键：严格只关闭最前方的单个活跃窗口，绝不连带穿透
+    @objc private func handleCloseWindowMenuItem(_ sender: Any?) {
+        CloseWindowDispatcher.closeFrontmostWindowOnly()
     }
 
     func windowWillClose(_ notification: Notification) {

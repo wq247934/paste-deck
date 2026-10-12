@@ -28,6 +28,7 @@ final class ToolWindowController: NSObject, NSWindowDelegate {
     private var didCloseAndRestore = false
     private var closeObserver: NSObjectProtocol?
     private var appearanceObserver: NSObjectProtocol?
+    private var keyMonitor: Any?
 
     var isWindowVisible: Bool {
         window?.isVisible == true
@@ -88,6 +89,23 @@ final class ToolWindowController: NSObject, NSWindowDelegate {
             self?.window?.appearance = AppearanceResolver.currentAppearance
         }
 
+        // 统一按键监听：当工具弹窗为 keyWindow 时，按 Esc 或 ⌘W 严格只关闭当前工具窗口本身
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self, let currentWindow = self.window,
+                  let eventWindow = event.window,
+                  eventWindow === currentWindow,
+                  eventWindow.isKeyWindow else {
+                return event
+            }
+
+            let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            if event.keyCode == 53 || (event.keyCode == 13 && modifiers == .command) {
+                self.performClose()
+                return nil
+            }
+            return event
+        }
+
         window.makeKeyAndOrderFront(nil)
         // 与主面板保持相同层级并显式置前；用户再次唤起主面板时
         // MainPanelController 会反向把主面板置于最前。
@@ -101,6 +119,13 @@ final class ToolWindowController: NSObject, NSWindowDelegate {
         guard !didCloseAndRestore else { return }
         didCloseAndRestore = true
 
+        WindowCloseCooldown.recordChildWindowClosed()
+
+        if let keyMonitor {
+            NSEvent.removeMonitor(keyMonitor)
+            self.keyMonitor = nil
+        }
+
         window?.close()
         window = nil
 
@@ -112,6 +137,10 @@ final class ToolWindowController: NSObject, NSWindowDelegate {
 
     /// 清理残留窗口与监听器，不触发恢复焦点和回调。
     private func cleanup() {
+        if let keyMonitor {
+            NSEvent.removeMonitor(keyMonitor)
+            self.keyMonitor = nil
+        }
         window?.close()
         window = nil
         onCloseCallback = nil
@@ -129,15 +158,18 @@ final class ToolWindowController: NSObject, NSWindowDelegate {
     private func restoreMainPanelFocus() {
         guard let previousWindow = MainWindowReference.window, previousWindow.isVisible else { return }
 
-        // 通过主面板自己的非激活聚焦流程恢复，并声明恢复后聚焦搜索框。
+        // 仅当父窗口确实为主面板时，才走主面板非激活聚焦流程
         if let panelController = NSApp.windows
             .compactMap({ $0.delegate as? MainPanelController })
-            .first {
+            .first,
+            panelController.manages(window: previousWindow) {
             panelController.restorePanelFocus(preferringSearchFocus: true)
             return
         }
 
         previousWindow.makeKeyAndOrderFront(nil)
+        previousWindow.orderFrontRegardless()
+        NotificationCenter.default.post(name: .workbenchDidRequestListFocus, object: nil)
     }
 
     private static func centeredFrame(size: CGSize, on screen: NSScreen?) -> NSRect {

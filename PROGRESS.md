@@ -2,9 +2,9 @@
 
 ## 项目状态
 
-**当前版本**：v1.19.1
+**当前版本**：v2.0.10
 **开始日期**：2026-05-23
-**完成度**：96%
+**完成度**：99%
 
 ---
 
@@ -18,7 +18,11 @@
 | 内容类型识别 | ✅ | v1.0.0 | 文本/链接/图片/文件/颜色 |
 | Markdown / JSON 支持 | ✅ | v1.0.0 | 类型检测与预览 |
 | 全局快捷键 | ✅ | v1.0.0 | Carbon RegisterEventHotKey |
-| 浮动主面板 | ✅ | v1.0.0 | NSPanel + 毛玻璃效果 |
+| 独立 macOS 工作台 | ✅ | v2.0.0 | 三栏原生工作区（导航侧栏 + 统一搜索列表 + 上下文检查器），支持 ⌘K 唤起 |
+| 极速粘贴面板 | ✅ | v2.0.0 | 480×560pt 紧凑面板，支持 1-9 快捷键与 Enter 粘贴，⌘⇧V 呼出 |
+| 统一搜索架构 | ✅ | v2.0.0 | 工具与剪贴板历史跨源联合搜索，统一键盘索引与执行调度 |
+| 上下文检查器 | ✅ | v2.0.0 | 实时预览、完整元信息、快捷动作与智能工具自动推荐卡片 |
+| 工具中心 | ✅ | v2.0.0 | 动态发现 ToolRegistry 注册工具，无需复制内容直接启动 |
 | 搜索与筛选 | ✅ | v1.0.0 | 实时模糊搜索 |
 | 收藏夹与自定义集合 | ✅ | v1.0.0 | 多收藏夹管理 |
 | 置顶功能 | ✅ | v1.0.0 | 置顶项优先展示 |
@@ -220,3 +224,14 @@
 | v1.18.0 | 2026-10-11 | 新增智能工具箱：统一搜索同时命中内置工具与剪贴板历史，工具从搜索结果弹出独立窗口（Esc 优先关闭、焦点交还搜索框）；选中时间戳/IPv4 卡片时右侧上下文面板自动推荐工具（宽窗口固定右侧、窄窗口覆盖式）；首批内置时间戳转换、IPv4/子网计算与额度查看（复用 Codex/WorkBuddy 服务）；新增 46 个纯逻辑单元测试。 |
 | v1.19.0 | 2026-10-11 | 修复空格预览回归（预览窗口检测改用 identifier）；上下文工具面板支持左边缘拖拽调宽；时间工具升级为完整时间日期计算器（日期差、推算日期、推算工作日、工作天数、英文日期格式、世界时间、秒表）；IPv4 工具新增归属地/运营商在线查询；新增 DateMath/IPGeo 单元测试。 |
 | v1.19.1 | 2026-10-11 | 修复智能工具面板左侧拖拽调宽完全失效：原生手柄覆盖层的命中测试直接读 UserDefaults，而 `@AppStorage` 只在被写入后才落盘，全新安装时该 key 缺失导致宽度读为 0、命中判定失败、整条拖拽区域永不接收事件。改为宽度只由 `PanelResizeHandleState` 持有（SwiftUI 与原生层共享同一真相来源），条带计算不再触碰磁盘，拖拽过程中只更新内存、mouseUp 时一次性持久化；同时对上下文内容识别按卡片快照做 LRU 缓存，避免每次 body 求值重复识别；新增 PanelResizeHandleTests 覆盖该回归。 |
+| v2.0.0 | 2026-10-11 | **PasteDeck 2.0 — macOS 主界面架构与 UI 全面重构**：产品全面升级为「剪贴板管理器 + 智能工具箱 + macOS 原生效率工作台」。新增独立三栏工作台窗口（NavigationSplitView，默认 1080×720 pt，最小 820×520 pt），包含侧边栏导航、高密度列表与网格视图、右侧上下文检查器（实时预览、完整元数据、快捷操作、智能工具推荐与标签）；重构极速粘贴面板（480×560 pt 紧凑面板，支持 1-9 快捷键与 Enter 粘贴，⌘⇧V 呼出）；实现工具与剪贴板历史统一搜索架构与无缝键盘导航；引入工具中心直接访问内置工具；彻底移除旧外观设置与多主题切换，全面遵循 macOS 原生设计规范与系统明暗自适应；保留 SwiftData 数据库兼容性字段；新增 WorkbenchUnifiedSearchTests 单元测试全部通过。 |
+| v2.0.1 | 2026-10-11 | 修复速贴面板按 Enter 不触发粘贴：重构时用 SwiftUI 隐藏按钮的 keyboardShortcut 承接键盘事件，搜索框持有焦点时 Return / 方向键 / Esc 全部被文本框消费而失效（真机实测复现）。恢复旧版 KeyboardEventMonitorView 的成熟模式，在 QuickPanelView 内以 NSEvent 本地监听统一拦截 ↑↓ / Enter / Shift+Enter / Esc / ⌘K；同时补全粘贴链（promotePastedItems → preparePaste → 关面板 → 100ms 后 performPaste），此前只写剪贴板从未模拟 ⌘V；接入 panelDidShow 重置（清空搜索与选择、滚回顶部、重新聚焦搜索框）与 clipboardDataChanged 增量刷新，修复面板列表停留在旧数据、选中项跨显示残留的问题；移除未实现的 1–9 数字快捷键文档描述。 |
+| v2.0.2 | 2026-10-11 | 修复真实全局快捷键呼出速贴面板后搜索框无键盘焦点：@FocusState 在 panelDidShow 阶段被设置时面板尚未成为 key 窗口，SwiftUI 静默丢弃焦点，随后输入的字符全部丢失（真机 CGEvent 实测复现）。改为监听 MainPanelController 在面板真正成为 key 后发出的 panelDidRequestCardFocus / panelDidRequestSearchFocus 焦点请求再聚焦搜索框，与旧版主面板的焦点恢复机制保持一致。 |
+| v2.0.3 | 2026-10-12 | 修复焦点请求已生效但字符仍打不进搜索框：面板成为 key 时 AppKit 会预装一个未挂接任何控件的游离 field editor，原判定「firstResponder 是 field editor 即视为已聚焦」因此静默跳过 makeFirstResponder，字符全被该游离编辑器吃掉。改为只有第一响应者是搜索框本身或窗口为它分配的 field editor 才算聚焦完成；搜索框改用原生 NSTextField（NSViewRepresentable）并通过注册表暴露实例，聚焦时直接命中它而非遍历视图树猜测。真机 CGEvent 完整回归通过：⌘⇧V 呼出、字符输入与过滤、↑↓ 导航、Enter 粘贴（含搜索后粘贴）、Enter 打开工具窗口、Esc 先清词后关闭、⌘K 打开工作台。 |
+| v2.0.4 | 2026-10-12 | 修复速贴面板按空格无法预览问题：重构时搜索框无条件强占第一响应者，且监视视图未拦截 Space（keyCode 49），导致用户按空格变成了向搜索框输入空格字符。恢复旧版成熟的双焦点模式架构（`QuickPanelFocusZone`：`.cards` 与 `.search`）：⌘⇧V 呼出时默认停留在卡片区模式（由 `CardFocusNSView` 成为 keyWindow 第一响应者），按空格即时弹出 `PreviewWindowController` 大预览，在预览窗口再次按空格或 Esc 立即关闭并恢复卡片区焦点；在卡片区键入任意字符时自动无缝切入搜索模式；搜索模式下 Esc 分级退出（先清词并恢复卡片区焦点，再次按 Esc 关闭面板）；底部快捷栏新增 Space 预览提示；新增双焦点测试用例通过（共 139 项测试）。 |
+| v2.0.5 | 2026-10-12 | 统一多窗口层级关闭规范（⌘W 与 Esc 只关闭当前层）与工作台全键盘交互：1. 预览窗口、独立工具弹窗、设置窗口、翻译工作区与速贴面板全面强化窗口事件隔离，按 Esc 或 ⌘W 均严格只关闭当前处于最前方的 keyWindow，绝不连带穿透关闭底层面板；2. 修复工作台窗口（Workbench）无按键监听与空格无法预览的问题，为工作台引入双焦点模式（`WorkbenchFocusZone`：`.list` 与 `.search`）：默认在列表浏览模式，按 Space 即可对当前选中的卡片弹出大预览，按 ↑↓ 导航选择，按 Enter 执行主操作，键入普通字符自动切入搜索框；在工作台按 ⌘W 或 Esc（清词后）仅关闭工作台自身；新增工作台双焦点与窗口标识单元测试通过（共 140 项测试全部通过）。 |
+| v2.0.6 | 2026-10-12 | 根治子窗口关闭连带穿透关闭底层父窗口缺陷：1. 引入全局子窗口关闭冷却保护器（WindowCloseCooldown），在预览窗口或工具弹窗通过 Esc / ⌘W / Space 关闭后的 350ms 冷却期内，严格拦截任何传至底层父窗口（速贴面板或工作台）的关闭与失焦隐匿事件，物理阻断按键抖动、系统菜单 ⌘W 滞后分发与 AppKit 窗口交接失焦引发的连带关闭；2. 修复 PreviewWindowController 与 ToolWindowController 关闭时盲目查找 MainPanelController 导致从工作台打开预览后父窗口无法恢复的问题，改为精准判定父窗口归属（速贴面板恢复非激活聚焦，工作台恢复列表区焦点）；3. 修复 MainPanelController 在辅助窗口关闭交接微秒内因 canCloseOnResignKey 残留误触发 hidePanel 的生命周期缺陷；新增 WindowCloseCooldown 单元测试（共 141 项测试全部通过）。 |
+| v2.0.7 | 2026-10-12 | 根除工作台输入字母导致主线程卡死未响应缺陷：1. 定位并彻底修复工作台搜索框原使用 SwiftUI TextField 时，由于缺少 AppKit 原生 NSTextView fieldEditor，系统输入法（如微信输入法 WeType、系统拼音等）向窗口发送 XPC 输入法合成事件协商时发生同步死锁卡死的严重缺陷；2. 工作台搜索框重构为原生 NSTextField（WorkbenchSearchField），通过单例注册表 WorkbenchSearchFieldRegistry 在切入搜索态时由 AppKit 立即精准挂载合法 fieldEditor，输入法服务与键盘流无缝对接，彻底杜绝 XPC 挂起与死锁；3. 优化首字符输入切入时序；新增 WorkbenchSearchFieldIdentifier 单元测试（共 141 项测试全部通过）。 |
+| v2.0.8 | 2026-10-12 | 根治输入法打字死锁死循环与搜索后焦点回退预览体验：1. 定位并彻底修复打字卡死的根本触发点：NSTextField 在被用户编辑时，外层 SwiftUI 视图树重绘触发 updateNSView 强行重设 stringValue，导致当前 fieldEditor 被反复销毁重建、输入法陷入无限递归死循环卡死；在 WorkbenchSearchField 与 QuickPanelSearchField 中加入 currentEditor 正在编辑时的更新旁路保护，彻底根治打字未响应卡死；2. 修复搜索后焦点无法退回列表的问题：在速贴面板与工作台搜索框输入文字后，按下方向键（↑ / ↓）或回车键（Enter），焦点立即自动交还给剪切板列表，输入框光标立即退出编辑态，列表恢复第一响应者；焦点回到列表后按 Space（空格）立即可直接弹出大预览，按 Enter 立即直接操作，完美符合 macOS 极速效率体验。 |
+| v2.0.9 | 2026-10-12 | 根除系统菜单 ⌘W 快捷键 Responder Chain 连带穿透关闭缺陷：1. 定位并彻底修复按 ⌘W 关闭所有窗口的系统级根因：系统主菜单中的 NSMenuItem（"关闭"，action: performClose(_:)）在 keyWindow（如预览 Panel）关闭后，系统自动沿着 Responder Chain 继续向 mainWindow（工作台或速贴面板）再次分发 performClose(_:)，导致底层窗口被连带关闭；2. 构建统一单层窗口关闭分发器（CloseWindowDispatcher），系统菜单 ⌘W 与各窗口本地按键监视器全部集中收口，关闭时按严格优先级（预览窗口 > 工具窗口 > 当前 keyWindow）每次仅关闭最前方的单个活跃窗口并立即截断，绝不向底层窗口冒泡；3. 新增 CloseWindowDispatcher 单元测试（共 142 项测试全部通过）。 |
+| v2.0.10 | 2026-10-12 | 构筑 AppKit 窗口代理级绝对防御阻断 ⌘W 连带关闭底层窗口：1. 定位并彻底根除按 ⌘W 关闭预览窗口时底层工作台或速贴面板仍被连带关闭的底层根因：包含 .closable 样式的 NSWindow 在收到系统默认 performClose: 分发时，若 delegate 未实现 windowShouldClose(_:)，系统将绕过任何自定义关闭方法直接调用 window.close() 强行关闭底层窗口；2. 在 WorkbenchWindowController 与 MainPanelController 的 NSWindowDelegate 中显式实现 windowShouldClose(_ sender: NSWindow) -> Bool，在 WindowCloseCooldown 冷却期内直接向 AppKit 返回 false，彻底从窗口代理层绝对阻断系统关闭操作；3. 修复 confirmPanelFocus 在子窗口关闭交接期间因暂时非 keyWindow 误触发 hidePanel 的时序缺陷；单元测试全部通过（142 项）。 |

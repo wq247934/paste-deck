@@ -1,23 +1,31 @@
-# PasteDeck
+# PasteDeck 2.0
 
-PasteDeck is a native macOS clipboard manager for quickly searching, previewing, organizing, and pasting clipboard history from a floating panel.
+PasteDeck 2.0 is a native macOS productivity workbench, smart toolbox, and clipboard manager. It combines a full 3-column efficiency workspace for deep search, inspection, and tool execution with a lightweight, high-speed floating panel for everyday quick pasting.
 
 ![PasteDeck main panel screenshot](docs/images/pastedeck-main-panel.png)
 
 ## Highlights
 
+- **Dual-Surface Architecture**:
+  - **Full macOS Workbench** (`Command + K` / Menu bar -> 打开工作台): Independent, resizable 3-column native window (1080 × 720 pt) featuring a navigation sidebar, high-density content list/grid, and a live context inspector.
+  - **Quick Paste Panel** (`Command + Shift + V` / Menu bar -> 快速粘贴面板): Lightweight, non-activating floating panel with instant keyboard navigation (arrow keys, Enter to paste, Esc to dismiss) and quick tool execution.
+- **Unified Search**: Search both Builtin Tools and Clipboard History simultaneously with a unified keyboard index (`↑`/`↓`), automatic content recognition suggestions, and instant execution on `Enter` (pastes clipboard records, opens tools in standalone native windows).
+- **Context Inspector**: Right-side inspector displays real-time content previews, metadata, quick actions (Copy, Paste Plain Text, Preview), and smart tool recommendations based on strict content recognition (e.g. Unix timestamps, IPv4 addresses, and CIDR subnets).
+- **Built-in Smart Toolbox & Tool Center**: Standalone tools discovered dynamically from `ToolRegistry` with independent AppKit windows:
+  - **Time & Date Calculator**: Unix timestamp bi-directional conversion, date difference, date arithmetic, holiday-aware working days, English date formats, world time, and stopwatch.
+  - **IPv4 / Subnet Calculator**: IP validation, address classes, CIDR prefix calculations, subnet masks, usable host ranges, and optional IP geolocation.
+  - **Quota Overview**: Real-time local Codex (ChatGPT desktop) rate-limit windows and Tencent WorkBuddy credits.
+- **Pure Native Design Language**: Automatically follows macOS system Light and Dark appearance with native materials, contrast-safe semantic colors, and PasteDeck's brand orange accent (`#FF7314`).
 - Records clipboard history for text, rich text, links, Markdown, JSON, images, files, and colors.
 - Shows website names for link cards and lets link history be searched by site name. Automatically fetches webpage titles for copied links.
 - Opens from the menu bar or the global shortcut `Command + Shift + V`.
-- Login launches remain silent in the menu bar; reopening the running app shows the clipboard panel.
-- Click a card to select it, or double-click it to paste it immediately.
-- Menu bar dropdown includes a stats overview header showing today's copies, total items, and cache size, plus a quota block with progress bars for Codex 5-hour/weekly windows and WorkBuddy remaining credits, a one-click refresh, and a shortcut to the quota settings pane.
-- Built-in smart toolbox: searching matches tools by name, alias, keyword, and description alongside clipboard history; selecting a timestamp or IPv4 card recommends the matching tool in a right-hand context panel; tools open in an independent popup window and never touch the clipboard history database. First-party tools include a full time & date calculator (timestamp conversion, date difference, date arithmetic, working-day calculation with built-in 2024-2025 Chinese legal holiday data, date counting, English date formats, world time converter, and a keyboard-driven stopwatch), IPv4/subnet calculation (address validation, address type, CIDR, mask, network/broadcast, usable range with `/0` `/31` `/32` edge cases, plus optional online geolocation/ISP lookup via ipwho.is with ipinfo.io fallback that only fires when you click the button), and a quota viewer that reuses the Codex/WorkBuddy services from the settings pane. The context panel width is draggable and remembered.
+- Login launches remain silent in the menu bar; reopening the running app shows the clipboard panel or workbench.
+- Click an item to select it, or double-click it to paste or open immediately.
+- Menu bar dropdown includes a stats overview header showing today's copies, total items, and cache size, plus a quota block with progress bars for Codex 5-hour/weekly windows and WorkBuddy remaining credits, a one-click refresh, and shortcuts to the workbench, quick panel, and settings.
 - Shows local quota balances in a dedicated settings pane: Codex (ChatGPT desktop) plan status, 5-hour and weekly rate-limit windows, and rate-limit reset credits are queried through the local codex app-server without network access; WorkBuddy (Tencent CodeBuddy) per-package totals, usage, and remaining credits are read from the local desktop credential file and fetched directly from Tencent's official billing endpoint with automatic token renewal. An optional settings toggle displays compact balances (`C` remaining percent and `W` remaining credits) next to the menu bar icon, turning red when a balance runs low.
 - Includes a visual, scenario-based Feature Guide in Settings and the menu bar, covering everyday actions, organization, previews, translation, analytics, and maintenance without a wall of text.
 - Provides fast keyboard navigation that keeps the selected card fully visible at every panel size, plus favorite filters, custom collections, pinning, deletion, and batch paste.
-- Supports horizontal and vertical panel layouts with vertical styles: compact list, large cards, and adaptive grid.
-- Preserves RTF data for rich text paste and supports plain-text paste with `Shift + Enter`.
+- Preserves RTF data for rich text paste and supports plain-text paste with `Shift + Command + V` or `Shift + Enter`.
 - Renders Markdown, JSON, code snippets, images, image files, file metadata, links, and colors in the preview window.
 - Runs OCR for copied images so recognized text can be searched later.
 - Supports editable previews for text, code, and colors.
@@ -30,7 +38,6 @@ PasteDeck is a native macOS clipboard manager for quickly searching, previewing,
 - Automatic selected-text translation requires both Accessibility and Input Monitoring. The settings page reports Input Monitoring status and opens the matching System Settings page; with permission, a recoverable event tap reliably observes mouse selections in other apps. Selections containing only numbers, symbols, whitespace, or emoji do not open a translation bubble.
 - Closing an automatic translation window does not reopen it while the original text remains selected. A new mouse selection opens translation again, even when it contains the same text.
 - Statistics panel with daily/30-day trends, type distribution, source app insights, extreme records, and daily translation usage by provider, key fingerprint, and LLM model/token count.
-- Theme support: light, dark, or follow system appearance.
 - Stores history locally with SwiftData and caches images under `~/Library/Caches/PasteDeck/images/`. Image assets use SHA-256 content-addressed filenames; pending adoption, final-reference deletion, and maintenance share one serialized boundary so a concurrent cleanup cannot remove an image before its history record is saved.
 
 ## Screenshots / 界面预览
@@ -95,20 +102,19 @@ Clipboard polling uses `NSPasteboard`; it does not require Accessibility by itse
 
 | Shortcut | Action |
 | --- | --- |
-| `Command + Shift + V` | Toggle PasteDeck |
+| `Command + K` | Open full Workbench window (or focus search inside workbench) |
+| `Command + Shift + V` | Toggle compact Quick Paste Panel |
 | `Option + D` | Translate selected text (customizable) |
 | `Option + S` | Capture a screen region, OCR, and translate (customizable) |
 | `Option + A` | Open the input translation window (customizable) |
-| `Command + F` | Focus search |
-| `Left` / `Right` | Move between cards (cursor movement inside search/tools input) |
-| `Shift + Left` / `Shift + Right` | Extend multi-selection |
-| `Up` / `Down` | Page through cards; while search matches tools, step through tool results |
-| `Tab` | Switch filter tab |
-| `Enter` | Paste selected item; in search, opens the highlighted tool, otherwise focuses history |
-| `Shift + Enter` | Paste selected item as plain text |
-| `Space` | Preview selected item |
+| `Command + F` | Focus unified search field |
+| `Up` / `Down` | Move unified selection across tools and clipboard items |
+| `Enter` | Paste selected clipboard item, or open selected tool window |
+| `Shift + Command + V` / `Shift + Enter` | Paste selected item as plain text |
+| `Command + C` | Copy selected item to clipboard |
+| `Space` | Quick Look / Preview selected item |
 | `Delete` | Delete selected item |
-| `Esc` | Close tool popup first, then preview or panel |
+| `Esc` | Clear search or close tool popup / preview / panel |
 
 ## Supported Content
 
@@ -157,15 +163,19 @@ Clipboard polling uses `NSPasteboard`; it does not require Accessibility by itse
 - `PreviewConfig` manages preview sizing and mode preferences.
 
 ### UI Layer
-- `MainPanelController` — `NSPanel` controller for the floating window (centered, popUpMenu level, vibrancy effect).
-- `MainPanelView` — main SwiftUI view with search, favorite filters, virtualized horizontal/vertical cards, and keyboard handling.
-- `KeyboardFocusPanel` — dedicated keyboard focus management component.
-- `SearchBarView` — search field component.
-- `ClipCardView` — individual clipboard item card.
+- `WorkbenchWindowController` — `NSWindowController` for the primary 3-column macOS productivity workbench (1080 × 720 pt, minimum 820 × 520 pt).
+- `WorkbenchView` — 3-column SwiftUI workspace container hosting `WorkbenchSidebarView`, `WorkbenchContentListView`, `ToolCenterView`, and `WorkbenchInspectorView`.
+- `WorkbenchSidebarView` — native macOS sidebar providing Core navigation, Smart categories, and Settings shortcuts.
+- `WorkbenchContentListView` — central content view with unified search, toolbar mode switchers, date grouping, and custom type rows.
+- `WorkbenchInspectorView` — right-hand context inspector displaying real-time previews, metadata, actions, smart tool recommendations, and contextual tags.
+- `ToolCenterView` — dynamic tool discovery grid displaying registered tools from `ToolRegistry`.
+- `QuickPanelView` — compact, lightweight floating panel for high-speed pasting (`Command + Shift + V`), with unified arrow-key navigation and Enter-to-paste.
+- `MainPanelController` — `NSPanel` controller for the floating quick paste panel (`KeyboardFocusPanel`).
+- `UnifiedSearchCoordinator` — unifies search queries across tools and clipboard records with synchronized keyboard navigation.
 - `PreviewWindow` — large preview for text, Markdown, JSON/code, image, file, color, and translation.
 - `CodeHighlightView` — editable code preview with syntax highlighting.
 - `MarkdownRenderedText` — Markdown rendering support.
-- `SettingsWindow` — 10 settings tabs: General, Hotkey, History, Stats, Filter, Favorites, Appearance, Translation, Advanced, Help.
+- `SettingsWindow` — native settings window: General, Hotkey, History, Stats, Filter, Favorites, Translation, Quota, Advanced, Help. (Appearance settings removed; UI automatically follows system appearance).
 - `HelpCenterView` — scenario-based, card-led feature guide with three-step workflows and contextual shortcuts.
 - `StatsSettingsView` / `StatsViewModel` — responsive statistics dashboard with KPI cards, interactive trend charts, content composition, source insights, and translation usage details.
 

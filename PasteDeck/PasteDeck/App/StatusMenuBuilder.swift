@@ -544,6 +544,7 @@ enum StatusMenuBuilder {
     ///   - quit: 退出应用回调
     /// - Returns: 配置好的 NSMenu 和它的 delegate（delegate 需由调用方持有强引用以防释放）。
     static func buildMenu(
+        openWorkbench: @escaping () -> Void,
         openMainPanel: @escaping () -> Void,
         openStats: @escaping () -> Void,
         translateSelection: @escaping () -> Void,
@@ -556,6 +557,7 @@ enum StatusMenuBuilder {
         quit: @escaping () -> Void
     ) -> (menu: NSMenu, delegate: MenuRefreshDelegate) {
         let delegate = MenuRefreshDelegate(
+            onOpenWorkbench: openWorkbench,
             onOpenMainPanel: openMainPanel,
             onOpenStats: openStats,
             onTranslateSelection: translateSelection,
@@ -564,7 +566,7 @@ enum StatusMenuBuilder {
             onOpenTranslationSettings: openTranslationSettings,
             onOpenSettings: openSettings,
             onOpenHelp: openHelp,
-            onQuit: quit
+            quit: quit
         )
 
         let menu = NSMenu()
@@ -592,8 +594,19 @@ enum StatusMenuBuilder {
 
         menu.addItem(NSMenuItem.separator())
 
+        let workbenchItem = NSMenuItem(
+            title: "打开工作台",
+            action: #selector(MenuRefreshDelegate.performOpenWorkbench(_:)),
+            keyEquivalent: "k"
+        )
+        workbenchItem.keyEquivalentModifierMask = [.command]
+        workbenchItem.target = delegate
+        workbenchItem.image = NSImage(systemSymbolName: "macwindow", accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 14, weight: .regular))
+        menu.addItem(workbenchItem)
+
         let openItem = NSMenuItem(
-            title: "打开 PasteDeck",
+            title: "快速粘贴面板",
             action: #selector(MenuRefreshDelegate.performOpenMainPanel(_:)),
             keyEquivalent: "v"
         )
@@ -696,6 +709,7 @@ enum StatusMenuBuilder {
 
 /// 菜单代理，在弹出前刷新统计概览与额度区块，并响应菜单项点击。
 final class MenuRefreshDelegate: NSObject, NSMenuDelegate {
+    let onOpenWorkbench: () -> Void
     let onOpenMainPanel: () -> Void
     let onOpenStats: () -> Void
     let onTranslateSelection: () -> Void
@@ -707,6 +721,7 @@ final class MenuRefreshDelegate: NSObject, NSMenuDelegate {
     let onQuit: () -> Void
 
     init(
+        onOpenWorkbench: @escaping () -> Void,
         onOpenMainPanel: @escaping () -> Void,
         onOpenStats: @escaping () -> Void,
         onTranslateSelection: @escaping () -> Void,
@@ -715,8 +730,9 @@ final class MenuRefreshDelegate: NSObject, NSMenuDelegate {
         onOpenTranslationSettings: @escaping () -> Void,
         onOpenSettings: @escaping () -> Void,
         onOpenHelp: @escaping () -> Void,
-        onQuit: @escaping () -> Void
+        quit: @escaping () -> Void
     ) {
+        self.onOpenWorkbench = onOpenWorkbench
         self.onOpenMainPanel = onOpenMainPanel
         self.onOpenStats = onOpenStats
         self.onTranslateSelection = onTranslateSelection
@@ -725,7 +741,7 @@ final class MenuRefreshDelegate: NSObject, NSMenuDelegate {
         self.onOpenTranslationSettings = onOpenTranslationSettings
         self.onOpenSettings = onOpenSettings
         self.onOpenHelp = onOpenHelp
-        self.onQuit = onQuit
+        self.onQuit = quit
         super.init()
     }
 
@@ -738,6 +754,10 @@ final class MenuRefreshDelegate: NSObject, NSMenuDelegate {
                 view.refresh()
             }
         }
+    }
+
+    @objc func performOpenWorkbench(_ sender: NSMenuItem) {
+        onOpenWorkbench()
     }
 
     @objc func performOpenMainPanel(_ sender: NSMenuItem) {

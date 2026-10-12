@@ -125,8 +125,6 @@ struct SettingsWindow: View {
             FilterSettingsView()
         case .favorites:
             FavoritesSettingsView()
-        case .appearance:
-            AppearanceSettingsView()
         case .translation:
             TranslationSettingsView()
         case .quota:
@@ -146,7 +144,6 @@ enum SettingsPane: String, CaseIterable, Identifiable {
     case stats
     case filter
     case favorites
-    case appearance
     case translation
     case quota
     case advanced
@@ -162,7 +159,6 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .stats: return "统计"
         case .filter: return "过滤"
         case .favorites: return "收藏夹"
-        case .appearance: return "外观"
         case .translation: return "翻译"
         case .quota: return "额度"
         case .advanced: return "高级"
@@ -178,7 +174,6 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .stats: return "使用洞察与趋势"
         case .filter: return "不记录指定来源"
         case .favorites: return "管理收藏夹名称和顺序"
-        case .appearance: return "主题和剪贴板面板布局"
         case .translation: return "划词、截图、快捷键与翻译服务"
         case .quota: return "Codex 与 WorkBuddy 余额"
         case .advanced: return "预览配置和数据维护"
@@ -194,7 +189,6 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .stats: return "chart.bar.xaxis"
         case .filter: return "line.3.horizontal.decrease"
         case .favorites: return "star"
-        case .appearance: return "paintpalette"
         case .translation: return "character.book.closed"
         case .quota: return "gauge.with.needle"
         case .advanced: return "slider.horizontal.3"
@@ -210,11 +204,11 @@ extension Notification.Name {
 
 private enum PasteDeckVersion {
     static var short: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.17.1"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "2.0.10"
     }
 
     static var build: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "220"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "227"
     }
 
     static var display: String {
@@ -2267,171 +2261,6 @@ struct CollectionRowView: View {
     private func cancelRename() {
         isEditing = false
     }
-}
-
-// MARK: - Appearance Settings
-
-struct AppearanceSettingsView: View {
-    @Environment(\.modelContext) private var modelContext
-    @Query private var settings: [AppSettings]
-
-    private var appSettings: AppSettings {
-        if let existing = settings.first {
-            return existing
-        }
-        let new = AppSettings()
-        modelContext.insert(new)
-        try? modelContext.save()
-        return new
-    }
-
-    var body: some View {
-        SettingsContentStack {
-            SettingsCard(title: "主题", icon: "circle.lefthalf.filled") {
-                SettingsRow(title: "外观模式", subtitle: "设置主面板和预览窗口的颜色模式") {
-                    Picker("", selection: Binding(
-                        get: { appSettings.themeMode },
-                        set: {
-                            appSettings.themeMode = $0
-                            try? modelContext.save()
-                            // 通知已打开的主面板/预览/设置窗口实时更新外观
-                            NotificationCenter.default.post(name: .appearanceModeDidChange, object: nil)
-                        }
-                    )) {
-                        Text("跟随系统").tag(0)
-                        Text("浅色").tag(1)
-                        Text("深色").tag(2)
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .frame(width: 230)
-                }
-
-                SettingsDivider()
-
-                SettingsRow(title: "主题风格", subtitle: "为界面选择一套视觉风格，收藏星标等颜色会跟随变化") {
-                    ThemeStylePicker(
-                        selection: Binding(
-                            get: { ThemeStyle(rawValue: appSettings.themeStyle ?? 0) ?? .default },
-                            set: {
-                                appSettings.themeStyle = $0.rawValue
-                                try? modelContext.save()
-                                NotificationCenter.default.post(name: .themeStyleDidChange, object: nil)
-                            }
-                        )
-                    )
-                }
-            }
-
-            SettingsCard(title: "剪贴板面板", icon: "rectangle.split.2x1") {
-                SettingsRow(title: "布局方向", subtitle: "设置剪贴板历史在主面板中的排列方向") {
-                    Picker("", selection: Binding(
-                        get: { appSettings.panelOrientation },
-                        set: {
-                            appSettings.panelOrientation = $0
-                            try? modelContext.save()
-                            NotificationCenter.default.post(name: .panelLayoutDidChange, object: nil)
-                        }
-                    )) {
-                        Text(PanelOrientation.horizontal.displayName).tag(PanelOrientation.horizontal)
-                        Text(PanelOrientation.vertical.displayName).tag(PanelOrientation.vertical)
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .frame(width: 160)
-                }
-
-                if appSettings.panelOrientation == .vertical {
-                    SettingsDivider()
-
-                    SettingsRow(title: "竖向样式", subtitle: "选择竖向面板中剪贴板内容的展示密度") {
-                        Picker("", selection: Binding(
-                            get: { appSettings.verticalPanelStyle },
-                            set: {
-                                appSettings.verticalPanelStyle = $0
-                                try? modelContext.save()
-                                NotificationCenter.default.post(name: .panelLayoutDidChange, object: nil)
-                            }
-                        )) {
-                            Text(VerticalPanelStyle.compactList.displayName).tag(VerticalPanelStyle.compactList)
-                            Text(VerticalPanelStyle.largeCards.displayName).tag(VerticalPanelStyle.largeCards)
-                            Text(VerticalPanelStyle.adaptiveGrid.displayName).tag(VerticalPanelStyle.adaptiveGrid)
-                        }
-                        .pickerStyle(.segmented)
-                        .labelsHidden()
-                        .frame(width: 280)
-                    }
-                }
-            }
-        }
-    }
-}
-
-struct ThemeStylePicker: View {
-    @Binding var selection: ThemeStyle
-    @Environment(\.themeColors) private var themeColors
-
-    var body: some View {
-        HStack(spacing: 8) {
-            ForEach(ThemeStyle.allCases) { style in
-                Button(action: { selection = style }) {
-                    HStack(spacing: 6) {
-                        Image(systemName: style.iconName)
-                            .font(.system(size: 12, weight: .semibold))
-                        Text(style.displayName)
-                            .font(.system(size: 12, weight: .semibold))
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 7)
-                    .foregroundColor(isSelected(style) ? selectedTextColor(for: style) : .primary)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(isSelected(style) ? selectedBackgroundColor(for: style) : Color.primary.opacity(0.045))
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(isSelected(style) ? selectedBorderColor(for: style) : Color.primary.opacity(0.06), lineWidth: 1)
-                    )
-                }
-                .buttonStyle(.plain)
-            }
-        }
-    }
-
-    private func isSelected(_ style: ThemeStyle) -> Bool {
-        selection == style
-    }
-
-    private func selectedBackgroundColor(for style: ThemeStyle) -> Color {
-        switch style {
-        case .default: return themeColors.accent.opacity(0.12)
-        case .cyber: return Color.cyan.opacity(0.16)
-        case .soft: return Color.pink.opacity(0.14)
-        case .film: return Color.orange.opacity(0.14)
-        }
-    }
-
-    private func selectedBorderColor(for style: ThemeStyle) -> Color {
-        switch style {
-        case .default: return themeColors.accent
-        case .cyber: return Color.cyan.opacity(0.8)
-        case .soft: return Color.pink.opacity(0.8)
-        case .film: return Color.orange.opacity(0.8)
-        }
-    }
-
-    private func selectedTextColor(for style: ThemeStyle) -> Color {
-        switch style {
-        case .default: return themeColors.accent
-        case .cyber: return Color.cyan
-        case .soft: return Color.pink
-        case .film: return Color.orange
-        }
-    }
-}
-
-extension ThemeStyle: Identifiable {
-    var id: Int { rawValue }
 }
 
 // MARK: - Advanced Settings

@@ -32,6 +32,8 @@ enum ToolLaunchSource: Equatable {
     case search
     /// 从主面板右侧上下文工具面板打开，携带来源卡片。
     case contextCard(itemID: UUID)
+    /// 从工作台工具中心直接独立打开。
+    case standalone
 }
 
 /// 打开工具时传入的上下文：来源、可选来源卡片与预填文本。
@@ -41,6 +43,12 @@ struct ToolContext: Equatable {
     let sourceItem: ClipboardItemSnapshot?
     /// 预填进工具输入框的文本；nil 表示不预填。
     let prefilledText: String?
+
+    static let standalone = ToolContext(launchSource: .standalone, sourceItem: nil, prefilledText: nil)
+
+    static func standalone(prefill: String? = nil) -> ToolContext {
+        ToolContext(launchSource: .standalone, sourceItem: nil, prefilledText: prefill)
+    }
 
     static func forSearch(prefillSuggestion: String? = nil) -> ToolContext {
         ToolContext(launchSource: .search, sourceItem: nil, prefilledText: prefillSuggestion)

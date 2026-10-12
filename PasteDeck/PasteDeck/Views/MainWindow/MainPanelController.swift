@@ -20,6 +20,10 @@ extension Notification.Name {
 
 /// 主面板窗口在横竖布局间切换时使用的稳定尺寸和 frame 存储键。
 enum MainPanelWindowLayout {
+    static let quickPanelDefaultContentSize = NSSize(width: 480, height: 560)
+    static let quickPanelMinimumContentSize = NSSize(width: 420, height: 480)
+    static let quickPanelFrameAutosaveName = "PasteDeck.QuickPanel.Frame"
+
     static let horizontalDefaultContentSize = NSSize(width: 800, height: 400)
     static let verticalDefaultContentSize = NSSize(width: 480, height: 680)
     static let horizontalMinimumContentSize = NSSize(width: 520, height: 260)
@@ -179,6 +183,11 @@ class MainPanelController: NSObject, NSWindowDelegate {
     private var panel: KeyboardFocusPanel?
     private var isVisible = false
 
+    /// 检查指定窗口是否为本控制器管理的主面板窗口。
+    func manages(window: NSWindow) -> Bool {
+        panel === window
+    }
+
     /// Resolves the current settings window without retaining AppDelegate or the window controller graph.
     var settingsWindowProvider: (() -> NSWindow?)?
 
@@ -221,7 +230,7 @@ class MainPanelController: NSObject, NSWindowDelegate {
     private func setupPanel() {
         let initialOrientation = loadPanelOrientation()
         activeOrientation = initialOrientation
-        let defaultContentSize = MainPanelWindowLayout.defaultContentSize(for: initialOrientation)
+        let defaultContentSize = MainPanelWindowLayout.quickPanelDefaultContentSize
 
         // Create floating panel with transparent title bar
         let panel = KeyboardFocusPanel(
@@ -242,7 +251,7 @@ class MainPanelController: NSObject, NSWindowDelegate {
         panel.titleVisibility = .hidden
         panel.delegate = self
         panel.acceptsMouseMovedEvents = true
-        panel.contentMinSize = MainPanelWindowLayout.minimumContentSize(for: initialOrientation)
+        panel.contentMinSize = MainPanelWindowLayout.quickPanelMinimumContentSize
 
         // Add blur background effect
         // 使用能跟随 window.appearance 的材质；.hudWindow 会强制暗色，
@@ -255,13 +264,14 @@ class MainPanelController: NSObject, NSWindowDelegate {
         visualEffectView.layer?.cornerRadius = 16
 
         // Embed SwiftUI view
-        let hostingView = NSHostingView(rootView: MainPanelView(closeHandler: { [weak self] in
+        let quickView = QuickPanelView(onClose: { [weak self] in
             self?.hidePanel()
-        }, openSettingsHandler: { [weak self] in
-            self?.openSettingsFromPanel()
+        }, onOpenWorkbench: { [weak self] in
+            self?.openWorkbenchFromPanel()
         })
         .modelContainer(AppModelContainer.container)
-        .themeStyled())
+
+        let hostingView = NSHostingView(rootView: quickView)
 
         hostingView.frame = visualEffectView.bounds
         hostingView.autoresizingMask = NSView.AutoresizingMask([.width, .height])
@@ -322,6 +332,7 @@ class MainPanelController: NSObject, NSWindowDelegate {
     ///   false 维持原有行为聚焦卡片区。
     func restorePanelFocus(preferringSearchFocus: Bool = false) {
         guard isVisible, panel?.isVisible == true else { return }
+        canCloseOnResignKey = false
         pendingFocusDestination = preferringSearchFocus ? .search : .cards
         establishPanelFocus()
     }
@@ -402,6 +413,11 @@ class MainPanelController: NSObject, NSWindowDelegate {
     private func openSettingsFromPanel() {
         hidePanel(shouldHideApp: false)
         NotificationCenter.default.post(name: .openSettingsWindow, object: nil)
+    }
+
+    private func openWorkbenchFromPanel() {
+        hidePanel(shouldHideApp: false)
+        WorkbenchWindowController.shared.showWorkbench()
     }
 
     // MARK: - Private Methods
@@ -523,7 +539,9 @@ class MainPanelController: NSObject, NSWindowDelegate {
 
         panel.makeKeyAndOrderFront(nil)
         guard panel.isKeyWindow else {
-            hidePanel(shouldHideApp: false)
+            if !WindowCloseCooldown.isInCooldown {
+                hidePanel(shouldHideApp: false)
+            }
             return
         }
 
@@ -606,6 +624,14 @@ class MainPanelController: NSObject, NSWindowDelegate {
             return
         }
 
+        // 若子窗口（预览窗口或工具弹窗）刚刚关闭，处于 350ms 冷却保护期内，
+        // 绝不允许被判为外部应用失焦而误关，重试恢复主面板焦点
+        if WindowCloseCooldown.isInCooldown {
+            pendingResignGeneration = nil
+            establishPanelFocus()
+            return
+        }
+
         pendingResignGeneration = nil
         if canCloseOnResignKey {
             hidePanel()
@@ -613,6 +639,14 @@ class MainPanelController: NSObject, NSWindowDelegate {
     }
 
     // MARK: - NSWindowDelegate
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        if WindowCloseCooldown.isInCooldown {
+            return false
+        }
+        hidePanel()
+        return false
+    }
 
     func windowWillClose(_ notification: Notification) {
         guard let closingPanel = notification.object as? NSWindow,

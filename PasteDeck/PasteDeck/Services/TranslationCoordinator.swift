@@ -1371,11 +1371,14 @@ private final class TranslationWorkspaceWindow: NSWindow {
     var onCancel: (() -> Void)?
 
     override func sendEvent(_ event: NSEvent) {
-        // TextEditor 会成为 first responder，因此在窗口分发层截获无修饰键 Esc，确保编辑状态下也能可靠关闭。
-        let blockingModifiers = event.modifierFlags.intersection([.command, .control, .option])
-        if event.type == .keyDown, event.keyCode == 53, blockingModifiers.isEmpty {
-            onCancel?()
-            return
+        // TextEditor 会成为 first responder，因此在窗口分发层截获 Esc 与 Command + W，确保编辑状态下也能可靠关闭当前窗口。
+        if event.type == .keyDown {
+            let blockingModifiers = event.modifierFlags.intersection([.command, .control, .option])
+            let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            if (event.keyCode == 53 && blockingModifiers.isEmpty) || (event.keyCode == 13 && modifiers == .command) {
+                onCancel?()
+                return
+            }
         }
         super.sendEvent(event)
     }

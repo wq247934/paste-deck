@@ -32,6 +32,26 @@ class MainWindowReference {
     static var window: NSWindow?
 }
 
+/// 全局子窗口关闭冷却保护器：当预览窗口或工具弹窗通过 Esc / ⌘W / Space 关闭时，
+/// 在 350ms 冷却期内严格拦截任何传给底层父窗口（速贴面板或工作台）的关闭事件，
+/// 彻底根除因物理键盘连击、系统菜单 ⌘W 滞后分发、以及失焦时序交接导致的“连带穿透关闭底层”。
+enum WindowCloseCooldown {
+    private static var lastChildClosedTime: Date = Date.distantPast
+    private static let lock = NSLock()
+
+    static func recordChildWindowClosed() {
+        lock.lock()
+        defer { lock.unlock() }
+        lastChildClosedTime = Date()
+    }
+
+    static var isInCooldown: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return Date().timeIntervalSince(lastChildClosedTime) < 0.35
+    }
+}
+
 /// 预览窗口的稳定标识。主面板的失焦保护依赖它识别预览窗口
 /// （themeStyled() 之后 hosting view 的泛型类型不再匹配旧检测）。
 let previewWindowIdentifier = NSUserInterfaceItemIdentifier("PasteDeckPreviewWindow")
@@ -301,6 +321,9 @@ struct PreviewWindow: View {
                 },
                 onPaste: {
                     pasteAndClose()
+                },
+                onClose: {
+                    closeWindow()
                 }
             )
         )
@@ -1193,6 +1216,7 @@ private struct KeycapLabel: View {
 private struct PreviewKeyboardMonitorView: NSViewRepresentable {
     let onTranslate: () -> Void
     let onPaste: () -> Void
+    let onClose: () -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
@@ -1237,6 +1261,14 @@ private struct PreviewKeyboardMonitorView: NSViewRepresentable {
             }
 
             let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+
+            // 1. ⌘W (keyCode 13) 或 Esc (keyCode 53) 或 Space (keyCode 49)：
+            // 严格只关闭当前预览窗口自身，彻底消费按键，绝不传递给下层窗口。
+            if (event.keyCode == 13 && modifiers == .command) || event.keyCode == 53 || event.keyCode == 49 {
+                parent.onClose()
+                return nil
+            }
+
             let nonShiftModifiers = modifiers.subtracting(.shift)
             guard nonShiftModifiers.isEmpty else {
                 return event
@@ -1264,11 +1296,14 @@ private struct PreviewKeyboardMonitorView: NSViewRepresentable {
 // MARK: - Preview Window Controller
 
 class PreviewWindowController: NSObject, NSWindowDelegate {
+    static let previewWindowShouldClose = Notification.Name("PasteDeck.previewWindowShouldClose")
+
     private var window: NSWindow?
     // Esc 监听已移至 KeyboardEventMonitorView 统一处理
     private var onCloseCallback: (() -> Void)?
     /// 标记是否已执行过关闭+恢复焦点，防止 windowWillClose 和 close() 重复执行
     private var didCloseAndRestore = false
+    private var closeObserver: NSObjectProtocol?
 
     func show(item: ClipboardItem, onClose: @escaping () -> Void) {
         // 先清理可能残留的旧窗口和监听器
@@ -1324,6 +1359,14 @@ class PreviewWindowController: NSObject, NSWindowDelegate {
             object: nil
         )
 
+        closeObserver = NotificationCenter.default.addObserver(
+            forName: Self.previewWindowShouldClose,
+            object: window,
+            queue: .main
+        ) { [weak self] _ in
+            self?.performClose()
+        }
+
         self.window = window
         window.makeKeyAndOrderFront(nil)
         // 与主面板保持相同层级，并将本次用户触发的预览显式置于最前。
@@ -1342,11 +1385,19 @@ class PreviewWindowController: NSObject, NSWindowDelegate {
         guard !didCloseAndRestore else { return }
         didCloseAndRestore = true
 
+        // 立即记录子窗口关闭时间戳，开启 350ms 冷却保护期，防止底层父窗口被连带穿透关闭
+        WindowCloseCooldown.recordChildWindowClosed()
+
+        if let closeObserver {
+            NotificationCenter.default.removeObserver(closeObserver)
+            self.closeObserver = nil
+        }
+
         window?.close()
         window = nil
 
-        // 恢复主面板焦点
-        restoreMainPanelFocus()
+        // 精准恢复触发预览的父窗口（速贴面板或工作台）
+        restoreParentWindowFocus()
 
         onCloseCallback?()
         onCloseCallback = nil
@@ -1354,24 +1405,32 @@ class PreviewWindowController: NSObject, NSWindowDelegate {
 
     /// 清理残留的窗口和监听器（不触发恢复焦点和回调）
     private func cleanup() {
+        if let closeObserver {
+            NotificationCenter.default.removeObserver(closeObserver)
+            self.closeObserver = nil
+        }
         window?.close()
         window = nil
         onCloseCallback = nil
         didCloseAndRestore = false
     }
 
-    private func restoreMainPanelFocus() {
+    private func restoreParentWindowFocus() {
         guard let previousWindow = MainWindowReference.window, previousWindow.isVisible else { return }
 
-        // 通过主面板自己的非激活聚焦流程恢复，避免再次依赖应用激活请求。
+        // 仅当先前的父窗口确实是速贴面板时，才走速贴面板专有的非激活聚焦流程
         if let panelController = NSApp.windows
             .compactMap({ $0.delegate as? MainPanelController })
-            .first {
+            .first,
+            panelController.manages(window: previousWindow) {
             panelController.restorePanelFocus()
             return
         }
 
+        // 若父窗口是工作台或其它窗口，直接恢复其 key 窗口状态
         previousWindow.makeKeyAndOrderFront(nil)
+        previousWindow.orderFrontRegardless()
+        NotificationCenter.default.post(name: .workbenchDidRequestListFocus, object: nil)
     }
 
     // MARK: - Appearance
