@@ -249,6 +249,9 @@ class MainPanelController: NSObject, NSWindowDelegate {
         panel.isMovableByWindowBackground = true
         panel.titlebarAppearsTransparent = true
         panel.titleVisibility = .hidden
+        panel.standardWindowButton(.closeButton)?.isHidden = true
+        panel.standardWindowButton(.miniaturizeButton)?.isHidden = true
+        panel.standardWindowButton(.zoomButton)?.isHidden = true
         panel.delegate = self
         panel.acceptsMouseMovedEvents = true
         panel.contentMinSize = MainPanelWindowLayout.quickPanelMinimumContentSize

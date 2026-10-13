@@ -14,7 +14,15 @@ struct WorkbenchSidebarView: View {
     let categoryCounts: [ClipboardContentType: Int]
     let onOpenSettings: () -> Void
 
+    @Environment(\.workbenchReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
+
     @State private var hoveredDestination: WorkbenchDestination?
+
+    // MARK: Sliding Capsule State
+
+    @State private var rowFrames: [WorkbenchDestination: CGRect] = [:]
+    @State private var pillFrame: CGRect?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -30,67 +38,96 @@ struct WorkbenchSidebarView: View {
                 .padding(.bottom, 10)
 
             // Navigation items list
+            //
+            // The capsule and the rows must share ONE coordinate space, otherwise
+            // the capsule never lines up with the selected row. Both live inside
+            // the ScrollView's ZStack; rows report their anchors in that same
+            // local space via a named coordinate space declared on the ZStack.
             ScrollView {
-                VStack(alignment: .leading, spacing: 2) {
-                    // Main navigation group
-                    sidebarItem(
-                        destination: .history,
-                        badgeCount: historyCount
-                    )
+                ZStack(alignment: .topLeading) {
+                    if pillFrame != nil {
+                        selectionCapsule
+                    }
 
-                    sidebarItem(
-                        destination: .favorites,
-                        badgeCount: favoritesCount
-                    )
+                    VStack(alignment: .leading, spacing: 2) {
+                        // Main navigation group
+                        sidebarItem(
+                            destination: .history,
+                            badgeCount: historyCount
+                        )
 
-                    sidebarItem(
-                        destination: .toolCenter,
-                        badgeCount: nil
-                    )
+                        sidebarItem(
+                            destination: .favorites,
+                            badgeCount: favoritesCount
+                        )
 
-                    sidebarItem(
-                        destination: .recentTools,
-                        badgeCount: nil
-                    )
+                        sidebarItem(
+                            destination: .toolCenter,
+                            badgeCount: nil
+                        )
 
-                    // Smart group section
-                    sectionHeader("智能分组")
-                        .padding(.top, 16)
-                        .padding(.bottom, 4)
+                        sidebarItem(
+                            destination: .recentTools,
+                            badgeCount: nil
+                        )
 
-                    sidebarItem(
-                        destination: .smartCategory(.text),
-                        badgeCount: categoryCounts[.text] ?? 0
-                    )
+                        // Smart group section
+                        sectionHeader("智能分组")
+                            .padding(.top, 16)
+                            .padding(.bottom, 4)
 
-                    sidebarItem(
-                        destination: .smartCategory(.link),
-                        badgeCount: categoryCounts[.link] ?? 0
-                    )
+                        sidebarItem(
+                            destination: .smartCategory(.text),
+                            badgeCount: categoryCounts[.text] ?? 0
+                        )
 
-                    sidebarItem(
-                        destination: .smartCategory(.image),
-                        badgeCount: categoryCounts[.image] ?? 0
-                    )
+                        sidebarItem(
+                            destination: .smartCategory(.link),
+                            badgeCount: categoryCounts[.link] ?? 0
+                        )
 
-                    sidebarItem(
-                        destination: .smartCategory(.file),
-                        badgeCount: categoryCounts[.file] ?? 0
-                    )
+                        sidebarItem(
+                            destination: .smartCategory(.image),
+                            badgeCount: categoryCounts[.image] ?? 0
+                        )
 
-                    sidebarItem(
-                        destination: .smartCategory(.color),
-                        badgeCount: categoryCounts[.color] ?? 0
-                    )
+                        sidebarItem(
+                            destination: .smartCategory(.file),
+                            badgeCount: categoryCounts[.file] ?? 0
+                        )
 
-                    sidebarItem(
-                        destination: .smartCategory(.markdown),
-                        badgeCount: (categoryCounts[.markdown] ?? 0) + (categoryCounts[.json] ?? 0)
-                    )
+                        sidebarItem(
+                            destination: .smartCategory(.color),
+                            badgeCount: categoryCounts[.color] ?? 0
+                        )
+
+                        sidebarItem(
+                            destination: .smartCategory(.markdown),
+                            badgeCount: (categoryCounts[.markdown] ?? 0) + (categoryCounts[.json] ?? 0)
+                        )
+                    }
+                    .padding(.horizontal, 8)
                 }
-                .padding(.horizontal, 8)
+                .coordinateSpace(name: Self.frameSpace)
             }
             .scrollIndicators(.hidden)
+            .onPreferenceChange(WorkbenchSidebarRowFramesKey.self) { frames in
+                rowFrames = frames
+                if pillFrame == nil, let initial = frames[selectedDestination] {
+                    pillFrame = initial
+                }
+            }
+            .onChange(of: selectedDestination) { _, newDest in
+                guard let target = rowFrames[newDest] else { return }
+                guard target != pillFrame else { return }
+                if reduceMotion {
+                    pillFrame = target
+                } else {
+                    withAnimation(WorkbenchMotion.pillSpring) {
+                        pillFrame = target
+                    }
+                }
+            }
 
             Spacer(minLength: 8)
 
@@ -123,7 +160,56 @@ struct WorkbenchSidebarView: View {
             .padding(.vertical, 10)
         }
         .frame(minWidth: 190, idealWidth: 205, maxWidth: 220)
-        .background(Color(nsColor: .windowBackgroundColor).opacity(0.65))
+        // 侧栏保持通透，让底层环境渐变透上来。
+        .background(Color.white.opacity(0.04))
+        // 首次定位由 handleRowFramesChange 在收到第一帧偏好时完成并吸附，不播放滑动。
+    }
+
+    // MARK: - Selection Capsule
+
+    // MARK: - Selection Capsule
+
+    /// 半透明玻璃胶囊：浅色模式下为柔和纯白半透，深色模式下为暗白半透，
+    /// 带有极细内高光与中性柔和阴影，硬件加速平滑滑动。
+    private var selectionCapsule: some View {
+        let frame = pillFrame ?? .zero
+        let isDark = colorScheme == .dark
+
+        return ZStack {
+            Capsule(style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: isDark ? [
+                            Color.white.opacity(0.14),
+                            Color.white.opacity(0.10)
+                        ] : [
+                            Color.white.opacity(0.85),
+                            Color.white.opacity(0.72)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+
+            // 外圈微弱描边
+            Capsule(style: .continuous)
+                .stroke(isDark ? Color.white.opacity(0.16) : Color.black.opacity(0.06), lineWidth: 1)
+
+            // 内圈极细高光
+            Capsule(style: .continuous)
+                .stroke(isDark ? Color.white.opacity(0.10) : Color.white.opacity(0.80), lineWidth: 1)
+                .padding(0.5)
+        }
+        .shadow(
+            color: isDark ? Color.black.opacity(0.35) : Color.black.opacity(0.06),
+            radius: 6,
+            x: 0,
+            y: 2
+        )
+        .frame(width: frame.width, height: frame.height)
+        .position(x: frame.midX, y: frame.midY)
+        .animation(reduceMotion ? nil : WorkbenchMotion.pillSpring, value: pillFrame)
+        .allowsHitTesting(false)
     }
 
     // MARK: - Header
@@ -173,44 +259,56 @@ struct WorkbenchSidebarView: View {
         let isHovered = hoveredDestination == destination
 
         Button {
-            selectedDestination = destination
+            select(destination)
         } label: {
             HStack(spacing: 9) {
                 Image(systemName: destination.iconName)
                     .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
-                    .foregroundColor(isSelected ? .white : (isHovered ? .primary : .secondary))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundColor(isSelected ? Color(red: 1.0, green: 0.45, blue: 0.08) : (isHovered ? .primary : .secondary))
                     .frame(width: 18)
 
                 Text(destination.title)
-                    .font(.system(size: 13, weight: isSelected ? .medium : .regular))
-                    .foregroundColor(isSelected ? .white : .primary)
+                    .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
+                    .foregroundColor(isSelected ? .primary : .primary.opacity(0.85))
 
                 Spacer()
 
                 if let count = badgeCount, count > 0 {
                     Text("\(count)")
                         .font(.system(size: 11, weight: .medium, design: .rounded))
-                        .foregroundColor(isSelected ? Color.white.opacity(0.9) : .secondary)
+                        .monospacedDigit()
+                        .foregroundColor(isSelected ? Color(red: 1.0, green: 0.45, blue: 0.08) : .secondary)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 1.5)
                         .background(
                             Capsule()
-                                .fill(isSelected ? Color.white.opacity(0.2) : Color.primary.opacity(0.06))
+                                .fill(isSelected ? Color(red: 1.0, green: 0.45, blue: 0.08).opacity(0.12) : Color.primary.opacity(0.06))
                         )
                 }
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
+            // Hover only: the selected row's glass capsule is drawn behind all rows.
             .background(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .fill(
-                        isSelected
-                            ? Color(red: 1.0, green: 0.45, blue: 0.08)
-                            : (isHovered ? Color.primary.opacity(0.06) : Color.clear)
+                        isHovered && !isSelected
+                            ? Color.primary.opacity(0.05)
+                            : Color.clear
                     )
             )
+            .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         }
         .buttonStyle(.plain)
+        .background(
+            GeometryReader { proxy in
+                Color.clear.preference(
+                    key: WorkbenchSidebarRowFramesKey.self,
+                    value: [destination: proxy.frame(in: .named(Self.frameSpace)).standardized]
+                )
+            }
+        )
         .onHover { hovering in
             if hovering {
                 hoveredDestination = destination
@@ -218,5 +316,27 @@ struct WorkbenchSidebarView: View {
                 hoveredDestination = nil
             }
         }
+    }
+
+    /// 点击选中：先定位胶囊目标，再更新绑定值。
+    private func select(_ destination: WorkbenchDestination) {
+        selectedDestination = destination
+    }
+
+    /// 行锚点与胶囊整体的坐标系命名空间。
+    static let frameSpace = "PasteDeck.Workbench.Sidebar"
+}
+
+// MARK: - Frame Preference Key
+
+/// 汇总各导航行上报的锚点矩形。
+private struct WorkbenchSidebarRowFramesKey: PreferenceKey {
+    static var defaultValue: [WorkbenchDestination: CGRect] = [:]
+
+    static func reduce(
+        value: inout [WorkbenchDestination: CGRect],
+        nextValue: () -> [WorkbenchDestination: CGRect]
+    ) {
+        value.merge(nextValue()) { _, new in new }
     }
 }

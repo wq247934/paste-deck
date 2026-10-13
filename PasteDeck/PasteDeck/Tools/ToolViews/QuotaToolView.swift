@@ -80,12 +80,12 @@ struct QuotaToolView: View {
                 QuotaHeroErrorState(text: quota.codexError ?? "查询失败")
             } else if let snapshot = quota.codexSnapshot {
                 if snapshot.session.isAvailable {
-                    let remaining = snapshot.isRateLimitReached ? 0 : snapshot.session.remainingPercent
+                    let remaining = snapshot.session.displayRemainingPercent
 
                     VStack(alignment: .leading, spacing: 3) {
                         Text("\(Int(remaining.rounded()))%")
                             .font(.system(size: 26, weight: .bold, design: .rounded))
-                            .foregroundColor(snapshot.isRateLimitReached || remaining <= 15 ? .red : .primary)
+                            .foregroundColor(snapshot.session.isLimitReached || remaining <= 15 ? .red : .primary)
                         Text(codexResetLine(snapshot))
                             .font(.system(size: 11))
                             .foregroundColor(.secondary)
@@ -98,7 +98,7 @@ struct QuotaToolView: View {
                     )
 
                     if snapshot.weekly.isAvailable {
-                        let weeklyRemaining = snapshot.isRateLimitReached ? 0 : snapshot.weekly.remainingPercent
+                        let weeklyRemaining = snapshot.weekly.displayRemainingPercent
                         VStack(alignment: .leading, spacing: 4) {
                             HStack {
                                 Text("每周额度")

@@ -105,9 +105,9 @@ final class QuotaStatusManager: ObservableObject {
         var segments: [(text: String, color: NSColor)] = []
 
         if let snapshot = codexSnapshot, snapshot.session.isAvailable {
-            let remaining = snapshot.isRateLimitReached ? 0 : snapshot.session.remainingPercent
+            let remaining = snapshot.session.displayRemainingPercent
             let color: NSColor
-            if snapshot.isRateLimitReached || remaining <= 15 {
+            if snapshot.session.isLimitReached || remaining <= 15 {
                 color = .systemRed
             } else if remaining <= 40 {
                 color = .systemOrange
@@ -154,21 +154,22 @@ final class QuotaStatusManager: ObservableObject {
 
         if let snapshot = codexSnapshot {
             if snapshot.session.isAvailable {
-                var sessionLine = "Codex 5 小时额度：剩余 \(Int(snapshot.session.remainingPercent.rounded()))%"
+                var sessionLine = "Codex 5 小时额度：剩余 \(Int(snapshot.session.displayRemainingPercent.rounded()))%"
                 if let resetsAt = snapshot.session.resetsAt {
                     sessionLine += "（\(QuotaFormat.clockText(resetsAt)) 重置）"
                 }
                 lines.append(sessionLine)
-
-                if snapshot.weekly.isAvailable {
-                    var weeklyLine = "Codex 每周额度：剩余 \(Int(snapshot.weekly.remainingPercent.rounded()))%"
-                    if let resetsAt = snapshot.weekly.resetsAt {
-                        weeklyLine += "（\(QuotaFormat.dateTimeText(resetsAt)) 重置）"
-                    }
-                    lines.append(weeklyLine)
-                }
             } else {
-                lines.append("Codex：额度暂未激活")
+                lines.append("Codex：5 小时额度暂未激活")
+            }
+
+            // 每周窗口独立于 5 小时窗口，两者互不影响。
+            if snapshot.weekly.isAvailable {
+                var weeklyLine = "Codex 每周额度：剩余 \(Int(snapshot.weekly.displayRemainingPercent.rounded()))%"
+                if let resetsAt = snapshot.weekly.resetsAt {
+                    weeklyLine += "（\(QuotaFormat.dateTimeText(resetsAt)) 重置）"
+                }
+                lines.append(weeklyLine)
             }
         } else if let codexError {
             lines.append("Codex：\(codexError)")

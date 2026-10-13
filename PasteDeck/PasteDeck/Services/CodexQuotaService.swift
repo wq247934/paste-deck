@@ -54,6 +54,13 @@ enum CodexQuotaService {
         var remainingPercent: Double
         var windowMinutes: Int?
         var resetsAt: Date?
+        /// 本窗口是否已用尽。由 usedPercent 自行推导，不受全局限流标志影响。
+        var isLimitReached: Bool
+
+        /// 展示用剩余比例：已用尽时归零，未用尽时取窗口自身余量。
+        var displayRemainingPercent: Double {
+            isLimitReached ? 0 : remainingPercent
+        }
     }
 
     struct ResetCredit: Equatable {
@@ -66,7 +73,12 @@ enum CodexQuotaService {
     struct Snapshot: Equatable {
         var plan: String?
         var limitName: String?
+        /// 全局限流标志：来自 rateLimitReachedType，与 primary / secondary 平级，
+        /// 描述的是账户层面的限流原因，**不代表**每个窗口都已用尽。
+        /// 窗口是否用尽请读各自的 window.isLimitReached。
         var isRateLimitReached: Bool
+        /// rateLimitReachedType 的原始取值，如 rate_limit_reached；用于展示限流原因。
+        var rateLimitReachedType: String?
         /// primary 窗口，即 5 小时额度。
         var session: Window
         /// secondary 窗口，即每周额度。
@@ -319,7 +331,7 @@ enum CodexQuotaService {
         let primary = buildWindow(raw: snapshot["primary"], label: sessionWindowLabel)
         let secondary = buildWindow(raw: snapshot["secondary"], label: weeklyWindowLabel)
 
-        let reachedType = Self.string(snapshot["rateLimitReachedType"]) ?? ""
+        let reachedType = Self.string(snapshot["rateLimitReachedType"])
         let credits = snapshot["credits"] as? [String: Any]
 
         let resetCreditsRaw = rpcResult["rateLimitResetCredits"] as? [String: Any]
@@ -337,7 +349,8 @@ enum CodexQuotaService {
         return Snapshot(
             plan: Self.string(snapshot["planType"]),
             limitName: Self.string(snapshot["limitName"]),
-            isRateLimitReached: !reachedType.isEmpty,
+            isRateLimitReached: reachedType != nil,
+            rateLimitReachedType: reachedType,
             session: primary,
             weekly: secondary,
             availableCredits: credits.flatMap { Self.int($0["availableCount"]) },
@@ -354,7 +367,8 @@ enum CodexQuotaService {
                 usedPercent: 0,
                 remainingPercent: 100,
                 windowMinutes: nil,
-                resetsAt: nil
+                resetsAt: nil,
+                isLimitReached: false
             )
         }
 
@@ -365,7 +379,8 @@ enum CodexQuotaService {
             usedPercent: used,
             remainingPercent: max(0, 100 - used),
             windowMinutes: Self.int(window["windowDurationMins"]),
-            resetsAt: Self.double(window["resetsAt"]).map { Date(timeIntervalSince1970: $0) }
+            resetsAt: Self.double(window["resetsAt"]).map { Date(timeIntervalSince1970: $0) },
+            isLimitReached: used >= 100
         )
     }
 

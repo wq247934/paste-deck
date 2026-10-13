@@ -475,6 +475,25 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 // MARK: - Model Container Singleton
 
 enum AppModelContainer {
+    static var storeURL: URL {
+        let appSupportURL: URL
+        if let overridePath = ProcessInfo.processInfo.environment["PASTEDECK_STORE_URL"] {
+            // 测试支撑：允许 QA 运行使用隔离的存储目录，避免触碰真实历史数据。
+            appSupportURL = URL(fileURLWithPath: overridePath, isDirectory: true)
+        } else {
+            appSupportURL = (try? FileManager.default.url(
+                for: .applicationSupportDirectory,
+                in: .userDomainMask,
+                appropriateFor: nil,
+                create: true
+            )) ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
+        }
+
+        let pasteDeckURL = appSupportURL.appendingPathComponent("com.pastedeck.app")
+        try? FileManager.default.createDirectory(at: pasteDeckURL, withIntermediateDirectories: true)
+        return pasteDeckURL.appendingPathComponent("PasteDeck.sqlite")
+    }
+
     static let container: ModelContainer = {
         let schema = Schema([
             ClipboardItem.self,
@@ -484,25 +503,8 @@ enum AppModelContainer {
             TranslationUsageSnapshot.self
         ])
 
-        let appSupportURL: URL
-        if let overridePath = ProcessInfo.processInfo.environment["PASTEDECK_STORE_URL"] {
-            // 测试支撑：允许 QA 运行使用隔离的存储目录，避免触碰真实历史数据。
-            appSupportURL = URL(fileURLWithPath: overridePath, isDirectory: true)
-        } else {
-            appSupportURL = try! FileManager.default.url(
-                for: .applicationSupportDirectory,
-                in: .userDomainMask,
-                appropriateFor: nil,
-                create: true
-            )
-        }
-
-        let pasteDeckURL = appSupportURL.appendingPathComponent("com.pastedeck.app")
-        try? FileManager.default.createDirectory(at: pasteDeckURL, withIntermediateDirectories: true)
-
-        let storeURL = pasteDeckURL.appendingPathComponent("PasteDeck.sqlite")
-
-        let modelConfiguration = ModelConfiguration(url: storeURL, allowsSave: true)
+        let url = storeURL
+        let modelConfiguration = ModelConfiguration(url: url, allowsSave: true)
         do {
             return try ModelContainer(for: schema, configurations: [modelConfiguration])
         } catch {

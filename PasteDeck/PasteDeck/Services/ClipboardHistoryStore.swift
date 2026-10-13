@@ -218,6 +218,8 @@ final class ClipboardHistoryStore: ObservableObject {
     @Published private(set) var filteredItems: [ClipboardItemSnapshot] = []
     @Published private(set) var collections: [ClipboardCollectionSnapshot] = []
     @Published private(set) var sourceApps: [String] = []
+    @Published private(set) var favoritesCount: Int = 0
+    @Published private(set) var categoryCounts: [ClipboardContentType: Int] = [:]
     @Published private(set) var isLoading = false
 
     private let modelContext: ModelContext
@@ -232,6 +234,8 @@ final class ClipboardHistoryStore: ObservableObject {
         let items: [ClipboardItemSnapshot]
         let collections: [ClipboardCollectionSnapshot]
         let sourceApps: [String]
+        let favoritesCount: Int
+        let categoryCounts: [ClipboardContentType: Int]
     }
 
     init(modelContext: ModelContext) {
@@ -264,6 +268,8 @@ final class ClipboardHistoryStore: ObservableObject {
             allItems = result.items
             collections = result.collections
             sourceApps = result.sourceApps
+            favoritesCount = result.favoritesCount
+            categoryCounts = result.categoryCounts
             hasLoaded = true
             isLoading = false
             applyFilterNow()
@@ -295,10 +301,21 @@ final class ClipboardHistoryStore: ObservableObject {
                 )
             }
 
+        var categoryCounts: [ClipboardContentType: Int] = [:]
+        var favoritesCount = 0
+        for item in items {
+            categoryCounts[item.contentType, default: 0] += 1
+            if item.isFavorite {
+                favoritesCount += 1
+            }
+        }
+
         return HistoryLoadResult(
             items: items,
             collections: collections,
-            sourceApps: sourceAppNames(from: items)
+            sourceApps: sourceAppNames(from: items),
+            favoritesCount: favoritesCount,
+            categoryCounts: categoryCounts
         )
     }
 
@@ -536,6 +553,7 @@ final class ClipboardHistoryStore: ObservableObject {
             allItems = Array(allItems.prefix(Self.historyLimit))
         }
         sourceApps = Self.sourceAppNames(from: allItems)
+        updateCounts()
 
         if applyImmediately {
             applyFilterNow()
@@ -546,6 +564,20 @@ final class ClipboardHistoryStore: ObservableObject {
         allItems.removeAll { ids.contains($0.id) }
         filteredItems.removeAll { ids.contains($0.id) }
         sourceApps = Self.sourceAppNames(from: allItems)
+        updateCounts()
+    }
+
+    private func updateCounts() {
+        var counts: [ClipboardContentType: Int] = [:]
+        var favCount = 0
+        for item in allItems {
+            counts[item.contentType, default: 0] += 1
+            if item.isFavorite {
+                favCount += 1
+            }
+        }
+        favoritesCount = favCount
+        categoryCounts = counts
     }
 
     private func removeSnapshots(ids: [UUID]) {

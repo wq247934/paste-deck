@@ -89,6 +89,9 @@ Only perform these steps when the user explicitly asks to publish a release.
 - `Views/MainWindow/MainPanelView.swift` - Main SwiftUI view with search, favorite filters, virtualized horizontal cards, and keyboard handling
 - `Views/MainWindow/SearchBarView.swift` - Search field component
 - `Views/MainWindow/ClipCardView.swift` - Individual clipboard item card
+- `Views/Workbench/WorkbenchMotion.swift` - Shared glass-motion tokens, Reduce Motion gate, and pure geometry math for capsule stretch
+- `Views/Workbench/WorkbenchGlass.swift` - Glass colour tokens and `FrostedGlassSurface`, the shared frosted base; needs an ambient gradient behind it to read as glass
+- `Views/Workbench/WorkbenchGlassCard.swift` - Glass card with a cursor-following light spot, locally brightened border, and subtle 3D tilt
 - `Views/Preview/PreviewWindow.swift` - Large preview window (triggered by Space key)
 - `Views/Preview/CodeHighlightView.swift` - Editable code preview and syntax highlighting
 - `Views/Preview/MarkdownRenderedText.swift` - Markdown rendering support

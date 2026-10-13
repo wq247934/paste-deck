@@ -66,8 +66,9 @@ struct QuickPanelView: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 9)
         }
-        .frame(width: 480, height: 560)
-        .background(Color(nsColor: .windowBackgroundColor).opacity(0.95))
+        .frame(minWidth: 420, maxWidth: .infinity, minHeight: 480, maxHeight: .infinity)
+        .ignoresSafeArea()
+        .background(Color(nsColor: .windowBackgroundColor).opacity(0.85))
         .background(quickPanelKeyboardMonitor)
         .onAppear {
             historyStore.loadIfNeeded()
@@ -211,6 +212,7 @@ struct QuickPanelView: View {
                         case .tool(let toolMatch):
                             quickPanelToolRow(toolMatch: toolMatch, isSelected: isSelected)
                                 .id(entry.id)
+                                .contentShape(Rectangle())
                                 .onTapGesture {
                                     searchCoordinator.select(index: index)
                                 }
@@ -228,6 +230,7 @@ struct QuickPanelView: View {
                                 isSelected: isSelected
                             )
                             .id(entry.id)
+                            .contentShape(Rectangle())
                             .onTapGesture {
                                 searchCoordinator.select(index: index)
                             }
@@ -266,75 +269,10 @@ struct QuickPanelView: View {
         shortcutNumber: Int?,
         isSelected: Bool
     ) -> some View {
-        HStack(spacing: 11) {
-            // Type leading icon
-            typeLeadingIconView(item: item)
-
-            // Content preview & source
-            VStack(alignment: .leading, spacing: 2.5) {
-                Text(item.displayTitle)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.primary)
-                    .lineLimit(1)
-
-                HStack(spacing: 5) {
-                    if let app = item.displaySourceApp {
-                        Image(systemName: "app.fill")
-                            .font(.system(size: 9))
-                            .foregroundColor(.secondary)
-                        Text(app)
-                            .font(.system(size: 10))
-                            .foregroundColor(.secondary)
-                    }
-                }
-            }
-
-            Spacer(minLength: 8)
-
-            // Time
-            Text(item.displayTime)
-                .font(.system(size: 11))
-                .foregroundColor(.secondary.opacity(0.85))
-
-            // Right-hand badge: Return arrow if selected, shortcut number if not
-            if isSelected {
-                Image(systemName: "return")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(Color(red: 1.0, green: 0.45, blue: 0.08))
-                    .frame(width: 22, height: 22)
-                    .background(
-                        RoundedRectangle(cornerRadius: 5)
-                            .fill(Color(red: 1.0, green: 0.45, blue: 0.08).opacity(0.15))
-                    )
-            } else if let num = shortcutNumber {
-                Text("\(num)")
-                    .font(.system(size: 11, weight: .medium, design: .rounded))
-                    .foregroundColor(.secondary)
-                    .frame(width: 20, height: 20)
-                    .background(
-                        RoundedRectangle(cornerRadius: 4)
-                            .fill(Color.primary.opacity(0.04))
-                    )
-            }
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(
-                    isSelected
-                        ? Color(red: 1.0, green: 0.45, blue: 0.08).opacity(0.12)
-                        : Color.clear
-                )
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(
-                    isSelected
-                        ? Color(red: 1.0, green: 0.45, blue: 0.08).opacity(0.4)
-                        : Color.clear,
-                    lineWidth: 1
-                )
+        QuickPanelClipboardRowItem(
+            item: item,
+            shortcutNumber: shortcutNumber,
+            isSelected: isSelected
         )
     }
 
@@ -344,80 +282,16 @@ struct QuickPanelView: View {
         toolMatch: ToolSearchService.Result,
         isSelected: Bool
     ) -> some View {
-        let descriptor = toolMatch.tool.descriptor
-
-        return HStack(spacing: 11) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(Color(red: 1.0, green: 0.45, blue: 0.08).opacity(0.15))
-                    .frame(width: 32, height: 32)
-
-                Image(systemName: descriptor.symbolName)
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundColor(Color(red: 1.0, green: 0.45, blue: 0.08))
-            }
-
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(descriptor.name)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(.primary)
-
-                    Text("工具")
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundColor(.secondary)
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 1)
-                        .background(
-                            RoundedRectangle(cornerRadius: 3)
-                                .fill(Color.primary.opacity(0.06))
-                        )
-                }
-
-                Text(descriptor.summary)
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
-            }
-
-            Spacer()
-
-            if isSelected {
-                Image(systemName: "return")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(Color(red: 1.0, green: 0.45, blue: 0.08))
-                    .frame(width: 22, height: 22)
-                    .background(
-                        RoundedRectangle(cornerRadius: 5)
-                            .fill(Color(red: 1.0, green: 0.45, blue: 0.08).opacity(0.15))
-                    )
-            }
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(
-                    isSelected
-                        ? Color(red: 1.0, green: 0.45, blue: 0.08).opacity(0.12)
-                        : Color.clear
-                )
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(
-                    isSelected
-                        ? Color(red: 1.0, green: 0.45, blue: 0.08).opacity(0.4)
-                        : Color.clear,
-                    lineWidth: 1
-                )
+        QuickPanelToolRowItem(
+            toolMatch: toolMatch,
+            isSelected: isSelected
         )
     }
 
     // MARK: - Type Leading Icon
 
     @ViewBuilder
-    private func typeLeadingIconView(item: ClipboardItemSnapshot) -> some View {
+    fileprivate static func typeLeadingIconView(item: ClipboardItemSnapshot) -> some View {
         switch item.contentType {
         case .text:
             Text("T")
@@ -695,6 +569,177 @@ struct QuickPanelView: View {
                 focusSearchField()
             }
         )
+    }
+}
+
+// MARK: - Row Subviews with Hover & Full Hit Shape
+
+private struct QuickPanelClipboardRowItem: View {
+    let item: ClipboardItemSnapshot
+    let shortcutNumber: Int?
+    let isSelected: Bool
+
+    @State private var isHovered = false
+
+    var body: some View {
+        HStack(spacing: 11) {
+            // Type leading icon
+            QuickPanelView.typeLeadingIconView(item: item)
+
+            // Content preview & source
+            VStack(alignment: .leading, spacing: 2.5) {
+                Text(item.displayTitle)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+
+                HStack(spacing: 5) {
+                    if let app = item.displaySourceApp {
+                        Image(systemName: "app.fill")
+                            .font(.system(size: 9))
+                            .foregroundColor(.secondary)
+                        Text(app)
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+
+            Spacer(minLength: 8)
+
+            // Time
+            Text(item.displayTime)
+                .font(.system(size: 11))
+                .foregroundColor(.secondary.opacity(0.85))
+
+            // Right-hand badge: Return arrow if selected, shortcut number if not
+            if isSelected {
+                Image(systemName: "return")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(Color(red: 1.0, green: 0.45, blue: 0.08))
+                    .frame(width: 22, height: 22)
+                    .background(
+                        RoundedRectangle(cornerRadius: 5)
+                            .fill(Color(red: 1.0, green: 0.45, blue: 0.08).opacity(0.15))
+                    )
+            } else if let num = shortcutNumber {
+                Text("\(num)")
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundColor(.secondary)
+                    .frame(width: 20, height: 20)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(Color.primary.opacity(0.04))
+                    )
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(
+                    isSelected
+                        ? Color(red: 1.0, green: 0.45, blue: 0.08).opacity(0.12)
+                        : (isHovered ? Color.primary.opacity(0.05) : Color.clear)
+                )
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(
+                    isSelected
+                        ? Color(red: 1.0, green: 0.45, blue: 0.08).opacity(0.4)
+                        : (isHovered ? Color.primary.opacity(0.08) : Color.clear),
+                    lineWidth: 1
+                )
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .onHover { hovering in
+            isHovered = hovering
+        }
+    }
+}
+
+private struct QuickPanelToolRowItem: View {
+    let toolMatch: ToolSearchService.Result
+    let isSelected: Bool
+
+    @State private var isHovered = false
+
+    var body: some View {
+        let descriptor = toolMatch.tool.descriptor
+
+        return HStack(spacing: 11) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(Color(red: 1.0, green: 0.45, blue: 0.08).opacity(0.15))
+                    .frame(width: 32, height: 32)
+
+                Image(systemName: descriptor.symbolName)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundColor(Color(red: 1.0, green: 0.45, blue: 0.08))
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(descriptor.name)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.primary)
+
+                    Text("工具")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1)
+                        .background(
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(Color.primary.opacity(0.06))
+                        )
+                }
+
+                Text(descriptor.summary)
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 8)
+
+            if isSelected {
+                Image(systemName: "return")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(Color(red: 1.0, green: 0.45, blue: 0.08))
+                    .frame(width: 22, height: 22)
+                    .background(
+                        RoundedRectangle(cornerRadius: 5)
+                            .fill(Color(red: 1.0, green: 0.45, blue: 0.08).opacity(0.15))
+                    )
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(
+                    isSelected
+                        ? Color(red: 1.0, green: 0.45, blue: 0.08).opacity(0.12)
+                        : (isHovered ? Color.primary.opacity(0.05) : Color.clear)
+                )
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(
+                    isSelected
+                        ? Color(red: 1.0, green: 0.45, blue: 0.08).opacity(0.4)
+                        : (isHovered ? Color.primary.opacity(0.08) : Color.clear),
+                    lineWidth: 1
+                )
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .onHover { hovering in
+            isHovered = hovering
+        }
     }
 }
 

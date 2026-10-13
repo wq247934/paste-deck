@@ -42,7 +42,7 @@ final class QuotaServiceTests: XCTestCase {
                 "codex": [
                     "planType": "pro",
                     "limitName": "codex_default",
-                    "rateLimitReachedType": "primary_window",
+                    "rateLimitReachedType": "rate_limit_reached",
                     "credits": ["availableCount": 3],
                     "primary": [
                         "usedPercent": 24.5,
@@ -67,7 +67,7 @@ final class QuotaServiceTests: XCTestCase {
         let snapshot = try CodexQuotaService.parseSnapshot(rpcResult: rpcResult)
 
         XCTAssertEqual(snapshot.plan, "pro")
-        XCTAssertTrue(snapshot.isRateLimitReached)
+        XCTAssertEqual(snapshot.rateLimitReachedType, "rate_limit_reached")
         XCTAssertEqual(snapshot.availableCredits, 3)
 
         XCTAssertTrue(snapshot.session.isAvailable)
@@ -85,6 +85,77 @@ final class QuotaServiceTests: XCTestCase {
         XCTAssertEqual(snapshot.resetCreditsAvailableCount, 1)
     }
 
+    /// 回归：rateLimitReachedType 是与 primary / secondary 平级的全局标志，
+    /// 只描述账户层面的限流原因。5 小时窗口用尽时，每周窗口的余量不能被一并抹成 0。
+    func testCodexWeeklyQuotaNotZeroedByGlobalRateLimitFlag() throws {
+        let snapshot = try CodexQuotaService.parseSnapshot(rpcResult: [
+            "rateLimitsByLimitId": [
+                "codex": [
+                    "planType": "plus",
+                    "rateLimitReachedType": "rate_limit_reached",
+                    "primary": [
+                        "usedPercent": 100,
+                        "windowDurationMins": 300,
+                        "resetsAt": 1_791_788_133,
+                    ],
+                    "secondary": [
+                        "usedPercent": 63,
+                        "windowDurationMins": 10_080,
+                        "resetsAt": 1_792_296_146,
+                    ],
+                ]
+            ]
+        ])
+
+        // 全局限流标志为真
+        XCTAssertTrue(snapshot.isRateLimitReached)
+
+        // 5 小时窗口确实用尽
+        XCTAssertTrue(snapshot.session.isLimitReached)
+        XCTAssertEqual(snapshot.session.displayRemainingPercent, 0, accuracy: 0.001)
+
+        // 每周窗口仍有 37% 余量，不受全局标志影响
+        XCTAssertFalse(snapshot.weekly.isLimitReached)
+        XCTAssertEqual(snapshot.weekly.displayRemainingPercent, 37, accuracy: 0.001)
+        XCTAssertEqual(snapshot.weekly.remainingPercent, 37, accuracy: 0.001)
+        XCTAssertEqual(snapshot.weekly.windowMinutes, 10_080)
+    }
+
+    /// 反向场景：只有周额度触顶时，5 小时窗口同样不受影响。
+    func testCodexSessionQuotaNotZeroedWhenOnlyWeeklyExhausted() throws {
+        let snapshot = try CodexQuotaService.parseSnapshot(rpcResult: [
+            "rateLimitsByLimitId": [
+                "codex": [
+                    "rateLimitReachedType": "rate_limit_reached",
+                    "primary": ["usedPercent": 12, "windowDurationMins": 300, "resetsAt": 1_791_788_133],
+                    "secondary": ["usedPercent": 100, "windowDurationMins": 10_080, "resetsAt": 1_792_296_146],
+                ]
+            ]
+        ])
+
+        XCTAssertFalse(snapshot.session.isLimitReached)
+        XCTAssertEqual(snapshot.session.displayRemainingPercent, 88, accuracy: 0.001)
+        XCTAssertTrue(snapshot.weekly.isLimitReached)
+        XCTAssertEqual(snapshot.weekly.displayRemainingPercent, 0, accuracy: 0.001)
+    }
+
+    /// 无 rateLimitReachedType 时视为未限流，各窗口仍按自身 usedPercent 计算。
+    func testCodexSnapshotWithoutRateLimitTypeLeavesWindowsIntact() throws {
+        let snapshot = try CodexQuotaService.parseSnapshot(rpcResult: [
+            "rateLimitsByLimitId": [
+                "codex": [
+                    "primary": ["usedPercent": 100, "windowDurationMins": 300, "resetsAt": 1_800_000],
+                    "secondary": ["usedPercent": 63, "windowDurationMins": 10_080, "resetsAt": 1_900_000],
+                ]
+            ]
+        ])
+
+        XCTAssertFalse(snapshot.isRateLimitReached)
+        XCTAssertNil(snapshot.rateLimitReachedType)
+        XCTAssertTrue(snapshot.session.isLimitReached)
+        XCTAssertEqual(snapshot.weekly.displayRemainingPercent, 37, accuracy: 0.001)
+    }
+
     func testCodexSnapshotHandlesMissingWindows() throws {
         let snapshot = try CodexQuotaService.parseSnapshot(rpcResult: [
             "rateLimits": ["planType": "free"] as [String: Any]
@@ -92,6 +163,7 @@ final class QuotaServiceTests: XCTestCase {
 
         XCTAssertEqual(snapshot.plan, "free")
         XCTAssertFalse(snapshot.isRateLimitReached)
+        XCTAssertNil(snapshot.rateLimitReachedType)
         XCTAssertFalse(snapshot.session.isAvailable)
         XCTAssertFalse(snapshot.weekly.isAvailable)
         XCTAssertTrue(snapshot.resetCredits.isEmpty)

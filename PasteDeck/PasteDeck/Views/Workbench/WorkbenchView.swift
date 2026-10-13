@@ -19,7 +19,9 @@ enum WorkbenchFocusZone: Equatable {
 }
 
 struct WorkbenchView: View {
-    @StateObject private var historyStore = ClipboardHistoryStore(
+    @Environment(\.colorScheme) private var colorScheme
+
+    @StateObject private var historyStore = WorkbenchHistoryStore(
         modelContext: ModelContext(AppModelContainer.container)
     )
     @StateObject private var searchCoordinator = UnifiedSearchCoordinator()
@@ -38,6 +40,7 @@ struct WorkbenchView: View {
     // Windows
     @State private var toolWindowController: ToolWindowController?
     @State private var previewController: PreviewWindowController?
+    @State private var expandedTool: BuiltinTool? = nil
 
     var onClose: () -> Void
     var onOpenSettings: () -> Void
@@ -47,9 +50,9 @@ struct WorkbenchView: View {
             // Left Column: Navigation Sidebar
             WorkbenchSidebarView(
                 selectedDestination: $selectedDestination,
-                historyCount: historyStore.allItems.count,
-                favoritesCount: historyStore.allItems.filter(\.isFavorite).count,
-                categoryCounts: countByCategory(historyStore.allItems),
+                historyCount: historyStore.totalHistoryCount,
+                favoritesCount: historyStore.totalFavoritesCount,
+                categoryCounts: historyStore.categoryCounts,
                 onOpenSettings: onOpenSettings
             )
 
@@ -79,21 +82,40 @@ struct WorkbenchView: View {
             }
         }
         .background(workbenchKeyboardMonitor)
+        .installWorkbenchMotionGate()
         .onAppear {
             historyStore.loadIfNeeded()
-            searchCoordinator.setHistoryStore(historyStore)
+            searchCoordinator.setWorkbenchStore(historyStore)
             focusList()
         }
         .onChange(of: selectedDestination) { _, newDestination in
+            expandedTool = nil
             applyDestinationFilter(newDestination)
+            historyStore.configure(
+                destination: newDestination,
+                typeFilter: selectedTypeFilter,
+                sortOrder: sortOrder
+            )
         }
         .onChange(of: selectedTypeFilter) { _, newType in
-            applyTypeFilter(newType)
+            historyStore.configure(
+                destination: selectedDestination,
+                typeFilter: newType,
+                sortOrder: sortOrder
+            )
+        }
+        .onChange(of: sortOrder) { _, newSort in
+            historyStore.configure(
+                destination: selectedDestination,
+                typeFilter: selectedTypeFilter,
+                sortOrder: newSort
+            )
         }
         .onReceive(NotificationCenter.default.publisher(for: .workbenchDidRequestListFocus)) { _ in
             focusList()
         }
-        .background(Color(nsColor: .windowBackgroundColor))
+        // 玻璃材质需要背后有可折射的色彩与明暗梯度，铺一层环境渐变作为底。
+        .background(WorkbenchGlass.ambientBackground(colorScheme))
     }
 
     // MARK: - Main Content Area
@@ -102,13 +124,13 @@ struct WorkbenchView: View {
     private var mainContentArea: some View {
         switch selectedDestination {
         case .toolCenter, .recentTools:
-            ToolCenterView { tool in
+            ToolCenterView(expandedTool: $expandedTool) { tool in
                 openToolWindow(tool: tool, prefill: nil)
             }
         default:
             WorkbenchContentListView(
                 searchCoordinator: searchCoordinator,
-                items: sortedItems(historyStore.filteredItems),
+                items: historyStore.items,
                 selectedItem: currentSelectedItem,
                 selectedEntry: searchCoordinator.selectedEntry,
                 viewMode: $viewMode,
@@ -141,6 +163,11 @@ struct WorkbenchView: View {
                 },
                 onOpenTool: { tool, prefill in
                     openToolWindow(tool: tool, prefill: prefill)
+                },
+                hasMore: historyStore.hasMore,
+                isLoadingMore: historyStore.isLoadingPage,
+                onLoadMore: {
+                    historyStore.loadNextPage()
                 }
             )
         }
@@ -164,7 +191,7 @@ struct WorkbenchView: View {
         if let selected = searchCoordinator.selectedEntry?.clipboardSnapshot {
             return selected
         }
-        return historyStore.filteredItems.first
+        return historyStore.items.first
     }
 
     // MARK: - Actions
@@ -219,52 +246,13 @@ struct WorkbenchView: View {
 
     private func applyDestinationFilter(_ destination: WorkbenchDestination) {
         switch destination {
-        case .history:
-            historyStore.setFilter(.all)
-        case .favorites:
-            if let defaultColl = historyStore.collections.first(where: \.isDefault) {
-                historyStore.setFilter(.collection(defaultColl.id))
-            }
+        case .history, .favorites:
+            selectedTypeFilter = nil
         case .smartCategory(let type):
-            // Filtering in UI list
-            historyStore.setFilter(.all)
             selectedTypeFilter = type
         case .toolCenter, .recentTools:
             break
         }
-    }
-
-    private func applyTypeFilter(_ type: ClipboardContentType?) {
-        // Will be reflected in sortedItems()
-    }
-
-    private func sortedItems(_ raw: [ClipboardItemSnapshot]) -> [ClipboardItemSnapshot] {
-        var result = raw
-
-        if let type = selectedTypeFilter {
-            if type == .markdown {
-                result = result.filter { $0.contentType == .markdown || $0.contentType == .json }
-            } else {
-                result = result.filter { $0.contentType == type }
-            }
-        }
-
-        switch sortOrder {
-        case .newestFirst:
-            return result.sorted { $0.createdAt > $1.createdAt }
-        case .oldestFirst:
-            return result.sorted { $0.createdAt < $1.createdAt }
-        case .size:
-            return result.sorted { $0.displaySize > $1.displaySize }
-        }
-    }
-
-    private func countByCategory(_ all: [ClipboardItemSnapshot]) -> [ClipboardContentType: Int] {
-        var counts: [ClipboardContentType: Int] = [:]
-        for item in all {
-            counts[item.contentType, default: 0] += 1
-        }
-        return counts
     }
 
     // MARK: - Keyboard Monitor
@@ -304,12 +292,17 @@ struct WorkbenchView: View {
                     focusList()
                 } else if focusZone == .search {
                     focusList()
+                } else if expandedTool != nil {
+                    withAnimation(WorkbenchMotion.expandSpring) {
+                        expandedTool = nil
+                    }
                 } else {
                     onClose()
                 }
             },
             onCmdW: { onClose() },
             onCmdF: { focusSearch() },
+            onOpenSettings: onOpenSettings,
             onStartSearching: { chars in
                 searchCoordinator.searchText = chars
                 focusSearch()
@@ -334,6 +327,7 @@ private struct WorkbenchKeyboardMonitor: NSViewRepresentable {
     var onEscape: () -> Void
     var onCmdW: () -> Void
     var onCmdF: () -> Void
+    var onOpenSettings: () -> Void
     var onStartSearching: (String) -> Void
 
     func makeCoordinator() -> Coordinator {
@@ -467,6 +461,12 @@ private struct WorkbenchKeyboardMonitor: NSViewRepresentable {
             // 3. ⌘F -> 聚焦搜索框
             if keyCode == 3 && modifiers == .command {
                 parent.onCmdF()
+                return nil
+            }
+
+            // 3.1 ⌘, -> 打开设置窗口
+            if keyCode == 43 && modifiers == .command {
+                parent.onOpenSettings()
                 return nil
             }
 

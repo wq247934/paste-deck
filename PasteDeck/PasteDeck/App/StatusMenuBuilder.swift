@@ -316,7 +316,6 @@ final class QuotaOverviewMenuItemView: NSView {
         // 第一行：Codex 5 小时额度
         rows[0].configure(
             window: codexSnapshot?.session,
-            isRateLimitReached: codexSnapshot?.isRateLimitReached ?? false,
             resetText: codexSnapshot?.session.resetsAt.map { QuotaFormat.clockText($0) },
             accent: Self.codexAccent,
             errorText: manager.codexShortError,
@@ -326,7 +325,6 @@ final class QuotaOverviewMenuItemView: NSView {
         // 第二行：Codex 每周额度
         rows[1].configure(
             window: codexSnapshot?.weekly,
-            isRateLimitReached: codexSnapshot?.isRateLimitReached ?? false,
             resetText: codexSnapshot?.weekly.resetsAt.map { QuotaFormat.dateTimeText($0) },
             accent: Self.codexAccent,
             errorText: manager.codexShortError,
@@ -398,16 +396,16 @@ final class QuotaOverviewMenuItemView: NSView {
 
 private extension QuotaOverviewMenuItemView.Row {
     /// 单行额度窗口展示：进度条按剩余比例着色，右侧显示剩余百分比与重置时间。
+    /// 触顶与否只读该窗口自身的状态，全局限流标志不参与百分比计算。
     func configure(
         window: CodexQuotaService.Window?,
-        isRateLimitReached: Bool,
         resetText: String?,
         accent: NSColor,
         errorText: String?,
         isFetching: Bool
     ) {
         if let window, window.isAvailable {
-            let remaining = isRateLimitReached ? 0 : window.remainingPercent
+            let remaining = window.displayRemainingPercent
             bar.update(
                 fraction: remaining / 100,
                 color: QuotaFormat.remainingNSColor(remainingPercent: remaining, base: accent)
@@ -423,7 +421,7 @@ private extension QuotaOverviewMenuItemView.Row {
         }
 
         bar.update(fraction: 0, color: accent)
-        if let window {
+        if window != nil {
             detail.attributedStringValue = QuotaOverviewMenuItemView.quotaDetailAttributed(
                 main: "暂未激活",
                 mainColor: .secondaryLabelColor,

@@ -15,6 +15,13 @@ PasteDeck 2.0 is a native macOS productivity workbench, smart toolbox, and clipb
   - **Time & Date Calculator**: Unix timestamp bi-directional conversion, date difference, date arithmetic, holiday-aware working days, English date formats, world time, and stopwatch.
   - **IPv4 / Subnet Calculator**: IP validation, address classes, CIDR prefix calculations, subnet masks, usable host ranges, and optional IP geolocation.
   - **Quota Overview**: Real-time local Codex (ChatGPT desktop) rate-limit windows and Tencent WorkBuddy credits.
+- **Frosted-Glass Workbench Motion** (macOS 14+, no macOS 26 dependency):
+  - **Sliding selection capsule**: The sidebar's current item is marked by a translucent glass capsule that slides to its new position when you switch sections — stretching along the direction of travel mid-flight and settling with a springy rebound. It travels across the "Smart Categories" group header without clipping.
+  - **Glass module cards**: Tool Center cards use frosted glass; on hover a soft light spot follows the cursor, the border nearest the cursor brightens locally, and the card tilts slightly in 3D. Moving away restores it smoothly.
+  - **In-place module detail**: Clicking a tool module expands it in place into a detail view with the embedded tool interface, while the other modules collapse into a bottom glass thumbnail strip. Click a thumbnail to switch; close to collapse back along the same path.
+  - All motion respects **System Settings → Accessibility → Display → Reduce Motion**, degrading to instant state changes.
+
+  > **Implementation note.** Glass needs two layers to read as glass: a coloured ambient gradient behind everything for the material to refract, and a low-opacity milky surface plus a real drop shadow on top. Material alone is not enough — inside a window it samples a near-uniform background, which renders as a flat grey slab. The same warning applies to tint: a high-opacity colour painted over the material hides it completely and yields a solid block.
 - **Pure Native Design Language**: Automatically follows macOS system Light and Dark appearance with native materials, contrast-safe semantic colors, and PasteDeck's brand orange accent (`#FF7314`).
 - Records clipboard history for text, rich text, links, Markdown, JSON, images, files, and colors.
 - Shows website names for link cards and lets link history be searched by site name. Automatically fetches webpage titles for copied links.
@@ -145,7 +152,8 @@ Clipboard polling uses `NSPasteboard`; it does not require Accessibility by itse
 
 ### Services
 - `ClipboardMonitor` polls `NSPasteboard`, parses content, deduplicates entries, saves history, schedules OCR, and runs cleanup.
-- `ClipboardHistoryStore` loads and filters history for the main panel, manages selection, favorites, collections, deletion, and batch paste.
+- `ClipboardHistoryStore` — dedicated in-memory history cache (5,000 items) for `QuickPanelView` ensuring zero disk I/O, instant ⌘⇧V activation, and rapid in-memory filtering.
+- `WorkbenchHistoryStore` — dedicated paginated history repository for `WorkbenchView` providing whole-database browsing (tens of thousands to hundreds of thousands of records), 100-item progressive paging with infinite-scroll Sentinel, SQLite3-accelerated category counts, and full-database search without main-thread blocking.
 - `ClipboardItemLifecycleService` centralizes SwiftData deletion and shared image-asset release, and supplies the referenced-path set used by safe cache maintenance.
 - `ClipboardImageAssetStore` serializes image adoption, final-reference deletion, and maintenance while protecting image paths whose SwiftData insertion is still pending.
 - `HotKeyManager` uses Carbon `RegisterEventHotKey` for independent clipboard and translation shortcuts.
@@ -165,11 +173,14 @@ Clipboard polling uses `NSPasteboard`; it does not require Accessibility by itse
 ### UI Layer
 - `WorkbenchWindowController` — `NSWindowController` for the primary 3-column macOS productivity workbench (1080 × 720 pt, minimum 820 × 520 pt).
 - `WorkbenchView` — 3-column SwiftUI workspace container hosting `WorkbenchSidebarView`, `WorkbenchContentListView`, `ToolCenterView`, and `WorkbenchInspectorView`.
-- `WorkbenchSidebarView` — native macOS sidebar providing Core navigation, Smart categories, and Settings shortcuts.
-- `WorkbenchContentListView` — central content view with unified search, toolbar mode switchers, date grouping, and custom type rows.
+- `WorkbenchSidebarView` — native macOS sidebar providing Core navigation, Smart categories, and Settings shortcuts. Selection is drawn by a shared sliding glass capsule anchored to the selected row.
+- `WorkbenchContentListView` — central content view with unified search, toolbar mode switchers, full row virtualization (`LazyVStack` + `Section`), high-performance `Date` baseline grouping, bottom Sentinel pagination, full-row hit testing (`contentShape` on entire row including spacer), and isolated mouse hover states.
 - `WorkbenchInspectorView` — right-hand context inspector displaying real-time previews, metadata, actions, smart tool recommendations, and contextual tags.
-- `ToolCenterView` — dynamic tool discovery grid displaying registered tools from `ToolRegistry`.
-- `QuickPanelView` — compact, lightweight floating panel for high-speed pasting (`Command + Shift + V`), with unified arrow-key navigation and Enter-to-paste.
+- `ToolCenterView` — dynamic tool discovery grid displaying registered tools from `ToolRegistry`; clicking a module expands it in place to an embedded detail view with a bottom thumbnail strip for sibling modules.
+- `WorkbenchMotion` — shared motion tokens, the Reduce Motion gate, and the pure geometry math behind capsule stretch.
+- `WorkbenchGlass` — glass colour tokens plus `FrostedGlassSurface`, the shared frosted base for cards.
+- `WorkbenchGlassCard` — glass card with a cursor-following light spot, locally brightened border, and subtle 3D tilt.
+- `QuickPanelView` — compact, lightweight floating panel for high-speed pasting (`Command + Shift + V`), with unified arrow-key navigation, full-row hit testing, isolated mouse hover states, and Enter-to-paste.
 - `MainPanelController` — `NSPanel` controller for the floating quick paste panel (`KeyboardFocusPanel`).
 - `UnifiedSearchCoordinator` — unifies search queries across tools and clipboard records with synchronized keyboard navigation.
 - `PreviewWindow` — large preview for text, Markdown, JSON/code, image, file, color, and translation.
@@ -246,7 +257,7 @@ PasteDeck 是一个原生 macOS 剪贴板管理器，用浮动面板快速搜索
 - 单击卡片可选中，双击卡片可立即粘贴。
 - 菜单栏下拉菜单内嵌统计概览，展示今日复制次数、总条数和缓存占用；并新增额度区块，以进度条展示 Codex 5 小时 / 每周额度窗口与 WorkBuddy 剩余积分，支持一键刷新和跳转额度设置页。
 - 内置智能工具箱：搜索同时匹配工具（名称、别名、关键词、描述）与剪贴板历史；选中时间戳或 IPv4 卡片时，右侧上下文面板自动推荐对应工具；工具在独立弹窗中打开，不写入历史数据库。首批内置工具包括完整的时间日期计算器（时间戳转换、计算日期差、推算日期、推算工作日（内置 2024–2025 年法定节假日与调休数据）、工作天数、英文日期格式、世界时间转换器、键盘秒表）、IPv4/子网计算（地址校验、地址类型、CIDR、掩码、网络/广播地址、可用范围，正确处理 /0、/31、/32；支持点击按钮在线查询归属地与运营商，主源 ipwho.is、备源 ipinfo.io，私网地址不发起查询）和额度查看（复用设置页的 Codex/WorkBuddy 服务）。侧边栏左边缘有一条竖直手柄，鼠标移到上面会变成左右拉伸光标，按住拖动即可调整宽度（可调范围 260–420pt），松手后记住，下次打开主面板自动恢复。
-- 新增“额度”设置页，完整展示本机余额：Codex（ChatGPT 桌面版）套餐状态、5 小时 / 每周速率窗口与重置卡通过本机 codex app-server 查询，不访问网络；WorkBuddy（腾讯 CodeBuddy）各积分包总额 / 已用 / 剩余读取本地桌面版凭证后直连腾讯官方计费接口，token 失效自动续期。设置中开启开关后，菜单栏图标旁会显示紧凑余额（C 剩余百分比、W 剩余积分），余额不足时自动变红。
+- 新增“额度”设置页，完整展示本机余额：Codex（ChatGPT 桌面版）套餐状态、5 小时 / 每周速率窗口与重置卡通过本机 codex app-server 查询，不访问网络；WorkBuddy（腾讯 CodeBuddy）各积分包总额 / 已用 / 剩余读取本地桌面版凭证后直连腾讯官方计费接口，token 失效自动续期。5 小时与每周两个速率窗口各自独立计算余量，一个窗口用尽不会影响另一个窗口的显示。设置中开启开关后，菜单栏图标旁会显示紧凑余额（C 剩余百分比、W 剩余积分），余额不足时自动变红。
 - 菜单栏和设置页均提供“功能指南”：按快速开始、查找整理、预览编辑、翻译、统计、个性化六个场景，用卡片、三步操作和快捷键帮助理解全部功能。
 - 支持键盘导航，并会按当前面板可视区域自动滚动选中卡片；同时支持收藏筛选、自定义收藏夹、系统“翻译”分类、置顶、删除和批量粘贴。翻译分类固定在“收藏”之后，不能删除、改名或排序。
 - 支持横向和竖向面板布局，竖向提供紧凑列表、大卡片和自适应网格三种样式。

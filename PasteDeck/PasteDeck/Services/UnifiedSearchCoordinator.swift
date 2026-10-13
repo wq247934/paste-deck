@@ -51,6 +51,7 @@ final class UnifiedSearchCoordinator: ObservableObject {
     @Published var selectedIndex: Int = 0
 
     private weak var historyStore: ClipboardHistoryStore?
+    private weak var workbenchStore: WorkbenchHistoryStore?
     private var cancellables = Set<AnyCancellable>()
 
     init(historyStore: ClipboardHistoryStore? = nil) {
@@ -62,12 +63,29 @@ final class UnifiedSearchCoordinator: ObservableObject {
 
     func setHistoryStore(_ store: ClipboardHistoryStore) {
         self.historyStore = store
+        self.workbenchStore = nil
         cancellables.removeAll()
         bindHistoryStore(store)
     }
 
+    func setWorkbenchStore(_ store: WorkbenchHistoryStore) {
+        self.workbenchStore = store
+        self.historyStore = nil
+        cancellables.removeAll()
+        bindWorkbenchStore(store)
+    }
+
     private func bindHistoryStore(_ store: ClipboardHistoryStore) {
         store.$filteredItems
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.rebuildEntries()
+            }
+            .store(in: &cancellables)
+    }
+
+    private func bindWorkbenchStore(_ store: WorkbenchHistoryStore) {
+        store.$items
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 self?.rebuildEntries()
@@ -96,6 +114,7 @@ final class UnifiedSearchCoordinator: ObservableObject {
             toolMatches = ToolSearchService.search(trimmed)
         }
         historyStore?.setSearchText(trimmed)
+        workbenchStore?.setSearchText(trimmed)
         rebuildEntries()
     }
 
@@ -110,6 +129,10 @@ final class UnifiedSearchCoordinator: ObservableObject {
 
         if let historyItems = historyStore?.filteredItems {
             for item in historyItems {
+                entries.append(.clipboard(item))
+            }
+        } else if let wbItems = workbenchStore?.items {
+            for item in wbItems {
                 entries.append(.clipboard(item))
             }
         }

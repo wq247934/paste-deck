@@ -30,9 +30,7 @@ final class WorkbenchWindowController: NSObject, NSWindowDelegate {
 
     func showWorkbench() {
         if let window = window {
-            if !window.isVisible {
-                window.makeKeyAndOrderFront(nil)
-            }
+            window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
         }
@@ -84,6 +82,10 @@ final class WorkbenchWindowController: NSObject, NSWindowDelegate {
         window.isReleasedWhenClosed = false
         window.delegate = self
         window.setFrameAutosaveName(Layout.frameAutosaveName)
+
+        window.backgroundColor = .windowBackgroundColor
+        window.isOpaque = true
+        window.hasShadow = true
 
         if !window.setFrameUsingName(Layout.frameAutosaveName) {
             window.center()

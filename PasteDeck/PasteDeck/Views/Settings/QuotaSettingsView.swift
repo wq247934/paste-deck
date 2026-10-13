@@ -116,14 +116,14 @@ struct QuotaSettingsView: View {
                 QuotaHeroErrorState(text: quota.codexError ?? "查询失败")
             } else if let snapshot = quota.codexSnapshot {
                 if snapshot.session.isAvailable {
-                    let remaining = snapshot.isRateLimitReached ? 0 : snapshot.session.remainingPercent
+                    let remaining = snapshot.session.displayRemainingPercent
                     let statusColor = QuotaFormat.remainingColor(remainingPercent: remaining, base: QuotaBrandColor.codex)
 
                     HStack(alignment: .top, spacing: 12) {
                         VStack(alignment: .leading, spacing: 3) {
                             Text("\(Int(remaining.rounded()))%")
                                 .font(.system(size: 30, weight: .bold, design: .rounded))
-                                .foregroundColor(snapshot.isRateLimitReached || remaining <= 15 ? .red : .primary)
+                                .foregroundColor(snapshot.session.isLimitReached || remaining <= 15 ? .red : .primary)
                             Text(sessionResetLine(snapshot))
                                 .font(.system(size: 11))
                                 .foregroundColor(.secondary)
@@ -181,7 +181,7 @@ struct QuotaSettingsView: View {
             .overlay(QuotaBrandColor.codex.opacity(0.2))
 
         if snapshot.weekly.isAvailable {
-            let remaining = snapshot.isRateLimitReached ? 0 : snapshot.weekly.remainingPercent
+            let remaining = snapshot.weekly.displayRemainingPercent
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .center) {
                     VStack(alignment: .leading, spacing: 2) {
@@ -196,7 +196,7 @@ struct QuotaSettingsView: View {
                     Spacer()
                     Text("\(Int(remaining.rounded()))% 剩余")
                         .font(.system(size: 13, weight: .semibold, design: .rounded))
-                        .foregroundColor(snapshot.isRateLimitReached || remaining <= 15 ? .red : .primary)
+                        .foregroundColor(snapshot.weekly.isLimitReached || remaining <= 15 ? .red : .primary)
                 }
                 QuotaProgressBar(
                     fraction: remaining / 100,

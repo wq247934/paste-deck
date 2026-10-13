@@ -28,6 +28,9 @@ struct WorkbenchContentListView: View {
     let onDeleteItem: (UUID) -> Void
     let onPreviewItem: (ClipboardItemSnapshot) -> Void
     let onOpenTool: (BuiltinTool, String?) -> Void
+    var hasMore: Bool = false
+    var isLoadingMore: Bool = false
+    var onLoadMore: () -> Void = {}
 
     var body: some View {
         VStack(spacing: 0) {
@@ -54,7 +57,7 @@ struct WorkbenchContentListView: View {
                 }
             }
         }
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.4))
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.35))
     }
 
     // MARK: - Top Toolbar
@@ -292,6 +295,7 @@ struct WorkbenchContentListView: View {
 
                                     clipboardRow(item: item, isSelected: isSelected)
                                         .id(entry.id)
+                                        .contentShape(Rectangle())
                                         .onTapGesture {
                                             onSelectEntry(entry)
                                         }
@@ -305,6 +309,7 @@ struct WorkbenchContentListView: View {
                             .padding(.horizontal, 12)
                         }
                     }
+                    paginationSentinelView
                 }
                 .padding(.vertical, 8)
             }
@@ -326,36 +331,37 @@ struct WorkbenchContentListView: View {
 
         return ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 14) {
+                LazyVStack(alignment: .leading, spacing: 4) {
                     ForEach(grouped, id: \.title) { section in
-                        VStack(alignment: .leading, spacing: 4) {
+                        Section {
+                            ForEach(section.items) { item in
+                                let entry = UnifiedSearchEntry.clipboard(item)
+                                let isSelected = selectedItem?.id == item.id
+
+                                clipboardRow(item: item, isSelected: isSelected)
+                                    .id(entry.id)
+                                    .contentShape(Rectangle())
+                                    .onTapGesture {
+                                        onSelectEntry(entry)
+                                    }
+                                    .simultaneousGesture(
+                                        TapGesture(count: 2).onEnded {
+                                            onExecutePrimary(entry)
+                                        }
+                                    )
+                            }
+                        } header: {
                             Text(section.title)
                                 .font(.system(size: 12, weight: .semibold))
                                 .foregroundColor(.secondary)
                                 .padding(.horizontal, 16)
-                                .padding(.top, 6)
-
-                            VStack(spacing: 4) {
-                                ForEach(section.items) { item in
-                                    let entry = UnifiedSearchEntry.clipboard(item)
-                                    let isSelected = selectedItem?.id == item.id
-
-                                    clipboardRow(item: item, isSelected: isSelected)
-                                        .id(entry.id)
-                                        .onTapGesture {
-                                            onSelectEntry(entry)
-                                        }
-                                        .simultaneousGesture(
-                                            TapGesture(count: 2).onEnded {
-                                                onExecutePrimary(entry)
-                                            }
-                                        )
-                                }
-                            }
-                            .padding(.horizontal, 12)
+                                .padding(.top, 10)
+                                .padding(.bottom, 2)
                         }
                     }
+                    paginationSentinelView
                 }
+                .padding(.horizontal, 12)
                 .padding(.vertical, 8)
             }
             .onChange(of: searchCoordinator.selectedIndex) { _, newIndex in
@@ -393,7 +399,31 @@ struct WorkbenchContentListView: View {
                         )
                 }
             }
+            paginationSentinelView
             .padding(16)
+        }
+    }
+
+    // MARK: - Pagination Sentinel
+
+    @ViewBuilder
+    private var paginationSentinelView: some View {
+        if hasMore {
+            HStack {
+                Spacer()
+                if isLoadingMore {
+                    ProgressView()
+                        .scaleEffect(0.7)
+                        .padding(.vertical, 14)
+                } else {
+                    Color.clear
+                        .frame(height: 24)
+                        .onAppear {
+                            onLoadMore()
+                        }
+                }
+                Spacer()
+            }
         }
     }
 
@@ -426,6 +456,309 @@ struct WorkbenchContentListView: View {
         shortcutIndex: Int,
         isSelected: Bool
     ) -> some View {
+        WorkbenchToolRowItem(
+            toolMatch: toolMatch,
+            shortcutIndex: shortcutIndex,
+            isSelected: isSelected
+        )
+    }
+
+    // MARK: - Clipboard Row (Image 4 & 5)
+
+    private func clipboardRow(
+        item: ClipboardItemSnapshot,
+        isSelected: Bool
+    ) -> some View {
+        WorkbenchClipboardRowView(
+            item: item,
+            isSelected: isSelected,
+            onToggleFavorite: onToggleFavorite,
+            onCopyItem: onCopyItem,
+            onPastePlainTextItem: onPastePlainTextItem,
+            onPreviewItem: onPreviewItem,
+            onTogglePin: onTogglePin,
+            onDeleteItem: onDeleteItem,
+            onSelectEntry: { onSelectEntry($0) }
+        )
+    }
+
+    // MARK: - Leading Icon / Badge
+
+    @ViewBuilder
+    fileprivate static func contentTypeLeadingView(item: ClipboardItemSnapshot) -> some View {
+        switch item.contentType {
+        case .text:
+            if ContentRecognizer.recognizeText(item.textContent) != .unrecognized {
+                Text("IP")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(.secondary)
+                    .frame(width: 32, height: 32)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(Color.primary.opacity(0.06))
+                    )
+            } else {
+                Text("T")
+                    .font(.system(size: 13, weight: .semibold, design: .serif))
+                    .foregroundColor(.secondary)
+                    .frame(width: 32, height: 32)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(Color.primary.opacity(0.06))
+                    )
+            }
+        case .markdown, .json:
+            Text("</>")
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .foregroundColor(.secondary)
+                .frame(width: 32, height: 32)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(Color.primary.opacity(0.06))
+                )
+        case .link:
+            Image(systemName: "link")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(.secondary)
+                .frame(width: 32, height: 32)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(Color.primary.opacity(0.06))
+                )
+        case .image:
+            if let path = item.imagePath {
+                AsyncLocalImage(path: path)
+                    .frame(width: 32, height: 32)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+            } else {
+                Image(systemName: "photo")
+                    .font(.system(size: 13))
+                    .foregroundColor(.secondary)
+                    .frame(width: 32, height: 32)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(Color.primary.opacity(0.06))
+                    )
+            }
+        case .color:
+            if let hex = item.colorHex {
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Color(hex: hex) ?? Color.orange)
+                    .frame(width: 32, height: 32)
+            } else {
+                Image(systemName: "paintpalette")
+                    .frame(width: 32, height: 32)
+            }
+        case .file:
+            Image(systemName: "doc")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(.secondary)
+                .frame(width: 32, height: 32)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(Color.primary.opacity(0.06))
+                )
+        }
+    }
+
+    fileprivate static func contentSnippet(item: ClipboardItemSnapshot) -> String? {
+        guard let text = item.textContent else { return nil }
+        let lines = text.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        if lines.count > 1 {
+            return lines.joined(separator: " · ")
+        }
+        return text
+    }
+
+    // MARK: - Grid Card
+
+    private func gridCard(item: ClipboardItemSnapshot, isSelected: Bool) -> some View {
+        WorkbenchGridCardView(item: item, isSelected: isSelected)
+    }
+
+    // MARK: - Date Grouping Helper
+
+    private struct DateSection {
+        let title: String
+        let items: [ClipboardItemSnapshot]
+    }
+
+    private func groupItemsByDate(_ items: [ClipboardItemSnapshot]) -> [DateSection] {
+        guard !items.isEmpty else { return [] }
+        let calendar = Calendar.current
+        let startOfToday = calendar.startOfDay(for: Date())
+        guard let startOfYesterday = calendar.date(byAdding: .day, value: -1, to: startOfToday) else {
+            return [DateSection(title: "全部", items: items)]
+        }
+
+        var todayItems: [ClipboardItemSnapshot] = []
+        var yesterdayItems: [ClipboardItemSnapshot] = []
+        var earlierItems: [ClipboardItemSnapshot] = []
+
+        for item in items {
+            let itemDate = item.createdAt
+            if itemDate >= startOfToday {
+                todayItems.append(item)
+            } else if itemDate >= startOfYesterday {
+                yesterdayItems.append(item)
+            } else {
+                earlierItems.append(item)
+            }
+        }
+
+        var sections: [DateSection] = []
+        if !todayItems.isEmpty {
+            sections.append(DateSection(title: "今天", items: todayItems))
+        }
+        if !yesterdayItems.isEmpty {
+            sections.append(DateSection(title: "昨天", items: yesterdayItems))
+        }
+        if !earlierItems.isEmpty {
+            sections.append(DateSection(title: "更早", items: earlierItems))
+        }
+        return sections
+    }
+}
+
+// MARK: - Row Subviews with Hover & Full Hit Shape
+
+private struct WorkbenchClipboardRowView: View {
+    let item: ClipboardItemSnapshot
+    let isSelected: Bool
+    let onToggleFavorite: (UUID) -> Void
+    let onCopyItem: (UUID) -> Void
+    let onPastePlainTextItem: (UUID) -> Void
+    let onPreviewItem: (ClipboardItemSnapshot) -> Void
+    let onTogglePin: (UUID) -> Void
+    let onDeleteItem: (UUID) -> Void
+    let onSelectEntry: (UnifiedSearchEntry) -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        HStack(spacing: 12) {
+            // Type badge / icon
+            WorkbenchContentListView.contentTypeLeadingView(item: item)
+
+            // Content preview & metadata
+            VStack(alignment: .leading, spacing: 3) {
+                // Title
+                Text(item.displayTitle)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+
+                // Subtitle snippet (if multiline or detailed)
+                if let snippet = WorkbenchContentListView.contentSnippet(item: item), snippet != item.displayTitle {
+                    Text(snippet)
+                        .font(item.contentType == .json || item.contentType == .markdown
+                              ? .system(size: 11, design: .monospaced)
+                              : .system(size: 11))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+
+                // Source App
+                HStack(spacing: 5) {
+                    if let app = item.displaySourceApp {
+                        Image(systemName: "app.fill")
+                            .font(.system(size: 9))
+                            .foregroundColor(.secondary.opacity(0.7))
+                        Text(app)
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary.opacity(0.8))
+                    }
+                }
+            }
+
+            Spacer(minLength: 8)
+
+            // Type tag
+            Text(item.contentType.displayName)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Color.primary.opacity(0.05))
+                )
+
+            // Star favorite button
+            Button {
+                onToggleFavorite(item.id)
+            } label: {
+                Image(systemName: item.isFavorite ? "star.fill" : "star")
+                    .font(.system(size: 12))
+                    .foregroundColor(item.isFavorite ? Color(red: 1.0, green: 0.55, blue: 0.1) : .secondary.opacity(0.5))
+            }
+            .buttonStyle(.plain)
+
+            // Time
+            Text(item.displayTime)
+                .font(.system(size: 11))
+                .foregroundColor(.secondary.opacity(0.8))
+                .frame(minWidth: 55, alignment: .trailing)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(
+                    isSelected
+                        ? Color(red: 1.0, green: 0.45, blue: 0.08).opacity(0.09)
+                        : (isHovered ? Color.primary.opacity(0.04) : Color.clear)
+                )
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(
+                    isSelected
+                        ? Color(red: 1.0, green: 0.45, blue: 0.08).opacity(0.35)
+                        : (isHovered ? Color.primary.opacity(0.08) : Color.clear),
+                    lineWidth: 1
+                )
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .onHover { hovering in
+            isHovered = hovering
+        }
+        .contextMenu {
+            Button("复制") {
+                onSelectEntry(.clipboard(item))
+                onCopyItem(item.id)
+            }
+            Button("粘贴为纯文本") {
+                onSelectEntry(.clipboard(item))
+                onPastePlainTextItem(item.id)
+            }
+            Button("预览内容") {
+                onPreviewItem(item)
+            }
+            Divider()
+            Button(item.isFavorite ? "取消收藏" : "加入收藏") {
+                onToggleFavorite(item.id)
+            }
+            Button(item.isPinned ? "取消置顶" : "置顶") {
+                onTogglePin(item.id)
+            }
+            Divider()
+            Button("删除", role: .destructive) {
+                onDeleteItem(item.id)
+            }
+        }
+    }
+}
+
+private struct WorkbenchToolRowItem: View {
+    let toolMatch: ToolSearchService.Result
+    let shortcutIndex: Int
+    let isSelected: Bool
+
+    @State private var isHovered = false
+
+    var body: some View {
         let descriptor = toolMatch.tool.descriptor
 
         return HStack(spacing: 12) {
@@ -503,12 +836,13 @@ struct WorkbenchContentListView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .fill(
                     isSelected
                         ? Color(red: 1.0, green: 0.45, blue: 0.08).opacity(0.10)
-                        : Color.clear
+                        : (isHovered ? Color.primary.opacity(0.04) : Color.clear)
                 )
         )
         .overlay(
@@ -516,221 +850,27 @@ struct WorkbenchContentListView: View {
                 .stroke(
                     isSelected
                         ? Color(red: 1.0, green: 0.45, blue: 0.08).opacity(0.35)
-                        : Color.clear,
+                        : (isHovered ? Color.primary.opacity(0.08) : Color.clear),
                     lineWidth: 1
                 )
         )
-    }
-
-    // MARK: - Clipboard Row (Image 4 & 5)
-
-    private func clipboardRow(
-        item: ClipboardItemSnapshot,
-        isSelected: Bool
-    ) -> some View {
-        HStack(spacing: 12) {
-            // Type badge / icon
-            contentTypeLeadingView(item: item)
-
-            // Content preview & metadata
-            VStack(alignment: .leading, spacing: 3) {
-                // Title
-                Text(item.displayTitle)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.primary)
-                    .lineLimit(1)
-
-                // Subtitle snippet (if multiline or detailed)
-                if let snippet = contentSnippet(item: item), snippet != item.displayTitle {
-                    Text(snippet)
-                        .font(item.contentType == .json || item.contentType == .markdown
-                              ? .system(size: 11, design: .monospaced)
-                              : .system(size: 11))
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                }
-
-                // Source App
-                HStack(spacing: 5) {
-                    if let app = item.displaySourceApp {
-                        Image(systemName: "app.fill")
-                            .font(.system(size: 9))
-                            .foregroundColor(.secondary.opacity(0.7))
-                        Text(app)
-                            .font(.system(size: 10))
-                            .foregroundColor(.secondary.opacity(0.8))
-                    }
-                }
-            }
-
-            Spacer(minLength: 8)
-
-            // Type tag
-            Text(item.contentType.displayName)
-                .font(.system(size: 10, weight: .medium))
-                .foregroundColor(.secondary)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(Color.primary.opacity(0.05))
-                )
-
-            // Star favorite button
-            Button {
-                onToggleFavorite(item.id)
-            } label: {
-                Image(systemName: item.isFavorite ? "star.fill" : "star")
-                    .font(.system(size: 12))
-                    .foregroundColor(item.isFavorite ? Color(red: 1.0, green: 0.55, blue: 0.1) : .secondary.opacity(0.5))
-            }
-            .buttonStyle(.plain)
-
-            // Time
-            Text(item.displayTime)
-                .font(.system(size: 11))
-                .foregroundColor(.secondary.opacity(0.8))
-                .frame(minWidth: 55, alignment: .trailing)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(
-                    isSelected
-                        ? Color(red: 1.0, green: 0.45, blue: 0.08).opacity(0.09)
-                        : Color.clear
-                )
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(
-                    isSelected
-                        ? Color(red: 1.0, green: 0.45, blue: 0.08).opacity(0.35)
-                        : Color.clear,
-                    lineWidth: 1
-                )
-        )
-        .contextMenu {
-            Button("复制") {
-                onSelectEntry(.clipboard(item))
-                onCopyItem(item.id)
-            }
-            Button("粘贴为纯文本") {
-                onSelectEntry(.clipboard(item))
-                onPastePlainTextItem(item.id)
-            }
-            Button("预览内容") {
-                onPreviewItem(item)
-            }
-            Divider()
-            Button(item.isFavorite ? "取消收藏" : "加入收藏") {
-                onToggleFavorite(item.id)
-            }
-            Button(item.isPinned ? "取消置顶" : "置顶") {
-                onTogglePin(item.id)
-            }
-            Divider()
-            Button("删除", role: .destructive) {
-                onDeleteItem(item.id)
-            }
+        .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .onHover { hovering in
+            isHovered = hovering
         }
     }
+}
 
-    // MARK: - Leading Icon / Badge
+private struct WorkbenchGridCardView: View {
+    let item: ClipboardItemSnapshot
+    let isSelected: Bool
 
-    @ViewBuilder
-    private func contentTypeLeadingView(item: ClipboardItemSnapshot) -> some View {
-        switch item.contentType {
-        case .text:
-            if ContentRecognizer.recognizeText(item.textContent) != .unrecognized {
-                Text("IP")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundColor(.secondary)
-                    .frame(width: 32, height: 32)
-                    .background(
-                        RoundedRectangle(cornerRadius: 6)
-                            .fill(Color.primary.opacity(0.06))
-                    )
-            } else {
-                Text("T")
-                    .font(.system(size: 13, weight: .semibold, design: .serif))
-                    .foregroundColor(.secondary)
-                    .frame(width: 32, height: 32)
-                    .background(
-                        RoundedRectangle(cornerRadius: 6)
-                            .fill(Color.primary.opacity(0.06))
-                    )
-            }
-        case .markdown, .json:
-            Text("</>")
-                .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                .foregroundColor(.secondary)
-                .frame(width: 32, height: 32)
-                .background(
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(Color.primary.opacity(0.06))
-                )
-        case .link:
-            Image(systemName: "link")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(.secondary)
-                .frame(width: 32, height: 32)
-                .background(
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(Color.primary.opacity(0.06))
-                )
-        case .image:
-            if let path = item.imagePath {
-                AsyncLocalImage(path: path)
-                    .frame(width: 32, height: 32)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-            } else {
-                Image(systemName: "photo")
-                    .font(.system(size: 13))
-                    .foregroundColor(.secondary)
-                    .frame(width: 32, height: 32)
-                    .background(
-                        RoundedRectangle(cornerRadius: 6)
-                            .fill(Color.primary.opacity(0.06))
-                    )
-            }
-        case .color:
-            if let hex = item.colorHex {
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(Color(hex: hex) ?? Color.orange)
-                    .frame(width: 32, height: 32)
-            } else {
-                Image(systemName: "paintpalette")
-                    .frame(width: 32, height: 32)
-            }
-        case .file:
-            Image(systemName: "doc")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(.secondary)
-                .frame(width: 32, height: 32)
-                .background(
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(Color.primary.opacity(0.06))
-                )
-        }
-    }
+    @State private var isHovered = false
 
-    private func contentSnippet(item: ClipboardItemSnapshot) -> String? {
-        guard let text = item.textContent else { return nil }
-        let lines = text.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
-        if lines.count > 1 {
-            return lines.joined(separator: " · ")
-        }
-        return text
-    }
-
-    // MARK: - Grid Card
-
-    private func gridCard(item: ClipboardItemSnapshot, isSelected: Bool) -> some View {
+    var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                contentTypeLeadingView(item: item)
+                WorkbenchContentListView.contentTypeLeadingView(item: item)
                 Spacer()
                 Text(item.displayTime)
                     .font(.system(size: 10))
@@ -760,52 +900,21 @@ struct WorkbenchContentListView: View {
         .frame(height: 120)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color(nsColor: .textBackgroundColor).opacity(0.6))
+                .fill(
+                    isSelected
+                        ? Color(red: 1.0, green: 0.45, blue: 0.08).opacity(0.08)
+                        : (isHovered ? Color.primary.opacity(0.04) : Color(nsColor: .textBackgroundColor).opacity(0.6))
+                )
         )
         .overlay(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .stroke(
-                    isSelected ? Color(red: 1.0, green: 0.45, blue: 0.08) : Color.primary.opacity(0.07),
+                    isSelected ? Color(red: 1.0, green: 0.45, blue: 0.08) : (isHovered ? Color.primary.opacity(0.15) : Color.primary.opacity(0.07)),
                     lineWidth: isSelected ? 1.5 : 1
                 )
         )
-    }
-
-    // MARK: - Date Grouping Helper
-
-    private struct DateSection {
-        let title: String
-        let items: [ClipboardItemSnapshot]
-    }
-
-    private func groupItemsByDate(_ items: [ClipboardItemSnapshot]) -> [DateSection] {
-        let calendar = Calendar.current
-
-        var todayItems: [ClipboardItemSnapshot] = []
-        var yesterdayItems: [ClipboardItemSnapshot] = []
-        var earlierItems: [ClipboardItemSnapshot] = []
-
-        for item in items {
-            if calendar.isDateInToday(item.createdAt) {
-                todayItems.append(item)
-            } else if calendar.isDateInYesterday(item.createdAt) {
-                yesterdayItems.append(item)
-            } else {
-                earlierItems.append(item)
-            }
-        }
-
-        var sections: [DateSection] = []
-        if !todayItems.isEmpty {
-            sections.append(DateSection(title: "今天", items: todayItems))
-        }
-        if !yesterdayItems.isEmpty {
-            sections.append(DateSection(title: "昨天", items: yesterdayItems))
-        }
-        if !earlierItems.isEmpty {
-            sections.append(DateSection(title: "更早", items: earlierItems))
-        }
-        return sections
+        .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .onHover { isHovered = $0 }
     }
 }
 
