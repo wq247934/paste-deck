@@ -44,6 +44,16 @@ final class WorkbenchWindowController: NSObject, NSWindowDelegate {
         window?.orderOut(nil)
     }
 
+    /// 粘贴专用隐藏：与速贴面板 hidePanel 同语义。先收起窗口，再在 PasteDeck
+    /// 处于激活状态时隐藏整个应用，让之前的前台应用恢复焦点，
+    /// 随后 performPaste 模拟的 ⌘V 才会落进用户的目标应用。
+    func hideForPaste() {
+        window?.orderOut(nil)
+        if NSApp.isActive {
+            NSApp.hide(nil)
+        }
+    }
+
     func toggleWorkbench() {
         if isWindowVisible {
             hideWorkbench()

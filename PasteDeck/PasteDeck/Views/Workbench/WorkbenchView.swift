@@ -201,7 +201,7 @@ struct WorkbenchView: View {
         case .tool(let toolMatch):
             openToolWindow(tool: toolMatch.tool, prefill: toolMatch.prefilledText)
         case .clipboard(let snapshot):
-            copyItem(snapshot)
+            pasteSnapshot(snapshot, plainText: false)
         }
     }
 
@@ -210,7 +210,20 @@ struct WorkbenchView: View {
     }
 
     private func pastePlainText(_ item: ClipboardItemSnapshot) {
-        historyStore.preparePaste(id: item.id, plainText: true)
+        pasteSnapshot(item, plainText: true)
+    }
+
+    /// 工作台粘贴链（与速贴面板同语义，差别仅在收起窗口的方式）：
+    /// 暂停监控并写入剪贴板 → 隐藏工作台让之前的前台应用恢复焦点 →
+    /// 100ms 后模拟 ⌘V 完成粘贴。只写剪贴板而不模拟 ⌘V 的旧实现
+    /// 是"回车/右键粘贴无效"的根因。
+    private func pasteSnapshot(_ snapshot: ClipboardItemSnapshot, plainText: Bool) {
+        guard historyStore.fetchItem(id: snapshot.id) != nil else { return }
+        historyStore.preparePaste(id: snapshot.id, plainText: plainText)
+        WorkbenchWindowController.shared.hideForPaste()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            PasteService.shared.performPaste()
+        }
     }
 
     private func toggleFavorite(_ id: UUID) {
@@ -435,8 +448,12 @@ private struct WorkbenchKeyboardMonitor: NSViewRepresentable {
             let keyCode = event.keyCode
             let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
 
-            // 严格只拦截发给工作台窗口的按键
-            guard let eventWindow = event.window,
+            // 严格只拦截发给工作台窗口的按键。event.window 可能为 nil
+            // （LSUIElement app 经菜单/NSApp.activate 路径获得焦点时，
+            // CGEvent 不携带窗口引用），此时以 NSApp.keyWindow 是否为
+            // 工作台为准——否则回车/方向键/Esc 在该场景下全部被放行失效。
+            let eventWindow = event.window ?? NSApp.keyWindow
+            guard let eventWindow,
                   eventWindow.isKeyWindow,
                   eventWindow.identifier == WorkbenchWindowController.windowIdentifier else {
                 return event
