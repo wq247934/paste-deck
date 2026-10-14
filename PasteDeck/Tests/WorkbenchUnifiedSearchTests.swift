@@ -36,12 +36,12 @@ final class WorkbenchUnifiedSearchTests: XCTestCase {
         XCTAssertEqual(coordinator.selectedIndex, 0)
 
         // 向上越界保持为 0
-        coordinator.moveUp()
+        coordinator.moveUp(extending: false)
         XCTAssertEqual(coordinator.selectedIndex, 0)
 
         // 向下移动
         if coordinator.unifiedEntries.count > 1 {
-            coordinator.moveDown()
+            coordinator.moveDown(extending: false)
             XCTAssertEqual(coordinator.selectedIndex, 1)
         }
     }

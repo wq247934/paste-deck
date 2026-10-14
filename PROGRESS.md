@@ -2,7 +2,7 @@
 
 ## 项目状态
 
-**当前版本**：v2.0.16
+**当前版本**：v2.0.20
 **开始日期**：2026-05-23
 **完成度**：99%
 
@@ -76,8 +76,8 @@
 | 独立翻译设置 | ✅ | v1.12.0 | 触发方式、快捷键、常规 API 密钥池、大模型预设/自定义端点、模型获取与手动输入 |
 | 功能指南 | ✅ | v1.15.0 | 菜单栏和设置页均可进入；以场景卡片、三步操作与上下文快捷键导览现有能力 |
 | 设置窗口缩放 | ✅ | v1.16.0 | 默认 920×680、最小 760×520；支持自由拖动缩放并记住本次窗口尺寸 |
-| 额度设置页 | ✅ | v1.17.0 | Codex 5 小时/每周窗口、重置卡与 WorkBuddy 积分包明细；支持一键刷新与错误引导 |
-| 菜单栏余额显示 | ✅ | v1.17.0 | 开关开启后菜单栏图标旁显示 Codex 剩余百分比与 WorkBuddy 剩余积分，余额不足变红 |
+| 额度设置页 | ✅ | v2.0.18 | Codex、Gemini（含 Token 消费统计看板）与 WorkBuddy/workbuddy2api 自托管网关全功能体系 |
+| 菜单栏余额显示 | ✅ | v2.0.18 | 开关开启后菜单栏图标旁显示 Codex（C）、Gemini（G）与 WorkBuddy（W）剩余余额，余额不足变红 |
 
 ### 统计功能
 
@@ -89,7 +89,7 @@
 | 图表悬停反馈 | ✅ | v1.8.1 | 统计图表交互优化 |
 | 翻译调用统计 | ✅ | v1.14.0 | 今天/7 天/30 天与全部/API/大模型筛选；API 按字符、大模型按 Token 展示用量，趋势和排行支持悬停高亮及详情浮层 |
 | 响应式统计仪表盘 | ✅ | v1.16.0 | KPI 卡片、折线面积趋势与日均基线、比例条内容构成、响应式双栏洞察；翻译明细默认折叠 |
-| 菜单栏额度区块 | ✅ | v1.17.0 | 下拉菜单内嵌 Codex 5 小时/每周窗口与 WorkBuddy 剩余积分进度条，支持一键刷新与跳转额度详情 |
+| 菜单栏额度区块 | ✅ | v2.0.17 | 下拉菜单内嵌 Codex/Gemini 5 小时与每周窗口、WorkBuddy 剩余积分进度条，支持一键刷新与跳转额度详情 |
 
 ### 链接增强
 
@@ -121,7 +121,7 @@
 | 右侧上下文工具面板 | ✅ | v1.18.0 | 选中卡片自动推荐工具并内嵌工具界面；宽窗口固定右侧、窄窗口覆盖式，可手动关闭 |
 | 时间戳转换工具 | ✅ | v1.18.0 | 秒/毫秒双向转换、时区切换、ISO 8601、实时当前时间、一键复制；严格位数+范围校验 |
 | IPv4/子网工具 | ✅ | v1.18.0 | 地址校验、类型判断、CIDR、掩码、网络/广播、可用范围；正确处理 /0、/31、/32 |
-| 额度查看工具 | ✅ | v1.18.0 | 复用 QuotaStatusManager 与设置页共享组件；搜索“额度/codex/workbuddy/余额”可直达 |
+| 额度查看工具 | ✅ | v2.0.17 | 复用 QuotaStatusManager 与设置页共享组件；新增 Gemini 卡片；搜索“额度/codex/gemini/workbuddy/余额”可直达 |
 | 时间日期计算器完整分区 | ✅ | v1.19.0 | 日期差/推算日期/推算工作日/工作天数（内置 2024–2025 法定节假日）、英文日期格式、世界时间、在线秒表 |
 | IPv4 归属地查询 | ✅ | v1.19.0 | ipwho.is 主源 + ipinfo.io 备源；仅点击查询时发送该 IP，私网地址拒绝；会话内缓存 |
 | 侧边栏拖拽调宽 | ✅ | v1.19.1 | 左边缘手柄 260–420pt；v1.19.0 实现因原生覆盖层直接读 UserDefaults，全新安装时该 key 从未写入导致宽度读为 0、手柄静默失效，v1.19.1 改为与 SwiftUI 共享同一状态对象并在 mouseUp 时落盘 |
@@ -242,3 +242,7 @@
 | v2.0.14 | 2026-10-13 | 修复剪贴板列表项空白区域点击未响应并为速贴与工作台列表行补齐鼠标 Hover 状态：1. 修复点击行内空白区域无法选中缺陷：在 `WorkbenchContentListView`（`dateGroupedListView` 与 `unifiedSearchResultsList`）及 `QuickPanelView` 中，为剪贴板行与工具行显式设置 `.frame(maxWidth: .infinity, alignment: .leading)`，并在手势前层级挂载 `.contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))` 与 `.contentShape(Rectangle())`，确保点击行内任何空白文本间隙与 `Spacer` 均能 100% 稳定触发单选与双击主操作；2. 补齐速贴与工作台剪贴板卡片鼠标 Hover 状态：为工作台 `WorkbenchClipboardRowView`、`WorkbenchToolRowItem`、`WorkbenchGridCardView` 以及速贴面板 `QuickPanelClipboardRowItem`、`QuickPanelToolRowItem` 引入独立的 `@State private var isHovered = false` 与 `.onHover` 监听，悬停时呈现优雅的 `Color.primary.opacity(0.04~0.05)` 半透明高亮背景与细腻边框，各行 hover 重绘完全隔离，不影响列表滑动性能；3. 158 项单元测试全部通过，通过 Computer Use 实机验证空白区点击选中与 hover 效果。 |
 | v2.0.15 | 2026-10-13 | 实现速贴面板锁定 5000 条与工作台全量分页检索（双引擎分流架构）：1. 双引擎读架构分流：速贴面板保持专享的 `ClipboardHistoryStore`，锁定最近 5,000 条记录在纯内存中执行零 I/O 高速检索与 ⌘⇧V 极速唤起；工作台切换至全新的专用分页仓库 `WorkbenchHistoryStore`，彻底突破 5,000 条上限，支持浏览与检索全库数万至十万级全部历史；2. 渐进式分页与触底追加：工作区采用单页 100 条分页机制（首屏拉取 100 条仅需 2~4ms，切换瞬间完成），在 `dateGroupedListView`、`unifiedSearchResultsList` 与 `historyGridView` 底部挂载 Sentinel 哨兵视图，向下滚动时平滑异步追加下 100 条，配合全行视图虚拟化保证视口始终保持低开销；3. SQLite3 加速真实全量计数与分页索引：针对 SwiftData 在 macOS 14 上无法对 Enum 类型（`contentType`）执行 Predicate 翻译的底层限制，构建 `WorkbenchSQLiteReader` 直接查询 SQLite 索引，在 1.5ms 内完成全库 21,000+ 条记录的各分类统计（文本、图像、链接、文件、代码）与收藏数统计，侧栏数字徽章实时显示真实全库体量；4. 158 项单元测试全部通过，通过 Computer Use 实机验证全库 21,153 条数据秒切与速贴面板无损性能。 |
 | v2.0.16 | 2026-10-13 | 修复 Codex 每周额度被误显示为 0% 的解析缺陷：1. 根因定位：实测 codex app-server `account/rateLimits/read` 返回中 `rateLimitReachedType` 与 `primary` / `secondary` 平级，是账户层面的全局限流标志，仅描述限流原因（取值均为账户/账单维度，不按窗口命名）；原实现将其压缩为全局布尔 `isRateLimitReached`，展示层再把这个全局布尔分别套用到 5 小时与每周两个窗口上，导致 5 小时窗口触顶时把每周窗口的真实余量一并抹成 0%（实测账户 weekly usedPercent=63、余 37%，界面却显示 0%）；2. 模型层重构：`CodexQuotaService.Window` 新增由自身 `usedPercent >= 100` 推导的 `isLimitReached` 与 `displayRemainingPercent`，触顶判定彻底归属各自窗口；`Snapshot.isRateLimitReached` 保留但降级为纯信息字段并新增 `rateLimitReachedType` 原始取值供展示限流原因，不再参与任何百分比计算；3. 展示层 4 处全部改为读取各自窗口状态：菜单额度区块（`StatusMenuBuilder`）、设置页 5 小时 hero 与每周展开区（`QuotaSettingsView`）、工作台额度工具卡（`QuotaToolView`）、菜单栏余额文本（`QuotaStatusManager`），彻底消除跨窗口串扰；4. 顺带修正菜单栏悬停提示把每周窗口嵌套在 5 小时窗口可用分支内的问题，改为两个窗口彼此独立展示；5. 清理 `StatusMenuBuilder` 一处 `if let window` 未使用绑定告警；6. 新增 3 项回归测试（5 小时触顶不牵连周额度、仅周额度触顶不牵连 5 小时、无 `rateLimitReachedType` 时两窗口按自身用量计算），并修正既有测试中臆想的 `primary_window` 取值为接口真实的 `rate_limit_reached`；全部 161 项单元测试通过。 |
+| v2.0.17 | 2026-10-13 | 额度监控系统扩展支持 Google Gemini：1. 新增 `GeminiQuotaService` 直连本地 Antigravity 代理管理接口（默认 8045 端口），获取 Google 账号配额、Gemini 5 小时及每周窗口剩余比例与各细分模型额度明细；2. `QuotaStatusManager` 汇聚 Codex、Gemini 与 WorkBuddy 三路数据，菜单栏支持 G 紧凑百分比展示（例如 C 92% · G 63% · W 2.3k）并包含专属悬停 Tooltip；3. 状态栏下拉菜单 `QuotaOverviewMenuItemView` 增加 Gemini 5h 与每周额度进度条；4. 设置页增加 Gemini 专属品牌色 hero 卡片与代理配置卡片，支持自定义 Base URL 与 WEB_PASSWORD；5. 工作台额度工具箱卡片同步集成 Gemini 额度；6. 新增解析与容错单元测试，全套 164 项测试通过。 |
+| v2.0.18 | 2026-10-13 | 补全 Gemini Token 消费统计看板与 WorkBuddy2API 自托管网关全量体系：1. 完整还原 Antigravity-Manager `token-stats` 消费看板（`GeminiTokenStatsView`）：顶部小时(24h)/日(7d)/周(30d)时钟切换与刷新，6 个 Summary KPI 卡片（总 Token、输入、输出、缓存命中、活跃账号、使用模型），堆叠柱状 Token 使用趋势图，分模型详细统计表格（请求数、输入、输出、缓存命中、合计与占比进度胶囊）与分账号分布；2. 深度移植 `codex-quota-utools` 的 `gateway.js` 与前端体系（`WorkBuddyGatewayService` 与 `WorkBuddyGatewayView`）：完整支持对 `http://127.0.0.1:17863` 网关的概览（账号池环形健康度、uptime、redis 模式与快捷操作）、账号（全量账号卡片、成功率/连败/在途展开与签到/查余额/解冻/禁用运维操作）、积分包（使用中/未动/已耗尽三层智能排序明细与进度条）、用量（6h~1440h 时段、总计 KPI、按模型 TOP 12 表格与按账号表格）、模型（20 个映射模型倍率与能力标签）及设置子视图；3. AppSettings 持久化网关配置并支持连接测试；4. 新增 4 项 Token 统计与网关数据单元测试，全套 168 项测试通过。 |
+| v2.0.19 | 2026-10-14 | 额度信息架构按职责重新分层（职责分离修复）：1. 菜单栏「额度详情…」由跳转设置页改为打开独立「额度查看」工具窗口（`AppDelegate.openQuotaToolWindow` + `ToolWindowController`，与时间/IP 工具同形态，已打开时直接前置不重复创建）；2. 设置页「额度」面板精简为纯配置项（菜单栏余额开关、Gemini 代理端点与 WEB_PASSWORD、workbuddy2api 网关地址与 API Key），不再堆叠数据看板；3. `QuotaToolView` 重构为概览 → 详情两级结构：概览页三张服务卡片（Codex / Gemini / WorkBuddy）各显示品牌图标、核心余量百分比/积分、进度条与重置倒计时，点击卡片下钻到对应详情页；4. Codex 详情页含 5 小时额度、每周额度与速率重置卡明细；Gemini 详情页含 5 小时/每周额度、模型额度明细与 Token 消费统计看板；WorkBuddy 详情页含合计可用、账户与订阅、积分包明细与 workbuddy2api 网关看板；5. 清理设置页冗余数据组件（hero 卡片、账户/合计/积分包面板等 600 余行），共享展示组件收敛到额度工具窗口复用；6. 工具窗口默认尺寸调整为 720×720。 |
+| v2.0.20 | 2026-10-14 | 修复速贴面板三项交互回归（对齐 master 主面板行为）：1. 「点选后回车贴出错误内容/看似不粘贴」：根因是 `MainPanelController` 开启 `isMovableByWindowBackground` 后所有 mouseDown 被窗口拖拽消费（NSHostingView 不下传 `mouseDownCanMoveWindow` 协商，v1.19.1 侧边栏手柄同类先例），SwiftUI 行点击与按钮手势全部失效，键盘选中索引纹丝不动，回车永远贴旧选中项；实测 AX 点击命中第 5 行后选中仍停在第 1 行、面板 ⌘K 按钮点击同样无效。修复为关闭背景拖拽（与 master NSCollectionView 面板手感一致），实机验证点击行 → 选中即变 → 回车粘贴正确内容；2. 补回 2.0 重构时丢失的 Shift 多选模型：`UnifiedSearchCoordinator` 移植 master 的 `selectedItems` + `anchorIndex` + `rebuildExtendedSelection` + `handleTap`（Cmd+Click 翻转、Shift+Click 区间、普通点击单选；方向键 `extending` 由键盘监视器从事件 modifiers 传入，工具条目不参与多选），行视图多选态显示 ✓ 徽章，回车走 `promotePastedItems` → `batchPaste` 按显示顺序批量粘贴，实机验证 Shift+↓ 两行同高亮、批量粘贴两条内容依序落入目标文档；3. 面板呼出默认选中第二条（对齐 master `selectDefaultCard()`：第一条通常是刚被上一轮粘贴顶到最前的"最旧"内容），`selectDefault()` 同步锚点与多选清空；4. 全套 168 项单元测试通过，真机 CGEvent/AX 全链路实测三项行为。 |

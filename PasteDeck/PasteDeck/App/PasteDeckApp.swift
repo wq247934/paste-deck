@@ -75,6 +75,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var settingsKeyMonitor: Any?
     private var isMenuBarQuotaDisplayEnabled = false
     private var quotaStatusObserver: NSObjectProtocol?
+    private var quotaToolWindowController: ToolWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Setup UI first (status bar is always available)
@@ -143,7 +144,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 self?.openSettings(pane: .translation)
             },
             openQuotaSettings: { [weak self] in
-                self?.openSettings(pane: .quota)
+                self?.openQuotaToolWindow()
             },
             openSettings: { [weak self] in
                 self?.openSettings(pane: .general)
@@ -293,6 +294,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     @objc private func openWorkbench() {
         WorkbenchWindowController.shared.showWorkbench()
+    }
+
+    /// 打开「额度查看」独立工具窗口（与时间/IP 工具一致的面板形态）。
+    /// 已打开时直接前置，不重复创建。
+    private func openQuotaToolWindow() {
+        if quotaToolWindowController?.isWindowVisible == true {
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        if quotaToolWindowController == nil {
+            quotaToolWindowController = ToolWindowController()
+        }
+        quotaToolWindowController?.show(tool: .quotaOverview, context: .standalone) { [weak self] in
+            self?.quotaToolWindowController = nil
+        }
     }
 
     @objc private func openMainPanel() {

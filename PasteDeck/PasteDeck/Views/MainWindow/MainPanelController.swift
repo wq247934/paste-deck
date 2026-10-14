@@ -246,7 +246,12 @@ class MainPanelController: NSObject, NSWindowDelegate {
         panel.isOpaque = false
         panel.backgroundColor = NSColor.clear
         panel.hasShadow = true
-        panel.isMovableByWindowBackground = true
+        // 速贴面板的列表行点击、按钮全部依赖 SwiftUI 手势。开启背景拖拽会把
+        // mouseDown 当作窗口移动消费掉（NSHostingView 不下传
+        // mouseDownCanMoveWindow 协商），行点击选中随之完全失效，
+        // 用户"点选后回车"贴出的永远是旧选中项。对齐 master 行为：面板
+        // 不可拖拽（与 master NSCollectionView 面板的实际手感一致）。
+        panel.isMovableByWindowBackground = false
         panel.titlebarAppearsTransparent = true
         panel.titleVisibility = .hidden
         panel.standardWindowButton(.closeButton)?.isHidden = true

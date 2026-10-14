@@ -262,13 +262,13 @@ struct WorkbenchView: View {
             focusZone: focusZone,
             focusRequest: focusRequestToken,
             onUpArrow: {
-                searchCoordinator.moveUp()
+                searchCoordinator.moveUp(extending: false)
                 if focusZone == .search {
                     focusList()
                 }
             },
             onDownArrow: {
-                searchCoordinator.moveDown()
+                searchCoordinator.moveDown(extending: false)
                 if focusZone == .search {
                     focusList()
                 }

@@ -64,6 +64,8 @@
 
 - [x] 单击选中、双击粘贴；单击与双击手势互斥，双击稳定触发粘贴
 - [x] Enter 粘贴、Shift+Enter 纯文本粘贴
+- [x] Shift 多选与批量粘贴（速贴面板与工作台：Shift+方向键扩展/收缩连续选区、Cmd+Click 翻转、Shift+Click 区间选中；Enter 按显示顺序批量粘贴多选条目）
+- [x] 速贴面板呼出时默认选中第二条（第一条通常是刚被上一轮粘贴顶到最前的"最旧"内容）
 - [x] Space 预览（速贴面板与工作台窗口均支持列表区按 Space 弹出大预览，预览窗口内按 Space / Esc / Command+W 只关闭预览并恢复父窗口焦点）
 - [x] 全窗口单层关闭规范：预览窗口、工具窗口、设置窗口、翻译工作区、速贴面板与工作台均支持 Command+W 与 Esc 关闭，且严格只关闭当前最前层，绝不连带穿透关闭底层窗口
 - [x] 右键菜单：复制/删除/置顶/收藏
@@ -183,14 +185,17 @@
 
 ### 14. 额度查询
 
-- [x] 设置新增“额度”页：Codex（ChatGPT 桌面版）套餐状态、5 小时 / 每周速率窗口、重置卡列表与失败提示
-- [x] 设置“额度”页展示 WorkBuddy（腾讯 CodeBuddy）账号、付费状态、订阅方案、凭证有效期与各积分包总额/已用/剩余
-- [x] Codex 通过本机 codex app-server JSON-RPC（stdio）查询，不访问网络；兼容 ChatGPT.app 与旧版 Codex.app
-- [x] WorkBuddy 读取本地桌面版凭证文件直连腾讯官方计费接口；token 失效自动用 refreshToken 续期并原子写回凭证
-- [x] 菜单栏下拉菜单内嵌额度区块：Codex 5 小时 / 每周窗口与 WorkBuddy 剩余积分进度条、一键刷新、跳转额度详情
-- [x] 设置开关：把 Codex 剩余百分比与 WorkBuddy 剩余积分显示在菜单栏图标旁，余额不足自动变红，开启后按固定间隔后台刷新
-- [x] 额度 UI 按设计稿重构：设置页双品牌色 hero 卡片 + 账户订阅/合计可用/积分包面板；菜单区块品牌色进度条、富文本数值与“额度详情…”按钮行
-- [x] Codex 两个速率窗口相互独立：剩余百分比只由各窗口自身的 `usedPercent` 推导，`rateLimitReachedType` 仅作为账户层面的限流原因展示，不得用全局限流标志覆盖任一窗口的余量
+- [x] 设置“额度”页仅提供配置项：菜单栏余额显示开关、Gemini 管理端点与 WEB_PASSWORD、workbuddy2api 网关地址与 API Key；不再在设置页堆叠数据看板
+- [x] 独立「额度查看」工具窗口（QuotaToolView）采用概览 → 详情两级结构：概览页以 Codex / Gemini / WorkBuddy 三张服务卡片展示品牌图标、核心余量、进度条与重置倒计时，点击卡片下钻到对应详情页
+- [x] Codex 详情页：套餐状态、5 小时 / 每周速率窗口、重置卡明细（通过本机 codex app-server JSON-RPC stdio 查询，不访问网络；兼容 ChatGPT.app 与旧版 Codex.app）
+- [x] Gemini 详情页：账号订阅级别（PRO）、5 小时与每周速率窗口剩余比例、细分模型额度明细与重置时间，以及 Token 消费统计看板（GeminiTokenStatsView：小时/日/周时钟切换、6 个 Summary KPI 概览卡片、堆叠柱状趋势图、分模型详细统计表格与分账号统计）
+- [x] WorkBuddy 详情页：合计可用积分、账户与订阅信息、各积分包总额/已用/剩余，以及 workbuddy2api 网关看板（读取本地桌面版凭证直连腾讯官方计费接口，token 失效自动用 refreshToken 续期并原子写回凭证）
+- [x] Gemini 直连本地 Antigravity 代理管理接口（默认 http://127.0.0.1:8045），支持在设置中自定义管理端点 Base URL 与管理密码（WEB_PASSWORD）
+- [x] WorkBuddy2API 自托管网关全量看板（WorkBuddyGatewayView）：完整移植 codex-quota-utools 的 gateway.js 与网关面板体系（默认直连 http://127.0.0.1:17863），支持概览（账号池环形健康度、运行时间、Redis、粘性与快捷操作）、账号（全量账号池列表、展开查看成功率/失败/连败/在途/最近成功、单号签到/查余额/解冻/禁用运维操作）、积分包（使用中/未动/已耗尽三层智能排序明细与进度条）、用量（6h~1440h 时段、总计 KPI、按模型 TOP 12 表格与按账号表格）、模型（20 个映射模型倍率与能力标签）及网关自定义配置
+- [x] 菜单栏下拉菜单内嵌额度区块：Codex 5 小时 / 每周窗口、Gemini 5 小时 / 每周窗口与 WorkBuddy 剩余积分进度条、一键刷新、「额度详情…」打开独立工具窗口（AppDelegate.openQuotaToolWindow + ToolWindowController，已打开时直接前置不重复创建）
+- [x] 设置开关：把 Codex 剩余百分比（C）、Gemini 剩余百分比（G）与 WorkBuddy 剩余积分（W）显示在菜单栏图标旁，余额不足自动变红，开启后按固定间隔后台刷新
+- [x] 额度 UI 按职责分层：设置页只放配置项；数据看板全部收敛到独立额度工具窗口；菜单区块保留品牌色进度条、富文本数值与“额度详情…”按钮行
+- [x] Codex 与 Gemini 的速率窗口相互独立：剩余百分比只由各窗口自身的 `usedPercent` 推导，账户级全局限流标志不得覆盖任一窗口的余量
 
 ### 15. 智能工具箱
 
@@ -205,7 +210,7 @@
 - [x] 时间日期计算器完整分区（uTools 式左导航，窄容器自动切换顶部胶囊导航）：计算日期差（含时分秒）、推算日期（天/周/月/年、前后方向）、推算工作日与工作天数（内置 2024–2025 年法定节假日与调休补班数据，范围外退化为周末估算并提示）、英文日期格式转换（美式/英式）、世界时间转换器（多时区勾选 + 全选/全不选/反选）、在线秒表（A 开始/暂停、S 计次、C 复位，计次记录）；往年今日暂以占位提示
 - [x] IPv4 归属地/运营商在线查询：仅在用户点击按钮时向 ipwho.is 发送该 IP（备源 ipinfo.io 自动兜底），私网/回环/保留地址直接拒绝查询，结果含归属地、运营商、ASN、时区并标注数据来源；同一 IP 结果会话内缓存
 - [x] IPv4/子网工具：格式校验、地址类型（私网/公网/回环/链路本地/CGNAT/组播/保留）、CIDR 前缀、子网掩码与通配符、网络/广播地址、可用范围与数量、一键复制；正确处理 /0、/31、/32
-- [x] 额度查看工具：搜索“额度/codex/workbuddy/余额”直达；完全复用 QuotaStatusManager 缓存刷新逻辑与设置页共享展示组件，设置页额度功能保持不变
+- [x] 额度查看工具：搜索“额度/codex/gemini/workbuddy/余额”或菜单栏「额度详情…」直达；完全复用 QuotaStatusManager 缓存刷新逻辑，概览三卡片 + 点击下钻详情结构
 - [x] 兼容性保障：内容识别纯内存无网络无磁盘扫描；工具复制结果只写 NSPasteboard 不触发模拟粘贴；卡片区文本编辑器（面板输入框）持有焦点时方向键/回车/空格/删除全部放行，不误触发粘贴或预览
 - [x] 上下文工具面板宽度可拖拽调整（左边缘手柄，260–420pt，拖拽结束时持久化）；宽度以 `PanelResizeHandleState` 为唯一真相来源，原生命中测试与 SwiftUI 布局共享该状态，禁止在命中路径直接读取 UserDefaults（key 未写入时读数为 0，会导致手柄静默失效）
 - [x] 单元测试：TimestampMathTests、IPv4MathTests、ContentRecognizerTests、ToolSearchServiceTests、DateMathTests、IPGeoServiceTests、PreviewWindowDetectionTests、PanelResizeHandleTests 覆盖解析、边界、误判防护、搜索排序、工作日历、归属地解析与拖拽手柄命中/持久化行为

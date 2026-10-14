@@ -163,8 +163,9 @@ final class QuotaOverviewMenuItemView: NSView {
         let detail: NSTextField
     }
 
-    /// Codex 与 WorkBuddy 的品牌展示色，与设置页额度卡片保持一致。
+    /// Codex、Gemini 与 WorkBuddy 的品牌展示色，与设置页额度卡片保持一致。
     private static let codexAccent = NSColor.systemTeal
+    private static let geminiAccent = NSColor.systemBlue
     private static let workbuddyAccent = NSColor.systemYellow
 
     private var rows: [Row] = []
@@ -203,7 +204,7 @@ final class QuotaOverviewMenuItemView: NSView {
         layer?.cornerRadius = 10
         layer?.masksToBounds = true
 
-        let rowNames = ["Codex 5h", "Codex 每周", "WorkBuddy"]
+        let rowNames = ["Codex 5h", "Codex 每周", "Gemini 5h", "Gemini 每周", "WorkBuddy"]
         rows = rowNames.map { name in
             let label = NSTextField(labelWithString: name)
             label.font = NSFont.systemFont(ofSize: 10, weight: .medium)
@@ -225,7 +226,7 @@ final class QuotaOverviewMenuItemView: NSView {
         }
 
         for row in rows {
-            row.label.widthAnchor.constraint(equalToConstant: 62).isActive = true
+            row.label.widthAnchor.constraint(equalToConstant: 68).isActive = true
         }
 
         let rowStacks = rows.map { row -> NSStackView in
@@ -304,11 +305,11 @@ final class QuotaOverviewMenuItemView: NSView {
     private func refreshDisplay() {
         let manager = QuotaStatusManager.shared
 
-        updatedLabel.stringValue = (manager.isRefreshingCodex || manager.isRefreshingWorkBuddy)
+        updatedLabel.stringValue = (manager.isRefreshingCodex || manager.isRefreshingGemini || manager.isRefreshingWorkBuddy)
             ? "刷新中…"
             : manager.lastUpdatedText
 
-        guard rows.count == 3 else { return }
+        guard rows.count == 5 else { return }
 
         let codexSnapshot = manager.codexSnapshot
         let isCodexFetching = manager.codexError == nil && codexSnapshot == nil
@@ -331,8 +332,29 @@ final class QuotaOverviewMenuItemView: NSView {
             isFetching: isCodexFetching
         )
 
-        // 第三行：WorkBuddy 剩余积分
-        configureWorkBuddyRow(rows[2], manager: manager)
+        let geminiSnapshot = manager.geminiSnapshot
+        let isGeminiFetching = manager.geminiError == nil && geminiSnapshot == nil
+
+        // 第三行：Gemini 5 小时额度
+        rows[2].configure(
+            window: geminiSnapshot?.session,
+            resetText: geminiSnapshot?.session.resetsAt.map { QuotaFormat.clockText($0) },
+            accent: Self.geminiAccent,
+            errorText: manager.geminiShortError,
+            isFetching: isGeminiFetching
+        )
+
+        // 第四行：Gemini 每周额度
+        rows[3].configure(
+            window: geminiSnapshot?.weekly,
+            resetText: geminiSnapshot?.weekly.resetsAt.map { QuotaFormat.dateTimeText($0) },
+            accent: Self.geminiAccent,
+            errorText: manager.geminiShortError,
+            isFetching: isGeminiFetching
+        )
+
+        // 第五行：WorkBuddy 剩余积分
+        configureWorkBuddyRow(rows[4], manager: manager)
     }
 
     private func configureWorkBuddyRow(_ row: Row, manager: QuotaStatusManager) {
@@ -399,6 +421,45 @@ private extension QuotaOverviewMenuItemView.Row {
     /// 触顶与否只读该窗口自身的状态，全局限流标志不参与百分比计算。
     func configure(
         window: CodexQuotaService.Window?,
+        resetText: String?,
+        accent: NSColor,
+        errorText: String?,
+        isFetching: Bool
+    ) {
+        if let window, window.isAvailable {
+            let remaining = window.displayRemainingPercent
+            bar.update(
+                fraction: remaining / 100,
+                color: QuotaFormat.remainingNSColor(remainingPercent: remaining, base: accent)
+            )
+            let percentText = "\(Int(remaining.rounded()))%"
+            let percentColor = QuotaFormat.remainingNSColor(remainingPercent: remaining, base: accent)
+            detail.attributedStringValue = QuotaOverviewMenuItemView.quotaDetailAttributed(
+                main: percentText,
+                mainColor: percentColor,
+                suffix: resetText.map { " · \($0)" }
+            )
+            return
+        }
+
+        bar.update(fraction: 0, color: accent)
+        if window != nil {
+            detail.attributedStringValue = QuotaOverviewMenuItemView.quotaDetailAttributed(
+                main: "暂未激活",
+                mainColor: .secondaryLabelColor,
+                suffix: nil
+            )
+        } else {
+            detail.attributedStringValue = QuotaOverviewMenuItemView.quotaDetailAttributed(
+                main: errorText ?? (isFetching ? "获取中…" : "查询失败"),
+                mainColor: .secondaryLabelColor,
+                suffix: nil
+            )
+        }
+    }
+
+    func configure(
+        window: GeminiQuotaService.Window?,
         resetText: String?,
         accent: NSColor,
         errorText: String?,
@@ -579,9 +640,9 @@ enum StatusMenuBuilder {
 
         menu.addItem(NSMenuItem.separator())
 
-        // 额度区块：Codex 5 小时 / 每周窗口与 WorkBuddy 剩余积分 + 额度详情按钮
+        // 额度区块：Codex、Gemini 5 小时 / 每周窗口与 WorkBuddy 剩余积分 + 额度详情按钮
         let quotaView = QuotaOverviewMenuItemView(
-            frame: NSRect(x: 0, y: 0, width: 300, height: 150),
+            frame: NSRect(x: 0, y: 0, width: 300, height: 190),
             openQuotaSettings: openQuotaSettings
         )
         quotaView.attachToMenu(menu)

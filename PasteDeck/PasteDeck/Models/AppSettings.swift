@@ -141,8 +141,26 @@ final class AppSettings {
     /// 是否在复制公共网页链接后后台获取网页标题；nil 兼容旧版本并按关闭处理。
     var fetchLinkTitles: Bool?
 
-    /// 是否把 Codex / WorkBuddy 余额直接显示在菜单栏图标旁；nil 兼容旧数据并按关闭处理。
+    /// 是否把 Codex / Gemini / WorkBuddy 余额直接显示在菜单栏图标旁；nil 兼容旧数据并按关闭处理。
     var showQuotaInMenuBar: Bool?
+
+    /// Gemini 额度查询端点（例如 http://127.0.0.1:8045）；nil 表示使用默认地址。
+    var geminiQuotaEndpoint: String?
+
+    /// Gemini 代理管理接口 Bearer 密码/Token；nil 表示使用默认密码。
+    var geminiQuotaToken: String?
+
+    /// 是否启用 Gemini 额度查询；nil 兼容旧版本并按启用处理。
+    var geminiQuotaEnabled: Bool?
+
+    /// workbuddy2api 网关 Base URL；nil 表示使用默认地址 http://127.0.0.1:17863。
+    var workbuddyGatewayBaseURL: String?
+
+    /// workbuddy2api 网关 API Key；nil 表示使用默认 Key。
+    var workbuddyGatewayApiKey: String?
+
+    /// 是否启用 workbuddy2api 网关监控；nil 兼容旧版本并按启用处理。
+    var workbuddyGatewayEnabled: Bool?
 
     init() {
         self.launchAtLogin = true
@@ -177,6 +195,12 @@ final class AppSettings {
         self.statsBackfilledAt = nil
         self.fetchLinkTitles = false
         self.showQuotaInMenuBar = false
+        self.geminiQuotaEndpoint = nil
+        self.geminiQuotaToken = nil
+        self.geminiQuotaEnabled = true
+        self.workbuddyGatewayBaseURL = nil
+        self.workbuddyGatewayApiKey = nil
+        self.workbuddyGatewayEnabled = true
     }
 
     /// 主面板布局方向；nil 或未知原始值按横向处理，确保旧数据库与未来值均能安全回退。

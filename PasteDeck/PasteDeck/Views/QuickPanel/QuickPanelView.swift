@@ -86,6 +86,8 @@ struct QuickPanelView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .clearSearchText)) { _ in
             searchCoordinator.searchText = ""
+            searchCoordinator.clearMultiSelection()
+            searchCoordinator.selectDefault()
             focusCards()
         }
         .onReceive(NotificationCenter.default.publisher(for: .clipboardDataChanged)) { notification in
@@ -108,7 +110,8 @@ struct QuickPanelView: View {
     private func resetPanelState() {
         historyStore.loadIfNeeded()
         searchCoordinator.searchText = ""
-        searchCoordinator.select(index: 0)
+        searchCoordinator.clearMultiSelection()
+        searchCoordinator.selectDefault()
         scrollResetToken += 1
         focusCards()
     }
@@ -207,14 +210,20 @@ struct QuickPanelView: View {
                 LazyVStack(spacing: 4) {
                     ForEach(Array(searchCoordinator.unifiedEntries.enumerated()), id: \.element.id) { index, entry in
                         let isSelected = searchCoordinator.selectedIndex == index
+                        let isInMultiSelection: Bool = {
+                            if case .clipboard(let snapshot) = entry {
+                                return searchCoordinator.multiSelectedIDs.contains(snapshot.id)
+                            }
+                            return false
+                        }()
 
                         switch entry {
                         case .tool(let toolMatch):
-                            quickPanelToolRow(toolMatch: toolMatch, isSelected: isSelected)
+                            quickPanelToolRow(toolMatch: toolMatch, isSelected: isSelected, isInMultiSelection: isInMultiSelection)
                                 .id(entry.id)
                                 .contentShape(Rectangle())
                                 .onTapGesture {
-                                    searchCoordinator.select(index: index)
+                                    searchCoordinator.handleTap(entry: entry)
                                 }
                                 .simultaneousGesture(
                                     TapGesture(count: 2).onEnded {
@@ -227,12 +236,13 @@ struct QuickPanelView: View {
                             quickPanelClipboardRow(
                                 item: snapshot,
                                 shortcutNumber: shortcutNumber <= 9 ? shortcutNumber : nil,
-                                isSelected: isSelected
+                                isSelected: isSelected,
+                                isInMultiSelection: isInMultiSelection
                             )
                             .id(entry.id)
                             .contentShape(Rectangle())
                             .onTapGesture {
-                                searchCoordinator.select(index: index)
+                                searchCoordinator.handleTap(entry: entry)
                             }
                             .simultaneousGesture(
                                 TapGesture(count: 2).onEnded {
@@ -267,12 +277,14 @@ struct QuickPanelView: View {
     private func quickPanelClipboardRow(
         item: ClipboardItemSnapshot,
         shortcutNumber: Int?,
-        isSelected: Bool
+        isSelected: Bool,
+        isInMultiSelection: Bool
     ) -> some View {
         QuickPanelClipboardRowItem(
             item: item,
             shortcutNumber: shortcutNumber,
-            isSelected: isSelected
+            isSelected: isSelected,
+            isInMultiSelection: isInMultiSelection
         )
     }
 
@@ -280,11 +292,13 @@ struct QuickPanelView: View {
 
     private func quickPanelToolRow(
         toolMatch: ToolSearchService.Result,
-        isSelected: Bool
+        isSelected: Bool,
+        isInMultiSelection: Bool
     ) -> some View {
         QuickPanelToolRowItem(
             toolMatch: toolMatch,
-            isSelected: isSelected
+            isSelected: isSelected,
+            isInMultiSelection: isInMultiSelection
         )
     }
 
@@ -479,12 +493,28 @@ struct QuickPanelView: View {
         case .tool(let toolMatch):
             openToolWindow(tool: toolMatch.tool, prefill: toolMatch.prefilledText)
         case .clipboard(let snapshot):
-            pasteSnapshot(snapshot, plainText: plainText)
+            pasteSelectedItems(plainText: plainText, fallback: snapshot)
         }
     }
 
+    /// 批量粘贴所有多选条目；未处于多选时粘贴 fallback（当前键盘高亮项）。
     /// 与旧版主面板一致的粘贴链：提升排序 → 写入剪贴板并暂停监控 →
     /// 关闭面板让前台应用恢复焦点 → 100ms 后模拟 ⌘V 完成粘贴。
+    private func pasteSelectedItems(plainText: Bool, fallback: ClipboardItemSnapshot) {
+        let snapshots = searchCoordinator.multiSelectedSnapshots
+        if snapshots.count <= 1 {
+            pasteSnapshot(fallback, plainText: plainText)
+            return
+        }
+
+        let ids = snapshots.map(\.id)
+        historyStore.promotePastedItems(ids: ids)
+        onClose()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            historyStore.batchPaste(ids: ids, plainText: plainText)
+        }
+    }
+
     private func pasteSnapshot(_ snapshot: ClipboardItemSnapshot, plainText: Bool) {
         guard historyStore.fetchItem(id: snapshot.id) != nil else { return }
         historyStore.promotePastedItems(ids: [snapshot.id])
@@ -530,14 +560,14 @@ struct QuickPanelView: View {
         QuickPanelKeyboardMonitor(
             focusZone: focusZone,
             focusRequest: nativeFocusRequest,
-            onUpArrow: {
-                searchCoordinator.moveUp()
+            onUpArrow: { extending in
+                searchCoordinator.moveUp(extending: extending)
                 if focusZone == .search {
                     focusCards()
                 }
             },
-            onDownArrow: {
-                searchCoordinator.moveDown()
+            onDownArrow: { extending in
+                searchCoordinator.moveDown(extending: extending)
                 if focusZone == .search {
                     focusCards()
                 }
@@ -578,8 +608,12 @@ private struct QuickPanelClipboardRowItem: View {
     let item: ClipboardItemSnapshot
     let shortcutNumber: Int?
     let isSelected: Bool
+    let isInMultiSelection: Bool
 
     @State private var isHovered = false
+
+    /// 行处于选中态：键盘高亮或参与多选。
+    private var showsSelection: Bool { isSelected || isInMultiSelection }
 
     var body: some View {
         HStack(spacing: 11) {
@@ -612,10 +646,19 @@ private struct QuickPanelClipboardRowItem: View {
                 .font(.system(size: 11))
                 .foregroundColor(.secondary.opacity(0.85))
 
-            // Right-hand badge: Return arrow if selected, shortcut number if not
+            // Right-hand badge: Return arrow on the keyboard-highlighted row, shortcut number otherwise
             if isSelected {
                 Image(systemName: "return")
                     .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(Color(red: 1.0, green: 0.45, blue: 0.08))
+                    .frame(width: 22, height: 22)
+                    .background(
+                        RoundedRectangle(cornerRadius: 5)
+                            .fill(Color(red: 1.0, green: 0.45, blue: 0.08).opacity(0.15))
+                    )
+            } else if isInMultiSelection {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 10, weight: .semibold))
                     .foregroundColor(Color(red: 1.0, green: 0.45, blue: 0.08))
                     .frame(width: 22, height: 22)
                     .background(
@@ -639,7 +682,7 @@ private struct QuickPanelClipboardRowItem: View {
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(
-                    isSelected
+                    showsSelection
                         ? Color(red: 1.0, green: 0.45, blue: 0.08).opacity(0.12)
                         : (isHovered ? Color.primary.opacity(0.05) : Color.clear)
                 )
@@ -647,7 +690,7 @@ private struct QuickPanelClipboardRowItem: View {
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(
-                    isSelected
+                    showsSelection
                         ? Color(red: 1.0, green: 0.45, blue: 0.08).opacity(0.4)
                         : (isHovered ? Color.primary.opacity(0.08) : Color.clear),
                     lineWidth: 1
@@ -663,8 +706,11 @@ private struct QuickPanelClipboardRowItem: View {
 private struct QuickPanelToolRowItem: View {
     let toolMatch: ToolSearchService.Result
     let isSelected: Bool
+    let isInMultiSelection: Bool
 
     @State private var isHovered = false
+
+    private var showsSelection: Bool { isSelected || isInMultiSelection }
 
     var body: some View {
         let descriptor = toolMatch.tool.descriptor
@@ -722,7 +768,7 @@ private struct QuickPanelToolRowItem: View {
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(
-                    isSelected
+                    showsSelection
                         ? Color(red: 1.0, green: 0.45, blue: 0.08).opacity(0.12)
                         : (isHovered ? Color.primary.opacity(0.05) : Color.clear)
                 )
@@ -730,7 +776,7 @@ private struct QuickPanelToolRowItem: View {
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(
-                    isSelected
+                    showsSelection
                         ? Color(red: 1.0, green: 0.45, blue: 0.08).opacity(0.4)
                         : (isHovered ? Color.primary.opacity(0.08) : Color.clear),
                     lineWidth: 1
@@ -752,8 +798,8 @@ private struct QuickPanelToolRowItem: View {
 private struct QuickPanelKeyboardMonitor: NSViewRepresentable {
     var focusZone: QuickPanelFocusZone
     var focusRequest: Int
-    var onUpArrow: () -> Void
-    var onDownArrow: () -> Void
+    var onUpArrow: (_ extending: Bool) -> Void
+    var onDownArrow: (_ extending: Bool) -> Void
     var onEnter: (_ shiftHeld: Bool) -> Void
     var onEscape: () -> Void
     var onSpace: () -> Void
@@ -950,13 +996,13 @@ private struct QuickPanelKeyboardMonitor: NSViewRepresentable {
                 return nil
             }
 
-            // ↑/↓：在任何模式下均可移动列表选择
+            // ↑/↓：在任何模式下均可移动列表选择（Shift 修饰键透传给选区扩展）
             if keyCode == 126 { // Up
-                parent.onUpArrow()
+                parent.onUpArrow(modifiers.contains(.shift))
                 return nil
             }
             if keyCode == 125 { // Down
-                parent.onDownArrow()
+                parent.onDownArrow(modifiers.contains(.shift))
                 return nil
             }
 

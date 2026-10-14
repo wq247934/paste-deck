@@ -46,10 +46,10 @@ enum BuiltinTool: String, CaseIterable, Identifiable, Equatable {
                 id: id,
                 name: "额度查看",
                 symbolName: "gauge.with.needle",
-                summary: "查看本机 Codex 与 WorkBuddy 的余额和用量",
-                keywords: ["额度", "余额", "配额", "积分", "用量", "quota"],
-                aliases: ["codex", "workbuddy", "额度查看", "余额查询"],
-                preferredWindowSize: CGSize(width: 560, height: 600)
+                summary: "Codex / Gemini / WorkBuddy 余额与用量",
+                keywords: ["额度", "余额", "配额", "积分", "用量", "quota", "codex", "gemini", "workbuddy"],
+                aliases: ["codex", "workbuddy", "gemini", "额度查看", "余额查询", "额度详情"],
+                preferredWindowSize: CGSize(width: 720, height: 720)
             )
         }
     }

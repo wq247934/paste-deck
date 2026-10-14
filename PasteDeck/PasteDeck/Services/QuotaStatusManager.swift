@@ -2,7 +2,7 @@
 //  QuotaStatusManager.swift
 //  PasteDeck
 //
-//  Codex / WorkBuddy 余额的中央缓存与刷新调度：
+//  Codex / Gemini / WorkBuddy 余额的中央缓存与刷新调度：
 //  - 下拉菜单打开、设置页进入、菜单栏显示开启时按需刷新
 //  - 菜单栏显示开启后周期性后台刷新
 //  - 汇总出菜单栏图标旁的余额文本
@@ -12,6 +12,7 @@
 
 import AppKit
 import Foundation
+import SwiftData
 
 @MainActor
 final class QuotaStatusManager: ObservableObject {
@@ -32,6 +33,12 @@ final class QuotaStatusManager: ObservableObject {
     @Published private(set) var codexRefreshedAt: Date?
     @Published private(set) var isRefreshingCodex = false
 
+    @Published private(set) var geminiSnapshot: GeminiQuotaService.Snapshot?
+    @Published private(set) var geminiError: String?
+    @Published private(set) var geminiShortError: String?
+    @Published private(set) var geminiRefreshedAt: Date?
+    @Published private(set) var isRefreshingGemini = false
+
     @Published private(set) var workbuddySnapshot: WorkBuddyQuotaService.Snapshot?
     @Published private(set) var workbuddyError: String?
     @Published private(set) var workbuddyShortError: String?
@@ -44,6 +51,7 @@ final class QuotaStatusManager: ObservableObject {
     private let menuBarRefreshInterval: TimeInterval = 900
 
     private var codexTask: Task<Void, Never>?
+    private var geminiTask: Task<Void, Never>?
     private var workbuddyTask: Task<Void, Never>?
     private var refreshTimer: Timer?
     private var isMenuBarDisplayEnabled = false
@@ -52,21 +60,28 @@ final class QuotaStatusManager: ObservableObject {
 
     // MARK: - 刷新入口
 
-    /// 强制刷新两类余额（设置页手动刷新按钮）。
+    /// 强制刷新全部余额（设置页手动刷新按钮）。
     func refresh(force: Bool) {
         refreshCodex(maxAge: force ? nil : interactiveMaxAge)
+        refreshGemini(maxAge: force ? nil : interactiveMaxAge)
         refreshWorkBuddy(maxAge: force ? nil : interactiveMaxAge)
     }
 
     /// 数据比 maxAge 旧才刷新；nil refreshedAt 视为从未刷新。
     func refreshIfStale(maxAge: TimeInterval) {
         refreshCodex(maxAge: maxAge)
+        refreshGemini(maxAge: maxAge)
         refreshWorkBuddy(maxAge: maxAge)
     }
 
     /// 仅刷新 Codex（设置页单个刷新按钮）。
     func refreshCodex(force: Bool) {
         refreshCodex(maxAge: force ? nil : interactiveMaxAge)
+    }
+
+    /// 仅刷新 Gemini（设置页单个刷新按钮）。
+    func refreshGemini(force: Bool) {
+        refreshGemini(maxAge: force ? nil : interactiveMaxAge)
     }
 
     /// 仅刷新 WorkBuddy（设置页单个刷新按钮）。
@@ -115,6 +130,19 @@ final class QuotaStatusManager: ObservableObject {
                 color = .labelColor
             }
             segments.append(("C \(Int(remaining.rounded()))%", color))
+        }
+
+        if let snapshot = geminiSnapshot, snapshot.session.isAvailable {
+            let remaining = snapshot.session.displayRemainingPercent
+            let color: NSColor
+            if snapshot.session.isLimitReached || remaining <= 15 {
+                color = .systemRed
+            } else if remaining <= 40 {
+                color = .systemOrange
+            } else {
+                color = .labelColor
+            }
+            segments.append(("G \(Int(remaining.rounded()))%", color))
         }
 
         if let snapshot = workbuddySnapshot {
@@ -177,6 +205,30 @@ final class QuotaStatusManager: ObservableObject {
             lines.append("Codex：正在获取…")
         }
 
+        if let snapshot = geminiSnapshot {
+            if snapshot.session.isAvailable {
+                var sessionLine = "Gemini 5 小时额度：剩余 \(Int(snapshot.session.displayRemainingPercent.rounded()))%"
+                if let resetsAt = snapshot.session.resetsAt {
+                    sessionLine += "（\(QuotaFormat.clockText(resetsAt)) 重置）"
+                }
+                lines.append(sessionLine)
+            } else {
+                lines.append("Gemini：5 小时额度暂未激活")
+            }
+
+            if snapshot.weekly.isAvailable {
+                var weeklyLine = "Gemini 每周额度：剩余 \(Int(snapshot.weekly.displayRemainingPercent.rounded()))%"
+                if let resetsAt = snapshot.weekly.resetsAt {
+                    weeklyLine += "（\(QuotaFormat.dateTimeText(resetsAt)) 重置）"
+                }
+                lines.append(weeklyLine)
+            }
+        } else if let geminiError {
+            lines.append("Gemini：\(geminiError)")
+        } else {
+            lines.append("Gemini：正在获取…")
+        }
+
         if let snapshot = workbuddySnapshot {
             lines.append(
                 "WorkBuddy：剩余 \(QuotaFormat.groupedNumber(snapshot.remain)) / \(QuotaFormat.groupedNumber(snapshot.total)) 积分"
@@ -191,9 +243,9 @@ final class QuotaStatusManager: ObservableObject {
         return lines.joined(separator: "\n")
     }
 
-    /// 两侧数据中最近一次刷新动作的时间。
+    /// 各侧数据中最近一次刷新动作的时间。
     var lastRefreshedAt: Date? {
-        [codexRefreshedAt, workbuddyRefreshedAt].compactMap { $0 }.max()
+        [codexRefreshedAt, geminiRefreshedAt, workbuddyRefreshedAt].compactMap { $0 }.max()
     }
 
     var lastUpdatedText: String {
@@ -235,6 +287,63 @@ final class QuotaStatusManager: ObservableObject {
                 self.notifyStatusChange()
             }
         }
+    }
+
+    private func refreshGemini(maxAge: TimeInterval?) {
+        guard geminiTask == nil else { return }
+        if let maxAge, let refreshedAt = geminiRefreshedAt,
+           Date().timeIntervalSince(refreshedAt) < maxAge {
+            return
+        }
+
+        let geminiSettings = fetchGeminiSettings()
+        guard geminiSettings.enabled else {
+            geminiSnapshot = nil
+            geminiError = nil
+            geminiShortError = nil
+            geminiRefreshedAt = Date()
+            isRefreshingGemini = false
+            notifyStatusChange()
+            return
+        }
+
+        isRefreshingGemini = true
+        geminiTask = Task { [weak self] in
+            defer { self?.geminiTask = nil }
+            do {
+                let snapshot = try await GeminiQuotaService.query(
+                    endpoint: geminiSettings.endpoint,
+                    token: geminiSettings.token
+                )
+                guard let self else { return }
+                self.geminiSnapshot = snapshot
+                self.geminiError = nil
+                self.geminiShortError = nil
+                self.geminiRefreshedAt = Date()
+                self.isRefreshingGemini = false
+                self.notifyStatusChange()
+            } catch {
+                guard let self else { return }
+                self.geminiError = error.localizedDescription
+                self.geminiShortError = (error as? QuotaShortErrorProviding)?.shortDescription ?? "查询失败"
+                self.geminiRefreshedAt = Date()
+                self.isRefreshingGemini = false
+                self.notifyStatusChange()
+            }
+        }
+    }
+
+    private func fetchGeminiSettings() -> (endpoint: String?, token: String?, enabled: Bool) {
+        let context = ModelContext(AppModelContainer.container)
+        let descriptor = FetchDescriptor<AppSettings>()
+        guard let settings = try? context.fetch(descriptor).first else {
+            return (nil, nil, true)
+        }
+        return (
+            settings.geminiQuotaEndpoint,
+            settings.geminiQuotaToken,
+            settings.geminiQuotaEnabled ?? true
+        )
     }
 
     private func refreshWorkBuddy(maxAge: TimeInterval?) {
@@ -304,3 +413,17 @@ extension WorkBuddyQuotaService.WorkBuddyQuotaError: QuotaShortErrorProviding {
         }
     }
 }
+
+extension GeminiQuotaService.GeminiQuotaError: QuotaShortErrorProviding {
+    var shortDescription: String {
+        switch self {
+        case .serviceUnavailable: return "服务未启动"
+        case .unauthorized: return "密码错误"
+        case .requestFailed: return "连接失败"
+        case .invalidResponse: return "解析失败"
+        case .apiError: return "接口错误"
+        case .noAccountData: return "无数据"
+        }
+    }
+}
+

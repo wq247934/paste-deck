@@ -8,7 +8,7 @@ PasteDeck 2.0 is a native macOS productivity workbench, smart toolbox, and clipb
 
 - **Dual-Surface Architecture**:
   - **Full macOS Workbench** (`Command + K` / Menu bar -> 打开工作台): Independent, resizable 3-column native window (1080 × 720 pt) featuring a navigation sidebar, high-density content list/grid, and a live context inspector.
-  - **Quick Paste Panel** (`Command + Shift + V` / Menu bar -> 快速粘贴面板): Lightweight, non-activating floating panel with instant keyboard navigation (arrow keys, Enter to paste, Esc to dismiss) and quick tool execution.
+  - **Quick Paste Panel** (`Command + Shift + V` / Menu bar -> 快速粘贴面板): Lightweight, non-activating floating panel with instant keyboard navigation (arrow keys, `Shift`+arrow multi-selection, Enter to paste — batch paste for multi-selection, Esc to dismiss), click-to-select rows, opens with the second row pre-selected, and quick tool execution.
 - **Unified Search**: Search both Builtin Tools and Clipboard History simultaneously with a unified keyboard index (`↑`/`↓`), automatic content recognition suggestions, and instant execution on `Enter` (pastes clipboard records, opens tools in standalone native windows).
 - **Context Inspector**: Right-side inspector displays real-time content previews, metadata, quick actions (Copy, Paste Plain Text, Preview), and smart tool recommendations based on strict content recognition (e.g. Unix timestamps, IPv4 addresses, and CIDR subnets).
 - **Built-in Smart Toolbox & Tool Center**: Standalone tools discovered dynamically from `ToolRegistry` with independent AppKit windows:
@@ -115,8 +115,8 @@ Clipboard polling uses `NSPasteboard`; it does not require Accessibility by itse
 | `Option + S` | Capture a screen region, OCR, and translate (customizable) |
 | `Option + A` | Open the input translation window (customizable) |
 | `Command + F` | Focus unified search field |
-| `Up` / `Down` | Move unified selection across tools and clipboard items |
-| `Enter` | Paste selected clipboard item, or open selected tool window |
+| `Up` / `Down` | Move unified selection across tools and clipboard items (`Shift` extends a continuous multi-selection) |
+| `Enter` | Paste selected clipboard item(s) — multi-selection pastes in display order — or open selected tool window |
 | `Shift + Command + V` / `Shift + Enter` | Paste selected item as plain text |
 | `Command + C` | Copy selected item to clipboard |
 | `Space` | Quick Look / Preview selected item |
@@ -255,9 +255,13 @@ PasteDeck 是一个原生 macOS 剪贴板管理器，用浮动面板快速搜索
 - 支持菜单栏打开，也支持全局快捷键 `Command + Shift + V`。
 - 开机登录后静默常驻菜单栏；重新打开已运行的应用时，会显示剪贴板主面板。
 - 单击卡片可选中，双击卡片可立即粘贴。
-- 菜单栏下拉菜单内嵌统计概览，展示今日复制次数、总条数和缓存占用；并新增额度区块，以进度条展示 Codex 5 小时 / 每周额度窗口与 WorkBuddy 剩余积分，支持一键刷新和跳转额度设置页。
-- 内置智能工具箱：搜索同时匹配工具（名称、别名、关键词、描述）与剪贴板历史；选中时间戳或 IPv4 卡片时，右侧上下文面板自动推荐对应工具；工具在独立弹窗中打开，不写入历史数据库。首批内置工具包括完整的时间日期计算器（时间戳转换、计算日期差、推算日期、推算工作日（内置 2024–2025 年法定节假日与调休数据）、工作天数、英文日期格式、世界时间转换器、键盘秒表）、IPv4/子网计算（地址校验、地址类型、CIDR、掩码、网络/广播地址、可用范围，正确处理 /0、/31、/32；支持点击按钮在线查询归属地与运营商，主源 ipwho.is、备源 ipinfo.io，私网地址不发起查询）和额度查看（复用设置页的 Codex/WorkBuddy 服务）。侧边栏左边缘有一条竖直手柄，鼠标移到上面会变成左右拉伸光标，按住拖动即可调整宽度（可调范围 260–420pt），松手后记住，下次打开主面板自动恢复。
-- 新增“额度”设置页，完整展示本机余额：Codex（ChatGPT 桌面版）套餐状态、5 小时 / 每周速率窗口与重置卡通过本机 codex app-server 查询，不访问网络；WorkBuddy（腾讯 CodeBuddy）各积分包总额 / 已用 / 剩余读取本地桌面版凭证后直连腾讯官方计费接口，token 失效自动续期。5 小时与每周两个速率窗口各自独立计算余量，一个窗口用尽不会影响另一个窗口的显示。设置中开启开关后，菜单栏图标旁会显示紧凑余额（C 剩余百分比、W 剩余积分），余额不足时自动变红。
+- 菜单栏下拉菜单内嵌统计概览，展示今日复制次数、总条数和缓存占用；并新增额度区块，以进度条展示 Codex 5 小时 / 每周额度窗口、Gemini 5 小时 / 每周额度窗口与 WorkBuddy 剩余积分，支持一键刷新和打开独立「额度查看」工具窗口。
+- 内置智能工具箱：搜索同时匹配工具（名称、别名、关键词、描述）与剪贴板历史；选中时间戳或 IPv4 卡片时，右侧上下文面板自动推荐对应工具；工具在独立弹窗中打开，不写入历史数据库。首批内置工具包括完整的时间日期计算器（时间戳转换、计算日期差、推算日期、推算工作日（内置 2024–2025 年法定节假日与调休数据）、工作天数、英文日期格式、世界时间转换器、键盘秒表）、IPv4/子网计算（地址校验、地址类型、CIDR、掩码、网络/广播地址、可用范围，正确处理 /0、/31、/32；支持点击按钮在线查询归属地与运营商，主源 ipwho.is、备源 ipinfo.io，私网地址不发起查询）和额度查看。侧边栏左边缘有一条竖直手柄，鼠标移到上面会变成左右拉伸光标，按住拖动即可调整宽度（可调范围 260–420pt），松手后记住，下次打开主面板自动恢复。
+- 独立「额度查看」工具窗口（菜单栏「额度详情…」或工作台搜索「额度查看」打开），概览页以 Codex / Gemini / WorkBuddy 三张卡片展示各服务核心余量、进度条与重置倒计时，点击卡片下钻到对应详情页：
+  - **Codex 详情**：套餐状态、5 小时 / 每周速率窗口与重置卡明细（通过本机 codex app-server 查询，不访问网络；两个窗口独立计算余量）。
+  - **Gemini 详情**：5 小时 / 每周速率窗口、各细分模型额度明细，以及 Token 消费统计看板（小时/日/周三档时段切换、6 个 Summary KPI 概览卡片、堆叠柱状 Token 消耗趋势图、分模型详细统计表格含请求数/输入/输出/缓存命中/合计/占比进度胶囊、分账号使用分布）。
+  - **WorkBuddy 详情**：合计可用积分、账户与订阅信息、积分包明细，以及 workbuddy2api 自托管网关看板（默认直连 17863 端口）——概览（账号池环形健康度、运行时间、Redis、粘性、快捷操作）、账号（全量账号池列表、展开查看成功率/成功/失败/连败/在途/最近成功、单号签到/查余额/解冻/禁用）、积分包（使用中/未动/已耗尽三层智能排序明细）、用量（6h~1440h 时段切换、总计 KPI、按模型 TOP 12 表格、按账号表格）、模型（20 个映射模型倍率与图片/思考/工具能力标签）。
+- 设置页「额度」面板仅提供配置项：菜单栏余额显示开关（开启后菜单栏图标旁显示 C 剩余百分比、G 剩余百分比、W 剩余积分，余额不足自动变红）、Gemini 代理端点与 WEB_PASSWORD、workbuddy2api 网关地址与 API Key。
 - 菜单栏和设置页均提供“功能指南”：按快速开始、查找整理、预览编辑、翻译、统计、个性化六个场景，用卡片、三步操作和快捷键帮助理解全部功能。
 - 支持键盘导航，并会按当前面板可视区域自动滚动选中卡片；同时支持收藏筛选、自定义收藏夹、系统“翻译”分类、置顶、删除和批量粘贴。翻译分类固定在“收藏”之后，不能删除、改名或排序。
 - 支持横向和竖向面板布局，竖向提供紧凑列表、大卡片和自适应网格三种样式。
@@ -347,9 +351,9 @@ PasteDeck 需要辅助功能权限来读取前台应用选中文字，并模拟 
 | `Command + F` | 聚焦搜索框 |
 | `Left` / `Right` | 在卡片间移动（搜索框与工具输入框内为移动光标） |
 | `Shift + Left` / `Shift + Right` | 扩展多选 |
-| `Up` / `Down` | 翻页浏览卡片；搜索命中工具时逐个选择工具结果 |
+| `Up` / `Down` | 翻页浏览卡片；搜索命中工具时逐个选择工具结果（`Shift` 组合可扩展连续多选） |
 | `Tab` | 切换筛选标签 |
-| `Enter` | 粘贴选中项目；搜索时若已高亮工具则打开工具，否则进入历史区 |
+| `Enter` | 粘贴选中项目（多选时按显示顺序批量粘贴）；搜索时若已高亮工具则打开工具，否则进入历史区 |
 | `Shift + Enter` | 以纯文本粘贴 |
 | `Space` | 预览选中项目 |
 | `Delete` | 删除选中项目 |
