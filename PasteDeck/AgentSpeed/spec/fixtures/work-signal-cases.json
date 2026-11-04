@@ -1,0 +1,769 @@
+{
+ "_comment": "METRICS 6.10. `digests`: input as stored -> first 16 hex digits of SHA-256. `signals`: actions (`failed` absent = unknown) and the signals at `nowMs`, written by hand. `files`: lines `[at, object]` of one file in a source family and the actions they give; object inputs are hashed as the compact JSON text the line stores.",
+ "digests": [
+  {
+   "input": "swift test",
+   "expect": "0ba113233a842b14"
+  },
+  {
+   "input": "{\"cmd\":\"cargo test\",\"yield_time_ms\":10000}",
+   "expect": "20f69686052f4ea4"
+  },
+  {
+   "input": {
+    "path": "src/queue.ts"
+   },
+   "expect": "d196ede23b387e95"
+  },
+  {
+   "input": {
+    "command": "ls 文件"
+   },
+   "expect": "b0a0d6d17827bcec"
+  }
+ ],
+ "signals": [
+  {
+   "name": "the same failing call three times is looping",
+   "nowMs": 1000000040000,
+   "actions": [
+    {
+     "at": 1000000000000,
+     "tool": "Bash",
+     "digest": "aaaaaaaaaaaaaaaa",
+     "failed": true
+    },
+    {
+     "at": 1000000010000,
+     "tool": "Bash",
+     "digest": "aaaaaaaaaaaaaaaa",
+     "failed": true
+    },
+    {
+     "at": 1000000020000,
+     "tool": "Bash",
+     "digest": "aaaaaaaaaaaaaaaa",
+     "failed": true
+    }
+   ],
+   "expect": {
+    "looping": 3,
+    "repeating": null,
+    "novelty": null,
+    "failed": 3,
+    "recovered": 0
+   }
+  },
+  {
+   "name": "two calls alternating three times with one failure is looping",
+   "nowMs": 1000000070000,
+   "actions": [
+    {
+     "at": 1000000000000,
+     "tool": "Edit",
+     "digest": "bbbbbbbbbbbbbbbb",
+     "failed": false
+    },
+    {
+     "at": 1000000010000,
+     "tool": "Bash",
+     "digest": "aaaaaaaaaaaaaaaa",
+     "failed": true
+    },
+    {
+     "at": 1000000020000,
+     "tool": "Edit",
+     "digest": "bbbbbbbbbbbbbbbb",
+     "failed": false
+    },
+    {
+     "at": 1000000030000,
+     "tool": "Bash",
+     "digest": "aaaaaaaaaaaaaaaa",
+     "failed": false
+    },
+    {
+     "at": 1000000040000,
+     "tool": "Edit",
+     "digest": "bbbbbbbbbbbbbbbb",
+     "failed": false
+    },
+    {
+     "at": 1000000050000,
+     "tool": "Bash",
+     "digest": "aaaaaaaaaaaaaaaa",
+     "failed": false
+    }
+   ],
+   "expect": {
+    "looping": 3,
+    "repeating": null,
+    "novelty": null,
+    "failed": 1,
+    "recovered": 1
+   }
+  },
+  {
+   "name": "a block of three repeated three times, counted by its repeats",
+   "nowMs": 1000000090000,
+   "actions": [
+    {
+     "at": 1000000000000,
+     "tool": "Read",
+     "digest": "cccccccccccccccc",
+     "failed": false
+    },
+    {
+     "at": 1000000010000,
+     "tool": "Edit",
+     "digest": "bbbbbbbbbbbbbbbb",
+     "failed": false
+    },
+    {
+     "at": 1000000020000,
+     "tool": "Bash",
+     "digest": "aaaaaaaaaaaaaaaa",
+     "failed": true
+    },
+    {
+     "at": 1000000030000,
+     "tool": "Read",
+     "digest": "cccccccccccccccc",
+     "failed": false
+    },
+    {
+     "at": 1000000040000,
+     "tool": "Edit",
+     "digest": "bbbbbbbbbbbbbbbb",
+     "failed": false
+    },
+    {
+     "at": 1000000050000,
+     "tool": "Bash",
+     "digest": "aaaaaaaaaaaaaaaa",
+     "failed": true
+    },
+    {
+     "at": 1000000060000,
+     "tool": "Read",
+     "digest": "cccccccccccccccc",
+     "failed": false
+    },
+    {
+     "at": 1000000070000,
+     "tool": "Edit",
+     "digest": "bbbbbbbbbbbbbbbb",
+     "failed": false
+    },
+    {
+     "at": 1000000080000,
+     "tool": "Bash",
+     "digest": "aaaaaaaaaaaaaaaa",
+     "failed": true
+    }
+   ],
+   "expect": {
+    "looping": 3,
+    "repeating": null,
+    "novelty": 0.3333333333333333,
+    "failed": 3,
+    "recovered": 0
+   }
+  },
+  {
+   "name": "repeats without a failure are only repeating",
+   "nowMs": 1000000050000,
+   "actions": [
+    {
+     "at": 1000000000000,
+     "tool": "wait_agent",
+     "digest": "dddddddddddddddd"
+    },
+    {
+     "at": 1000000010000,
+     "tool": "wait_agent",
+     "digest": "dddddddddddddddd"
+    },
+    {
+     "at": 1000000020000,
+     "tool": "wait_agent",
+     "digest": "dddddddddddddddd"
+    },
+    {
+     "at": 1000000030000,
+     "tool": "wait_agent",
+     "digest": "dddddddddddddddd"
+    }
+   ],
+   "expect": {
+    "looping": null,
+    "repeating": 4,
+    "novelty": null,
+    "failed": 0,
+    "recovered": 0
+   }
+  },
+  {
+   "name": "a repetition older than 120 s is not shown",
+   "nowMs": 1000000200000,
+   "actions": [
+    {
+     "at": 1000000000000,
+     "tool": "Bash",
+     "digest": "aaaaaaaaaaaaaaaa",
+     "failed": true
+    },
+    {
+     "at": 1000000010000,
+     "tool": "Bash",
+     "digest": "aaaaaaaaaaaaaaaa",
+     "failed": true
+    },
+    {
+     "at": 1000000020000,
+     "tool": "Bash",
+     "digest": "aaaaaaaaaaaaaaaa",
+     "failed": true
+    }
+   ],
+   "expect": {
+    "looping": null,
+    "repeating": null,
+    "novelty": null,
+    "failed": 3,
+    "recovered": 0
+   }
+  },
+  {
+   "name": "two repeats are not enough; a different digest breaks the run",
+   "nowMs": 1000000040000,
+   "actions": [
+    {
+     "at": 1000000000000,
+     "tool": "Bash",
+     "digest": "aaaaaaaaaaaaaaaa",
+     "failed": true
+    },
+    {
+     "at": 1000000010000,
+     "tool": "Bash",
+     "digest": "bbbbbbbbbbbbbbbb",
+     "failed": true
+    },
+    {
+     "at": 1000000020000,
+     "tool": "Bash",
+     "digest": "aaaaaaaaaaaaaaaa",
+     "failed": true
+    },
+    {
+     "at": 1000000030000,
+     "tool": "Bash",
+     "digest": "aaaaaaaaaaaaaaaa",
+     "failed": true
+    }
+   ],
+   "expect": {
+    "looping": null,
+    "repeating": null,
+    "novelty": null,
+    "failed": 4,
+    "recovered": 0
+   }
+  },
+  {
+   "name": "novelty needs eight recent actions; a failure fixed by the same tool within five actions is recovered",
+   "nowMs": 1000000100000,
+   "actions": [
+    {
+     "at": 1000000000000,
+     "tool": "Read",
+     "digest": "1111111111111111"
+    },
+    {
+     "at": 1000000010000,
+     "tool": "Read",
+     "digest": "2222222222222222"
+    },
+    {
+     "at": 1000000020000,
+     "tool": "Bash",
+     "digest": "aaaaaaaaaaaaaaaa",
+     "failed": true
+    },
+    {
+     "at": 1000000030000,
+     "tool": "Edit",
+     "digest": "bbbbbbbbbbbbbbbb",
+     "failed": false
+    },
+    {
+     "at": 1000000040000,
+     "tool": "Bash",
+     "digest": "cccccccccccccccc",
+     "failed": false
+    },
+    {
+     "at": 1000000050000,
+     "tool": "Read",
+     "digest": "1111111111111111"
+    },
+    {
+     "at": 1000000060000,
+     "tool": "Grep",
+     "digest": "3333333333333333"
+    },
+    {
+     "at": 1000000070000,
+     "tool": "Bash",
+     "digest": "dddddddddddddddd",
+     "failed": true
+    },
+    {
+     "at": 1000000080000,
+     "tool": "Read",
+     "digest": "4444444444444444"
+    }
+   ],
+   "expect": {
+    "looping": null,
+    "repeating": null,
+    "novelty": 0.8888888888888888,
+    "failed": 2,
+    "recovered": 1
+   }
+  },
+  {
+   "name": "actions older than ten minutes leave every signal",
+   "nowMs": 1000000700000,
+   "actions": [
+    {
+     "at": 1000000000000,
+     "tool": "Bash",
+     "digest": "aaaaaaaaaaaaaaaa",
+     "failed": true
+    },
+    {
+     "at": 1000000010000,
+     "tool": "Bash",
+     "digest": "aaaaaaaaaaaaaaaa",
+     "failed": true
+    },
+    {
+     "at": 1000000020000,
+     "tool": "Bash",
+     "digest": "aaaaaaaaaaaaaaaa",
+     "failed": true
+    },
+    {
+     "at": 1000000690000,
+     "tool": "Read",
+     "digest": "bbbbbbbbbbbbbbbb",
+     "failed": false
+    }
+   ],
+   "expect": {
+    "looping": null,
+    "repeating": null,
+    "novelty": null,
+    "failed": 0,
+    "recovered": 0
+   }
+  },
+  {
+   "name": "a failure recovered only after more than five actions does not count",
+   "nowMs": 1000000080000,
+   "actions": [
+    {
+     "at": 1000000000000,
+     "tool": "Bash",
+     "digest": "aaaaaaaaaaaaaaaa",
+     "failed": true
+    },
+    {
+     "at": 1000000010000,
+     "tool": "Read",
+     "digest": "1111111111111111"
+    },
+    {
+     "at": 1000000020000,
+     "tool": "Read",
+     "digest": "2222222222222222"
+    },
+    {
+     "at": 1000000030000,
+     "tool": "Read",
+     "digest": "3333333333333333"
+    },
+    {
+     "at": 1000000040000,
+     "tool": "Read",
+     "digest": "4444444444444444"
+    },
+    {
+     "at": 1000000050000,
+     "tool": "Read",
+     "digest": "5555555555555555"
+    },
+    {
+     "at": 1000000060000,
+     "tool": "Bash",
+     "digest": "bbbbbbbbbbbbbbbb",
+     "failed": false
+    }
+   ],
+   "expect": {
+    "looping": null,
+    "repeating": null,
+    "novelty": null,
+    "failed": 1,
+    "recovered": 0
+   }
+  }
+ ],
+ "files": [
+  {
+   "name": "Claude: a tool_use repeated on a message's next line is one action; is_error marks the failure",
+   "format": "claude",
+   "lines": [
+    [
+     1000000000000,
+     {
+      "type": "assistant",
+      "message": {
+       "id": "m1",
+       "content": [
+        {
+         "type": "thinking",
+         "thinking": ""
+        },
+        {
+         "type": "tool_use",
+         "id": "t1",
+         "name": "Bash",
+         "input": {
+          "command": "swift test",
+          "description": "Run tests"
+         }
+        }
+       ]
+      }
+     }
+    ],
+    [
+     1000000000100,
+     {
+      "type": "assistant",
+      "message": {
+       "id": "m1",
+       "content": [
+        {
+         "type": "tool_use",
+         "id": "t1",
+         "name": "Bash",
+         "input": {
+          "command": "swift test",
+          "description": "Run tests"
+         }
+        }
+       ]
+      }
+     }
+    ],
+    [
+     1000000005000,
+     {
+      "type": "user",
+      "message": {
+       "content": [
+        {
+         "type": "tool_result",
+         "tool_use_id": "t1",
+         "is_error": true,
+         "content": "error: build failed"
+        }
+       ]
+      }
+     }
+    ],
+    [
+     1000000006000,
+     {
+      "type": "assistant",
+      "message": {
+       "id": "m2",
+       "content": [
+        {
+         "type": "tool_use",
+         "id": "t2",
+         "name": "Read",
+         "input": {
+          "file_path": "Package.swift"
+         }
+        }
+       ]
+      }
+     }
+    ],
+    [
+     1000000006500,
+     {
+      "type": "user",
+      "message": {
+       "content": [
+        {
+         "type": "tool_result",
+         "tool_use_id": "t2",
+         "content": "// swift-tools-version"
+        }
+       ]
+      }
+     }
+    ]
+   ],
+   "expect": [
+    {
+     "at": 1000000000000,
+     "tool": "Bash",
+     "digest": "d136c52b4213bdd6",
+     "failed": true
+    },
+    {
+     "at": 1000000006000,
+     "tool": "Read",
+     "digest": "e8c8ae869c9c2e6a",
+     "failed": false
+    }
+   ]
+  },
+  {
+   "name": "Codex: exit_code of the output's leading JSON object; an output without one stays unknown",
+   "format": "codex",
+   "lines": [
+    [
+     1000000000000,
+     {
+      "type": "response_item",
+      "payload": {
+       "type": "custom_tool_call",
+       "call_id": "c1",
+       "name": "exec",
+       "input": "{\"cmd\":\"cargo test\",\"yield_time_ms\":10000}"
+      }
+     }
+    ],
+    [
+     1000000004000,
+     {
+      "type": "response_item",
+      "payload": {
+       "type": "custom_tool_call_output",
+       "call_id": "c1",
+       "output": "[{\"type\": \"input_text\", \"text\": \"{\\\"chunk_id\\\":\\\"x\\\",\\\"wall_time_seconds\\\":3.9,\\\"exit_code\\\":101,\\\"original_token_count\\\":12,\\\"output\\\":\\\"test failed\\\"}\"}]"
+      }
+     }
+    ],
+    [
+     1000000005000,
+     {
+      "type": "response_item",
+      "payload": {
+       "type": "function_call",
+       "call_id": "c2",
+       "name": "apply_patch",
+       "arguments": "*** Begin Patch\n*** Update File: src/lib.rs\n*** End Patch"
+      }
+     }
+    ],
+    [
+     1000000005200,
+     {
+      "type": "response_item",
+      "payload": {
+       "type": "function_call_output",
+       "call_id": "c2",
+       "output": "Success. Updated the following files"
+      }
+     }
+    ],
+    [
+     1000000006000,
+     {
+      "type": "response_item",
+      "payload": {
+       "type": "custom_tool_call",
+       "call_id": "c3",
+       "name": "exec",
+       "input": "{\"cmd\":\"cargo test\",\"yield_time_ms\":10000}"
+      }
+     }
+    ],
+    [
+     1000000009000,
+     {
+      "type": "response_item",
+      "payload": {
+       "type": "custom_tool_call_output",
+       "call_id": "c3",
+       "output": "{\"chunk_id\":\"y\",\"wall_time_seconds\":2.0,\"exit_code\":0,\"original_token_count\":3,\"output\":\"ok\"}"
+      }
+     }
+    ]
+   ],
+   "expect": [
+    {
+     "at": 1000000000000,
+     "tool": "exec",
+     "digest": "20f69686052f4ea4",
+     "failed": true
+    },
+    {
+     "at": 1000000005000,
+     "tool": "apply_patch",
+     "digest": "9e87dd158278e1af",
+     "failed": null
+    },
+    {
+     "at": 1000000006000,
+     "tool": "exec",
+     "digest": "20f69686052f4ea4",
+     "failed": false
+    }
+   ]
+  },
+  {
+   "name": "Pi and omp: toolCall blocks and toolResult isError",
+   "format": "pi",
+   "lines": [
+    [
+     1000000000000,
+     {
+      "type": "message",
+      "message": {
+       "role": "assistant",
+       "content": [
+        {
+         "type": "text",
+         "text": "Reading"
+        },
+        {
+         "type": "toolCall",
+         "id": "p1",
+         "name": "read",
+         "arguments": {
+          "path": "src/queue.ts"
+         }
+        }
+       ]
+      }
+     }
+    ],
+    [
+     1000000000900,
+     {
+      "type": "message",
+      "message": {
+       "role": "toolResult",
+       "toolCallId": "p1",
+       "toolName": "read",
+       "isError": true,
+       "content": [
+        {
+         "type": "text",
+         "text": "ENOENT"
+        }
+       ]
+      }
+     }
+    ]
+   ],
+   "expect": [
+    {
+     "at": 1000000000000,
+     "tool": "read",
+     "digest": "d196ede23b387e95",
+     "failed": true
+    }
+   ]
+  },
+  {
+   "name": "Factory Droid: tool_use in an assistant message line, tool_result in the next user message line",
+   "format": "droid",
+   "lines": [
+    [
+     1000000000000,
+     {
+      "type": "message",
+      "id": "a1",
+      "message": {
+       "role": "assistant",
+       "content": [
+        {
+         "type": "tool_use",
+         "id": "toolu_d1",
+         "name": "Execute",
+         "input": {
+          "command": "swift test",
+          "description": "Run tests"
+         }
+        }
+       ]
+      }
+     }
+    ],
+    [
+     1000000001500,
+     {
+      "type": "message",
+      "id": "r1",
+      "message": {
+       "role": "user",
+       "content": [
+        {
+         "type": "tool_result",
+         "tool_use_id": "toolu_d1",
+         "content": "2 failing",
+         "is_error": true
+        }
+       ]
+      }
+     }
+    ],
+    [
+     1000000002000,
+     {
+      "type": "message",
+      "id": "a2",
+      "message": {
+       "role": "assistant",
+       "content": [
+        {
+         "type": "tool_use",
+         "id": "toolu_d2",
+         "name": "Read",
+         "input": {
+          "file_path": "Package.swift"
+         }
+        }
+       ]
+      }
+     }
+    ]
+   ],
+   "expect": [
+    {
+     "at": 1000000000000,
+     "tool": "Execute",
+     "digest": "d136c52b4213bdd6",
+     "failed": true
+    },
+    {
+     "at": 1000000002000,
+     "tool": "Read",
+     "digest": "e8c8ae869c9c2e6a",
+     "failed": null
+    }
+   ]
+  }
+ ]
+}

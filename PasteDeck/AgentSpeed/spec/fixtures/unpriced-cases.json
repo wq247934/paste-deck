@@ -1,0 +1,1009 @@
+{
+  "_comment": "Unpriced diagnostics (METRICS 9.10) against the fixture table `table` (the current table). `diagnose`: the reason, canonical key and rule text for a response's model, provider and fast flag (null = priced or free now). `read`: one stored contribution with its side rows -> facts (*Reading*). `quote`: one text value of the copied text (`redact` false only for rule texts). `live`: the engine's today responses -> one part per source (*Live*). `reports`: the copied text for a view over `stored` (each entry one contribution of a file; parts summed per day and source after *Reading*) or, for view `live`, over the `live` case named by `input`, with the report's `table` as the current table when it names one; byte-identical on both platforms, LF line ends. Written by spec/tools/unpriced_cases.py.",
+  "table": "prices/v2.json",
+  "diagnose": [
+    {
+      "model": "gpt-5.5",
+      "provider": null,
+      "fast": false,
+      "expect": null
+    },
+    {
+      "model": "claude-opus-5-5",
+      "provider": null,
+      "fast": true,
+      "expect": null
+    },
+    {
+      "model": "gemini-3.1-flash-lite",
+      "provider": null,
+      "fast": false,
+      "expect": null
+    },
+    {
+      "model": "qwen3-coder:30b",
+      "provider": "ollama",
+      "fast": false,
+      "expect": null
+    },
+    {
+      "model": "big-model-free",
+      "provider": null,
+      "fast": false,
+      "expect": null
+    },
+    {
+      "model": null,
+      "provider": null,
+      "fast": false,
+      "expect": {
+        "reason": "noModel",
+        "canonical": null,
+        "rule": null
+      }
+    },
+    {
+      "model": "",
+      "provider": "custom",
+      "fast": false,
+      "expect": {
+        "reason": "noModel",
+        "canonical": null,
+        "rule": null
+      }
+    },
+    {
+      "model": " \t ",
+      "provider": null,
+      "fast": false,
+      "expect": {
+        "reason": "noModel",
+        "canonical": null,
+        "rule": null
+      }
+    },
+    {
+      "model": "mimo-v2.6-pro",
+      "provider": "custom",
+      "fast": false,
+      "expect": null
+    },
+    {
+      "model": "mimo-v2.5-pro",
+      "provider": "custom",
+      "fast": false,
+      "expect": {
+        "reason": "notInTable",
+        "canonical": "mimo-v2.5-pro",
+        "rule": null
+      }
+    },
+    {
+      "model": "  Mystery-Model[1m]  ",
+      "provider": null,
+      "fast": false,
+      "expect": {
+        "reason": "notInTable",
+        "canonical": "mystery-model",
+        "rule": null
+      }
+    },
+    {
+      "model": "anthropic/claude-opus-9",
+      "provider": null,
+      "fast": false,
+      "expect": {
+        "reason": "notInTable",
+        "canonical": "anthropic/claude-opus-9",
+        "rule": null
+      }
+    },
+    {
+      "model": "[proxy]",
+      "provider": null,
+      "fast": false,
+      "expect": {
+        "reason": "notInTable",
+        "canonical": null,
+        "rule": null
+      }
+    },
+    {
+      "model": "qwen3-coder:30b",
+      "provider": null,
+      "fast": false,
+      "expect": {
+        "reason": "notInTable",
+        "canonical": "qwen3-coder:30b",
+        "rule": null
+      }
+    },
+    {
+      "model": "gpt-oss:120b-cloud",
+      "provider": "ollama",
+      "fast": false,
+      "expect": {
+        "reason": "notInTable",
+        "canonical": "gpt-oss:120b-cloud",
+        "rule": null
+      }
+    },
+    {
+      "model": "gpt-5.5-2026-04-23",
+      "provider": null,
+      "fast": false,
+      "expect": {
+        "reason": "notInTable",
+        "canonical": "gpt-5.5-2026-04-23",
+        "rule": null
+      }
+    },
+    {
+      "model": "claude-sonnet-5-5",
+      "provider": null,
+      "fast": true,
+      "expect": {
+        "reason": "noFastPrice",
+        "canonical": "claude-sonnet-5-5",
+        "rule": null
+      }
+    },
+    {
+      "model": "claude-sonnet-5-5-fast",
+      "provider": null,
+      "fast": false,
+      "expect": {
+        "reason": "noFastPrice",
+        "canonical": "claude-sonnet-5-5",
+        "rule": null
+      }
+    },
+    {
+      "model": "anthropic/claude-sonnet-5.5-fast",
+      "provider": null,
+      "fast": false,
+      "expect": {
+        "reason": "noFastPrice",
+        "canonical": "claude-sonnet-5-5",
+        "rule": null
+      }
+    },
+    {
+      "model": "gpt5.5",
+      "provider": null,
+      "fast": true,
+      "expect": {
+        "reason": "noFastPrice",
+        "canonical": "gpt5.5",
+        "rule": null
+      }
+    },
+    {
+      "model": "neko-model-f1097c63",
+      "provider": null,
+      "fast": false,
+      "expect": {
+        "reason": "unpriceable",
+        "canonical": "neko-model-f1097c63",
+        "rule": "opaque local router alias"
+      }
+    },
+    {
+      "model": "Neko-Model-7",
+      "provider": "custom",
+      "fast": false,
+      "expect": {
+        "reason": "unpriceable",
+        "canonical": "neko-model-7",
+        "rule": "opaque local router alias"
+      }
+    },
+    {
+      "model": "codex-auto-review",
+      "provider": null,
+      "fast": false,
+      "expect": {
+        "reason": "unpriceable",
+        "canonical": "codex-auto-review",
+        "rule": "internal model, no public price"
+      }
+    },
+    {
+      "model": "openai/codex-auto-review",
+      "provider": null,
+      "fast": true,
+      "expect": {
+        "reason": "unpriceable",
+        "canonical": "codex-auto-review",
+        "rule": "internal model, no public price"
+      }
+    }
+  ],
+  "read": [
+    {
+      "name": "valid side rows are the facts, summed by trimmed model, provider and fast",
+      "stored": {
+        "fileVersion": 7,
+        "requests": 9,
+        "unpriced": 6,
+        "models": {
+          "neko-model-1": 4,
+          " neko-model-1": 1,
+          "": 1
+        },
+        "side": [
+          {
+            "model": "neko-model-1",
+            "provider": "custom",
+            "fast": false,
+            "requests": 4,
+            "version": 7
+          },
+          {
+            "model": " neko-model-1",
+            "provider": "custom",
+            "fast": false,
+            "requests": 1,
+            "version": 7
+          },
+          {
+            "model": "",
+            "provider": null,
+            "fast": false,
+            "requests": 1,
+            "version": 7
+          }
+        ]
+      },
+      "expect": {
+        "requests": 9,
+        "noCostData": 0,
+        "facts": [
+          {
+            "model": "",
+            "provider": null,
+            "fast": false,
+            "requests": 1
+          },
+          {
+            "model": "neko-model-1",
+            "provider": "custom",
+            "fast": false,
+            "requests": 5
+          }
+        ],
+        "derived": 0
+      }
+    },
+    {
+      "name": "side rows of another analysis version are stale: derive from the per-model counts",
+      "stored": {
+        "fileVersion": 6,
+        "requests": 5,
+        "unpriced": 3,
+        "models": {
+          "mimo-v2.6-pro": 2,
+          "gpt-5.5": 0
+        },
+        "side": [
+          {
+            "model": "mimo-v2.6-pro",
+            "provider": "custom",
+            "fast": false,
+            "requests": 3,
+            "version": 7
+          }
+        ]
+      },
+      "expect": {
+        "requests": 5,
+        "noCostData": 0,
+        "facts": [
+          {
+            "model": "",
+            "provider": null,
+            "fast": false,
+            "requests": 1
+          },
+          {
+            "model": "mimo-v2.6-pro",
+            "provider": null,
+            "fast": false,
+            "requests": 2
+          }
+        ],
+        "derived": 3
+      }
+    },
+    {
+      "name": "side rows that do not add up to the stored count are ignored",
+      "stored": {
+        "fileVersion": 7,
+        "requests": 4,
+        "unpriced": 2,
+        "models": {
+          "codex-auto-review": 2
+        },
+        "side": [
+          {
+            "model": "codex-auto-review",
+            "provider": null,
+            "fast": false,
+            "requests": 1,
+            "version": 7
+          }
+        ]
+      },
+      "expect": {
+        "requests": 4,
+        "noCostData": 0,
+        "facts": [
+          {
+            "model": "codex-auto-review",
+            "provider": null,
+            "fast": false,
+            "requests": 2
+          }
+        ],
+        "derived": 2
+      }
+    },
+    {
+      "name": "no side rows (an older build wrote the file): derive",
+      "stored": {
+        "fileVersion": 5,
+        "requests": 3,
+        "unpriced": 3,
+        "models": {
+          "b": 1,
+          "a": 1,
+          "é": 1
+        },
+        "side": []
+      },
+      "expect": {
+        "requests": 3,
+        "noCostData": 0,
+        "facts": [
+          {
+            "model": "a",
+            "provider": null,
+            "fast": false,
+            "requests": 1
+          },
+          {
+            "model": "b",
+            "provider": null,
+            "fast": false,
+            "requests": 1
+          },
+          {
+            "model": "é",
+            "provider": null,
+            "fast": false,
+            "requests": 1
+          }
+        ],
+        "derived": 3
+      }
+    },
+    {
+      "name": "derived counts never exceed the stored unpriced count",
+      "stored": {
+        "fileVersion": 5,
+        "requests": 9,
+        "unpriced": 2,
+        "models": {
+          "x": 5
+        },
+        "side": []
+      },
+      "expect": {
+        "requests": 9,
+        "noCostData": 0,
+        "facts": [
+          {
+            "model": "x",
+            "provider": null,
+            "fast": false,
+            "requests": 2
+          }
+        ],
+        "derived": 2
+      }
+    },
+    {
+      "name": "nothing unpriced: no facts, stray side rows ignored",
+      "stored": {
+        "fileVersion": 7,
+        "requests": 2,
+        "unpriced": 0,
+        "models": {},
+        "side": [
+          {
+            "model": "x",
+            "provider": null,
+            "fast": false,
+            "requests": 1,
+            "version": 7
+          }
+        ]
+      },
+      "expect": {
+        "requests": 2,
+        "noCostData": 0,
+        "facts": [],
+        "derived": 0
+      }
+    },
+    {
+      "name": "no cost data (stored before costs existed) is not unpriced",
+      "stored": {
+        "fileVersion": 2,
+        "requests": 8,
+        "unpriced": null,
+        "models": {},
+        "side": []
+      },
+      "expect": {
+        "requests": 8,
+        "noCostData": 8,
+        "facts": [],
+        "derived": 0
+      }
+    }
+  ],
+  "quote": [
+    {
+      "text": "neko-model-7",
+      "expect": "\"neko-model-7\""
+    },
+    {
+      "text": "",
+      "expect": "\"\""
+    },
+    {
+      "text": "a \"b\" \\c",
+      "expect": "\"a \\\"b\\\" \\\\c\""
+    },
+    {
+      "text": "tab\there\nnl\u0001  x",
+      "expect": "\"tab\\there\\nnl\\u0001\\u007f\\u0085\\u2028 x\""
+    },
+    {
+      "text": "模型-一",
+      "expect": "\"模型-一\""
+    },
+    {
+      "text": "/Users/zoe/models/llama.gguf",
+      "expect": "\"<path>\""
+    },
+    {
+      "text": "~/m.gguf",
+      "expect": "\"<path>\""
+    },
+    {
+      "text": "C:\\Models\\q.gguf",
+      "expect": "\"<path>\""
+    },
+    {
+      "text": "d:/q.gguf",
+      "expect": "\"<path>\""
+    },
+    {
+      "text": "File:///tmp/x",
+      "expect": "\"<path>\""
+    },
+    {
+      "text": "homebrew/llama-4",
+      "expect": "\"homebrew/llama-4\""
+    },
+    {
+      "text": "proxy/HOME/me/x",
+      "expect": "\"<path>\""
+    },
+    {
+      "text": "anthropic/claude-opus-9",
+      "expect": "\"anthropic/claude-opus-9\""
+    },
+    {
+      "text": "/Users/x",
+      "redact": false,
+      "expect": "\"/Users/x\""
+    },
+    {
+      "text": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+      "expect": "\"mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm…\""
+    },
+    {
+      "text": "模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模",
+      "expect": "\"模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模模\""
+    },
+    {
+      "text": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+      "expect": "\"😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀…\""
+    }
+  ],
+  "live": [
+    {
+      "name": "today",
+      "today": "2026-10-26",
+      "responses": [
+        {
+          "source": "codex",
+          "model": "gpt-5.5",
+          "provider": null,
+          "fast": false,
+          "endMs": 1793016000000,
+          "requestCount": 1,
+          "costMicroUsd": 1200
+        },
+        {
+          "source": "codex",
+          "model": "neko-model-ab",
+          "provider": "custom",
+          "fast": false,
+          "endMs": 1793016000000,
+          "requestCount": 1,
+          "costMicroUsd": null
+        },
+        {
+          "source": "codex",
+          "model": "neko-model-ab",
+          "provider": "custom",
+          "fast": false,
+          "endMs": 1793016000000,
+          "requestCount": 1,
+          "costMicroUsd": null
+        },
+        {
+          "source": "codex",
+          "model": " neko-model-ab ",
+          "provider": "custom",
+          "fast": false,
+          "endMs": 1793016000000,
+          "requestCount": 1,
+          "costMicroUsd": null
+        },
+        {
+          "source": "codex",
+          "model": null,
+          "provider": "openai",
+          "fast": false,
+          "endMs": 1793016000000,
+          "requestCount": 1,
+          "costMicroUsd": null
+        },
+        {
+          "source": "codex",
+          "model": "",
+          "provider": "openai",
+          "fast": false,
+          "endMs": 1793016000000,
+          "requestCount": 1,
+          "costMicroUsd": null
+        },
+        {
+          "source": "codex",
+          "model": "mimo-v2.6-pro",
+          "provider": "custom",
+          "fast": false,
+          "endMs": 1793016000000,
+          "requestCount": 1,
+          "costMicroUsd": null
+        },
+        {
+          "source": "claudeCode",
+          "model": "claude-sonnet-5-5",
+          "provider": null,
+          "fast": true,
+          "endMs": 1793016000000,
+          "requestCount": 1,
+          "costMicroUsd": null
+        },
+        {
+          "source": "claudeCode",
+          "model": "claude-opus-5-5",
+          "provider": null,
+          "fast": false,
+          "endMs": 1793016000000,
+          "requestCount": 1,
+          "costMicroUsd": 0
+        },
+        {
+          "source": "grokBuild",
+          "model": "grok-mystery",
+          "provider": null,
+          "fast": false,
+          "endMs": 1793016000000,
+          "requestCount": 3,
+          "costMicroUsd": null
+        },
+        {
+          "source": "pi",
+          "model": "gpt-5.5",
+          "provider": null,
+          "fast": false,
+          "endMs": 253402300799999,
+          "requestCount": 1,
+          "costMicroUsd": null
+        }
+      ],
+      "expect": [
+        {
+          "day": "2026-10-26",
+          "source": "codex",
+          "requests": 7,
+          "noCostData": 0,
+          "derived": 0,
+          "facts": [
+            {
+              "model": "",
+              "provider": "openai",
+              "fast": false,
+              "requests": 2
+            },
+            {
+              "model": "mimo-v2.6-pro",
+              "provider": "custom",
+              "fast": false,
+              "requests": 1
+            },
+            {
+              "model": "neko-model-ab",
+              "provider": "custom",
+              "fast": false,
+              "requests": 3
+            }
+          ]
+        },
+        {
+          "day": "2026-10-26",
+          "source": "claudeCode",
+          "requests": 2,
+          "noCostData": 0,
+          "derived": 0,
+          "facts": [
+            {
+              "model": "claude-sonnet-5-5",
+              "provider": null,
+              "fast": true,
+              "requests": 1
+            }
+          ]
+        },
+        {
+          "day": "2026-10-26",
+          "source": "grokBuild",
+          "requests": 3,
+          "noCostData": 0,
+          "derived": 0,
+          "facts": [
+            {
+              "model": "grok-mystery",
+              "provider": null,
+              "fast": false,
+              "requests": 3
+            }
+          ]
+        },
+        {
+          "day": "2026-10-26",
+          "source": "pi",
+          "requests": 1,
+          "noCostData": 0,
+          "derived": 0,
+          "facts": [
+            {
+              "model": "gpt-5.5",
+              "provider": null,
+              "fast": false,
+              "noDate": true,
+              "requests": 1
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "stored": [
+    {
+      "day": "2026-10-19",
+      "source": "codex",
+      "stored": {
+        "fileVersion": 2,
+        "requests": 10,
+        "unpriced": null,
+        "models": {},
+        "side": []
+      }
+    },
+    {
+      "day": "2026-10-20",
+      "source": "codex",
+      "stored": {
+        "fileVersion": 7,
+        "requests": 40,
+        "unpriced": 30,
+        "models": {
+          "neko-model-ab": 25,
+          "codex-auto-review": 3
+        },
+        "side": [
+          {
+            "model": "neko-model-ab",
+            "provider": "custom",
+            "fast": false,
+            "requests": 25,
+            "version": 7
+          },
+          {
+            "model": "codex-auto-review",
+            "provider": "openai",
+            "fast": false,
+            "requests": 3,
+            "version": 7
+          },
+          {
+            "model": "",
+            "provider": "openai",
+            "fast": false,
+            "requests": 2,
+            "version": 7
+          }
+        ]
+      }
+    },
+    {
+      "day": "2026-10-21",
+      "source": "codex",
+      "stored": {
+        "fileVersion": 7,
+        "requests": 12,
+        "unpriced": 9,
+        "models": {
+          "neko-model-ab": 4,
+          "mimo-v2.6-pro": 5
+        },
+        "side": [
+          {
+            "model": "neko-model-ab",
+            "provider": "custom",
+            "fast": false,
+            "requests": 4,
+            "version": 7
+          },
+          {
+            "model": "mimo-v2.6-pro",
+            "provider": "custom",
+            "fast": false,
+            "requests": 5,
+            "version": 7
+          }
+        ]
+      }
+    },
+    {
+      "day": "2026-10-21",
+      "source": "codex",
+      "stored": {
+        "fileVersion": 5,
+        "requests": 6,
+        "unpriced": 4,
+        "models": {
+          "gpt-6.1-sol-mini": 2,
+          "codex-auto-review": 1
+        },
+        "side": []
+      }
+    },
+    {
+      "day": "2026-10-22",
+      "source": "codex",
+      "stored": {
+        "fileVersion": 7,
+        "requests": 2,
+        "unpriced": 0,
+        "models": {},
+        "side": []
+      }
+    },
+    {
+      "day": "2026-10-22",
+      "source": "codex",
+      "stored": {
+        "fileVersion": 7,
+        "requests": 6,
+        "unpriced": 3,
+        "models": {
+          "mimo-v2.5-pro": 3
+        },
+        "side": [
+          {
+            "model": "mimo-v2.5-pro",
+            "provider": "custom",
+            "fast": false,
+            "requests": 3,
+            "version": 7
+          }
+        ]
+      }
+    },
+    {
+      "day": "2026-10-22",
+      "source": "opencode",
+      "stored": {
+        "fileVersion": 7,
+        "requests": 4,
+        "unpriced": 0,
+        "models": {},
+        "side": []
+      }
+    },
+    {
+      "day": "2026-10-20",
+      "source": "claudeDesktop",
+      "stored": {
+        "fileVersion": 7,
+        "requests": 3,
+        "unpriced": 1,
+        "models": {
+          "claude-sonnet-5-5": 1
+        },
+        "side": [
+          {
+            "model": "claude-sonnet-5-5",
+            "provider": null,
+            "fast": true,
+            "requests": 1,
+            "version": 7
+          }
+        ]
+      }
+    },
+    {
+      "day": "2026-10-21",
+      "source": "workbuddyAi",
+      "stored": {
+        "fileVersion": 7,
+        "requests": 5,
+        "unpriced": 2,
+        "models": {
+          "/Users/dev/models/q.gguf": 1,
+          "Kimi-K3": 1
+        },
+        "side": [
+          {
+            "model": "/Users/dev/models/q.gguf",
+            "provider": "custom",
+            "fast": false,
+            "requests": 1,
+            "version": 7
+          },
+          {
+            "model": "Kimi-K3",
+            "provider": "custom",
+            "fast": false,
+            "requests": 1,
+            "version": 7
+          }
+        ]
+      }
+    },
+    {
+      "day": "2026-10-23",
+      "source": "antigravity",
+      "stored": {
+        "fileVersion": 7,
+        "requests": 7,
+        "unpriced": 7,
+        "models": {
+          "gemini-3.1-flash-b": 0
+        },
+        "side": [
+          {
+            "model": "",
+            "provider": null,
+            "fast": false,
+            "requests": 7,
+            "version": 7
+          }
+        ]
+      }
+    }
+  ],
+  "reports": [
+    {
+      "name": "all sources over five days",
+      "app": {
+        "version": "1.4.2",
+        "platform": "macos",
+        "os": "macos-26"
+      },
+      "view": {
+        "view": "custom",
+        "first": "2026-10-19",
+        "last": "2026-10-23"
+      },
+      "expect": "Agent Speed unpriced diagnostics 1\napp version=1.4.2 platform=macos os=macos-26\nprices version=2 updated=2026-10-15\nrange view=custom first=2026-10-19 last=2026-10-23 days=5 source=all excluded=none\nsource id=codex requests=76 unpriced=46 pricedNow=7 noCostData=10 derived=4 rows=6\nrow source=codex reason=unpriceable requests=29 first=2026-10-20 last=2026-10-21 fast=false model=\"neko-model-ab\" provider=\"custom\" canonical=\"neko-model-ab\" rule=\"opaque local router alias\"\nrow source=codex reason=unpriceable requests=3 first=2026-10-20 last=2026-10-20 fast=false model=\"codex-auto-review\" provider=\"openai\" canonical=\"codex-auto-review\" rule=\"internal model, no public price\"\nrow source=codex reason=notInTable requests=3 first=2026-10-22 last=2026-10-22 fast=false model=\"mimo-v2.5-pro\" provider=\"custom\" canonical=\"mimo-v2.5-pro\" rule=null\nrow source=codex reason=noModel requests=2 first=2026-10-20 last=2026-10-20 fast=false model=\"\" provider=\"openai\" canonical=null rule=null\nrow source=codex reason=noModel requests=1 first=2026-10-21 last=2026-10-21 fast=false model=\"\" provider=null canonical=null rule=null\nrow source=codex reason=unpriceable requests=1 first=2026-10-21 last=2026-10-21 fast=false model=\"codex-auto-review\" provider=null canonical=\"codex-auto-review\" rule=\"internal model, no public price\"\nsource id=antigravity requests=7 unpriced=7 pricedNow=0 noCostData=0 derived=0 rows=1\nrow source=antigravity reason=noModel requests=7 first=2026-10-23 last=2026-10-23 fast=false model=\"\" provider=null canonical=null rule=null\nsource id=workbuddyAi requests=5 unpriced=2 pricedNow=0 noCostData=0 derived=0 rows=2\nrow source=workbuddyAi reason=notInTable requests=1 first=2026-10-21 last=2026-10-21 fast=false model=\"<path>\" provider=\"custom\" canonical=\"<path>\" rule=null\nrow source=workbuddyAi reason=notInTable requests=1 first=2026-10-21 last=2026-10-21 fast=false model=\"Kimi-K3\" provider=\"custom\" canonical=\"kimi-k3\" rule=null\nsource id=claudeDesktop requests=3 unpriced=1 pricedNow=0 noCostData=0 derived=0 rows=1\nrow source=claudeDesktop reason=noFastPrice requests=1 first=2026-10-20 last=2026-10-20 fast=true model=\"claude-sonnet-5-5\" provider=null canonical=\"claude-sonnet-5-5\" rule=null\nsource id=opencode requests=4 unpriced=0 pricedNow=0 noCostData=0 derived=0 rows=0\ntotal requests=95 unpriced=56 pricedNow=7 noCostData=10 derived=4 rows=10\n"
+    },
+    {
+      "name": "one source, one day",
+      "app": {
+        "version": "1.4.2",
+        "platform": "macos",
+        "os": "macos-26"
+      },
+      "view": {
+        "view": "yesterday",
+        "first": "2026-10-21",
+        "last": "2026-10-21",
+        "source": "codex"
+      },
+      "expect": "Agent Speed unpriced diagnostics 1\napp version=1.4.2 platform=macos os=macos-26\nprices version=2 updated=2026-10-15\nrange view=yesterday first=2026-10-21 last=2026-10-21 days=1 source=codex excluded=none\nsource id=codex requests=18 unpriced=13 pricedNow=7 noCostData=0 derived=4 rows=3\nrow source=codex reason=unpriceable requests=4 first=2026-10-21 last=2026-10-21 fast=false model=\"neko-model-ab\" provider=\"custom\" canonical=\"neko-model-ab\" rule=\"opaque local router alias\"\nrow source=codex reason=noModel requests=1 first=2026-10-21 last=2026-10-21 fast=false model=\"\" provider=null canonical=null rule=null\nrow source=codex reason=unpriceable requests=1 first=2026-10-21 last=2026-10-21 fast=false model=\"codex-auto-review\" provider=null canonical=\"codex-auto-review\" rule=\"internal model, no public price\"\ntotal requests=18 unpriced=13 pricedNow=7 noCostData=0 derived=4 rows=3\n"
+    },
+    {
+      "name": "the reasons follow the current table",
+      "app": {
+        "version": "1.4.2",
+        "platform": "macos",
+        "os": "macos-26"
+      },
+      "table": "prices/v1.json",
+      "view": {
+        "view": "custom",
+        "first": "2026-10-21",
+        "last": "2026-10-22",
+        "source": "codex"
+      },
+      "expect": "Agent Speed unpriced diagnostics 1\napp version=1.4.2 platform=macos os=macos-26\nprices version=1 updated=2026-10-01\nrange view=custom first=2026-10-21 last=2026-10-22 days=2 source=codex excluded=none\nsource id=codex requests=26 unpriced=16 pricedNow=0 noCostData=0 derived=4 rows=6\nrow source=codex reason=notInTable requests=5 first=2026-10-21 last=2026-10-21 fast=false model=\"mimo-v2.6-pro\" provider=\"custom\" canonical=\"mimo-v2.6-pro\" rule=null\nrow source=codex reason=unpriceable requests=4 first=2026-10-21 last=2026-10-21 fast=false model=\"neko-model-ab\" provider=\"custom\" canonical=\"neko-model-ab\" rule=\"opaque local router alias\"\nrow source=codex reason=notInTable requests=3 first=2026-10-22 last=2026-10-22 fast=false model=\"mimo-v2.5-pro\" provider=\"custom\" canonical=\"mimo-v2.5-pro\" rule=null\nrow source=codex reason=notInTable requests=2 first=2026-10-21 last=2026-10-21 fast=false model=\"gpt-6.1-sol-mini\" provider=null canonical=\"gpt-6.1-sol-mini\" rule=null\nrow source=codex reason=noModel requests=1 first=2026-10-21 last=2026-10-21 fast=false model=\"\" provider=null canonical=null rule=null\nrow source=codex reason=unpriceable requests=1 first=2026-10-21 last=2026-10-21 fast=false model=\"codex-auto-review\" provider=null canonical=\"codex-auto-review\" rule=\"internal model, no public price\"\ntotal requests=26 unpriced=16 pricedNow=0 noCostData=0 derived=4 rows=6\n"
+    },
+    {
+      "name": "subscription sources excluded",
+      "app": {
+        "version": "1.4.2",
+        "platform": "macos",
+        "os": "macos-26"
+      },
+      "view": {
+        "view": "7d",
+        "first": "2026-10-20",
+        "last": "2026-10-26",
+        "excluded": [
+          "workbuddyAi",
+          "codex"
+        ]
+      },
+      "expect": "Agent Speed unpriced diagnostics 1\napp version=1.4.2 platform=macos os=macos-26\nprices version=2 updated=2026-10-15\nrange view=7d first=2026-10-20 last=2026-10-26 days=7 source=all excluded=codex,workbuddyAi\nsource id=antigravity requests=7 unpriced=7 pricedNow=0 noCostData=0 derived=0 rows=1\nrow source=antigravity reason=noModel requests=7 first=2026-10-23 last=2026-10-23 fast=false model=\"\" provider=null canonical=null rule=null\nsource id=claudeDesktop requests=3 unpriced=1 pricedNow=0 noCostData=0 derived=0 rows=1\nrow source=claudeDesktop reason=noFastPrice requests=1 first=2026-10-20 last=2026-10-20 fast=true model=\"claude-sonnet-5-5\" provider=null canonical=\"claude-sonnet-5-5\" rule=null\nsource id=opencode requests=4 unpriced=0 pricedNow=0 noCostData=0 derived=0 rows=0\ntotal requests=14 unpriced=8 pricedNow=0 noCostData=0 derived=0 rows=2\n"
+    },
+    {
+      "name": "a range without data",
+      "app": {
+        "version": "1.4.2",
+        "platform": "windows",
+        "os": "windows-11"
+      },
+      "view": {
+        "view": "custom",
+        "first": "2026-10-24",
+        "last": "2026-10-25"
+      },
+      "expect": "Agent Speed unpriced diagnostics 1\napp version=1.4.2 platform=windows os=windows-11\nprices version=2 updated=2026-10-15\nrange view=custom first=2026-10-24 last=2026-10-25 days=2 source=all excluded=none\ntotal requests=0 unpriced=0 pricedNow=0 noCostData=0 derived=0 rows=0\n"
+    },
+    {
+      "name": "today from the engine",
+      "app": {
+        "version": "1.4.2",
+        "platform": "macos",
+        "os": "macos-26"
+      },
+      "input": "today",
+      "view": {
+        "view": "live",
+        "first": "2026-10-26",
+        "last": "2026-10-26"
+      },
+      "expect": "Agent Speed unpriced diagnostics 1\napp version=1.4.2 platform=macos os=macos-26\nprices version=2 updated=2026-10-15\nrange view=live first=2026-10-26 last=2026-10-26 days=1 source=all excluded=none\nsource id=codex requests=7 unpriced=6 pricedNow=1 noCostData=0 derived=0 rows=2\nrow source=codex reason=unpriceable requests=3 first=2026-10-26 last=2026-10-26 fast=false model=\"neko-model-ab\" provider=\"custom\" canonical=\"neko-model-ab\" rule=\"opaque local router alias\"\nrow source=codex reason=noModel requests=2 first=2026-10-26 last=2026-10-26 fast=false model=\"\" provider=\"openai\" canonical=null rule=null\nsource id=grokBuild requests=3 unpriced=3 pricedNow=0 noCostData=0 derived=0 rows=1\nrow source=grokBuild reason=notInTable requests=3 first=2026-10-26 last=2026-10-26 fast=false model=\"grok-mystery\" provider=null canonical=\"grok-mystery\" rule=null\nsource id=claudeCode requests=2 unpriced=1 pricedNow=0 noCostData=0 derived=0 rows=1\nrow source=claudeCode reason=noFastPrice requests=1 first=2026-10-26 last=2026-10-26 fast=true model=\"claude-sonnet-5-5\" provider=null canonical=\"claude-sonnet-5-5\" rule=null\nsource id=pi requests=1 unpriced=1 pricedNow=0 noCostData=0 derived=0 rows=1\nrow source=pi reason=noDate requests=1 first=2026-10-26 last=2026-10-26 fast=false model=\"gpt-5.5\" provider=null canonical=null rule=null\ntotal requests=13 unpriced=11 pricedNow=1 noCostData=0 derived=0 rows=5\n"
+    }
+  ]
+}

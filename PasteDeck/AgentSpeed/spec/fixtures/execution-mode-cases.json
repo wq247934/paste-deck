@@ -1,0 +1,4716 @@
+{
+  "schemaVersion": 1,
+  "normalization": [
+    {
+      "id": "openai-default",
+      "adapter": "serviceTier",
+      "rawValue": "default",
+      "provider": "openai",
+      "evidence": "served",
+      "scope": "response",
+      "expected": {
+        "kind": "serviceTier",
+        "value": "standard",
+        "rawValue": "default",
+        "evidence": "served",
+        "scope": "response",
+        "provider": "openai"
+      }
+    },
+    {
+      "id": "openai-standard",
+      "adapter": "serviceTier",
+      "rawValue": "standard",
+      "provider": "openai",
+      "evidence": "served",
+      "scope": "response",
+      "expected": {
+        "kind": "serviceTier",
+        "value": "standard",
+        "rawValue": "standard",
+        "evidence": "served",
+        "scope": "response",
+        "provider": "openai"
+      }
+    },
+    {
+      "id": "openai-priority",
+      "adapter": "serviceTier",
+      "rawValue": "priority",
+      "provider": "openai",
+      "evidence": "served",
+      "scope": "response",
+      "expected": {
+        "kind": "serviceTier",
+        "value": "fast",
+        "rawValue": "priority",
+        "evidence": "served",
+        "scope": "response",
+        "provider": "openai"
+      }
+    },
+    {
+      "id": "openai-fast",
+      "adapter": "serviceTier",
+      "rawValue": "fast",
+      "provider": "openai",
+      "evidence": "served",
+      "scope": "response",
+      "expected": {
+        "kind": "serviceTier",
+        "value": "fast",
+        "rawValue": "fast",
+        "evidence": "served",
+        "scope": "response",
+        "provider": "openai"
+      }
+    },
+    {
+      "id": "openai-ultrafast",
+      "adapter": "serviceTier",
+      "rawValue": "ultrafast",
+      "provider": "openai",
+      "evidence": "served",
+      "scope": "response",
+      "expected": {
+        "kind": "serviceTier",
+        "value": "ultrafast",
+        "rawValue": "ultrafast",
+        "evidence": "served",
+        "scope": "response",
+        "provider": "openai"
+      }
+    },
+    {
+      "id": "openai-flex",
+      "adapter": "serviceTier",
+      "rawValue": "flex",
+      "provider": "openai",
+      "evidence": "served",
+      "scope": "response",
+      "expected": {
+        "kind": "serviceTier",
+        "value": "flex",
+        "rawValue": "flex",
+        "evidence": "served",
+        "scope": "response",
+        "provider": "openai"
+      }
+    },
+    {
+      "id": "openai-scale",
+      "adapter": "serviceTier",
+      "rawValue": "scale",
+      "provider": "openai",
+      "evidence": "served",
+      "scope": "response",
+      "expected": {
+        "kind": "serviceTier",
+        "value": "scale",
+        "rawValue": "scale",
+        "evidence": "served",
+        "scope": "response",
+        "provider": "openai"
+      }
+    },
+    {
+      "id": "openai-auto",
+      "adapter": "serviceTier",
+      "rawValue": "auto",
+      "provider": "openai",
+      "evidence": "served",
+      "scope": "response",
+      "expected": {
+        "kind": "serviceTier",
+        "value": "auto",
+        "rawValue": "auto",
+        "evidence": "served",
+        "scope": "response",
+        "provider": "openai"
+      }
+    },
+    {
+      "id": "openai-warp-2",
+      "adapter": "serviceTier",
+      "rawValue": "warp-2",
+      "provider": "openai",
+      "evidence": "served",
+      "scope": "response",
+      "expected": {
+        "kind": "serviceTier",
+        "value": "warp-2",
+        "rawValue": "warp-2",
+        "evidence": "served",
+        "scope": "response",
+        "provider": "openai"
+      }
+    },
+    {
+      "id": "invalid-9",
+      "adapter": "serviceTier",
+      "rawValue": null,
+      "provider": "openai",
+      "evidence": "served",
+      "scope": "response",
+      "expected": null
+    },
+    {
+      "id": "invalid-10",
+      "adapter": "serviceTier",
+      "rawValue": "",
+      "provider": "openai",
+      "evidence": "served",
+      "scope": "response",
+      "expected": null
+    },
+    {
+      "id": "invalid-11",
+      "adapter": "serviceTier",
+      "rawValue": true,
+      "provider": "openai",
+      "evidence": "served",
+      "scope": "response",
+      "expected": null
+    },
+    {
+      "id": "invalid-12",
+      "adapter": "serviceTier",
+      "rawValue": 1,
+      "provider": "openai",
+      "evidence": "served",
+      "scope": "response",
+      "expected": null
+    },
+    {
+      "id": "invalid-13",
+      "adapter": "serviceTier",
+      "rawValue": " fast",
+      "provider": "openai",
+      "evidence": "served",
+      "scope": "response",
+      "expected": null
+    },
+    {
+      "id": "invalid-14",
+      "adapter": "serviceTier",
+      "rawValue": "fast ",
+      "provider": "openai",
+      "evidence": "served",
+      "scope": "response",
+      "expected": null
+    },
+    {
+      "id": "invalid-15",
+      "adapter": "serviceTier",
+      "rawValue": "https://example.invalid",
+      "provider": "openai",
+      "evidence": "served",
+      "scope": "response",
+      "expected": null
+    },
+    {
+      "id": "invalid-16",
+      "adapter": "serviceTier",
+      "rawValue": "../fast",
+      "provider": "openai",
+      "evidence": "served",
+      "scope": "response",
+      "expected": null
+    },
+    {
+      "id": "invalid-17",
+      "adapter": "serviceTier",
+      "rawValue": "快",
+      "provider": "openai",
+      "evidence": "served",
+      "scope": "response",
+      "expected": null
+    },
+    {
+      "id": "invalid-18",
+      "adapter": "serviceTier",
+      "rawValue": "fast\n",
+      "provider": "openai",
+      "evidence": "served",
+      "scope": "response",
+      "expected": null
+    },
+    {
+      "id": "invalid-provider",
+      "adapter": "serviceTier",
+      "rawValue": "fast",
+      "provider": "https://api.invalid",
+      "evidence": "served",
+      "scope": "response",
+      "expected": null
+    },
+    {
+      "id": "anthropic-priority-is-not-fast",
+      "adapter": "serviceTier",
+      "rawValue": "priority",
+      "provider": "anthropic",
+      "evidence": "served",
+      "scope": "response",
+      "expected": null
+    },
+    {
+      "id": "claude-fast",
+      "adapter": "claudeSpeed",
+      "rawValue": "fast",
+      "provider": "anthropic",
+      "evidence": "served",
+      "scope": "response",
+      "expected": {
+        "kind": "serviceTier",
+        "value": "fast",
+        "rawValue": "fast",
+        "evidence": "served",
+        "scope": "response",
+        "provider": "anthropic"
+      }
+    },
+    {
+      "id": "claude-standard",
+      "adapter": "claudeSpeed",
+      "rawValue": "standard",
+      "provider": "anthropic",
+      "evidence": "served",
+      "scope": "response",
+      "expected": {
+        "kind": "serviceTier",
+        "value": "standard",
+        "rawValue": "standard",
+        "evidence": "served",
+        "scope": "response",
+        "provider": "anthropic"
+      }
+    },
+    {
+      "id": "claude-missing",
+      "adapter": "claudeSpeed",
+      "rawValue": null,
+      "provider": "anthropic",
+      "evidence": "served",
+      "scope": "response",
+      "expected": null
+    },
+    {
+      "id": "omp-recorded",
+      "adapter": "serviceTier",
+      "rawValue": "priority",
+      "provider": "openai",
+      "evidence": "recorded",
+      "scope": "request",
+      "expected": {
+        "kind": "serviceTier",
+        "value": "fast",
+        "rawValue": "priority",
+        "evidence": "recorded",
+        "scope": "request",
+        "provider": "openai"
+      }
+    },
+    {
+      "id": "codex-configured-default",
+      "adapter": "serviceTier",
+      "rawValue": "default",
+      "provider": "openai",
+      "evidence": "configured",
+      "scope": "configuration",
+      "expected": {
+        "kind": "serviceTier",
+        "value": "standard",
+        "rawValue": "default",
+        "evidence": "configured",
+        "scope": "configuration",
+        "provider": "openai"
+      }
+    },
+    {
+      "id": "kimi-k3.1-pro-highspeed",
+      "adapter": "kimiModel",
+      "rawValue": "k3.1-pro-highspeed",
+      "provider": "kimi",
+      "evidence": "selected",
+      "scope": "request",
+      "expected": {
+        "kind": "modelVariant",
+        "value": "highspeed",
+        "rawValue": "k3.1-pro-highspeed",
+        "evidence": "selected",
+        "scope": "request",
+        "provider": "kimi"
+      }
+    },
+    {
+      "id": "kimi-kimi-for-coding-highspeed",
+      "adapter": "kimiModel",
+      "rawValue": "kimi-for-coding-highspeed",
+      "provider": "kimi",
+      "evidence": "selected",
+      "scope": "request",
+      "expected": {
+        "kind": "modelVariant",
+        "value": "highspeed",
+        "rawValue": "kimi-for-coding-highspeed",
+        "evidence": "selected",
+        "scope": "request",
+        "provider": "kimi"
+      }
+    },
+    {
+      "id": "model-name-not-evidence-28",
+      "adapter": "kimiModel",
+      "rawValue": "my-fast-backend",
+      "provider": "kimi",
+      "evidence": "selected",
+      "scope": "request",
+      "expected": null
+    },
+    {
+      "id": "model-name-not-evidence-29",
+      "adapter": "kimiModel",
+      "rawValue": "grok-code-fast-1",
+      "provider": "kimi",
+      "evidence": "selected",
+      "scope": "request",
+      "expected": null
+    },
+    {
+      "id": "model-name-not-evidence-30",
+      "adapter": "kimiModel",
+      "rawValue": "k3.1-pro-highspeed-copy",
+      "provider": "kimi",
+      "evidence": "selected",
+      "scope": "request",
+      "expected": null
+    },
+    {
+      "id": "routing-fast-model",
+      "adapter": "routing",
+      "rawValue": "fast-model",
+      "provider": null,
+      "evidence": "selected",
+      "scope": "request",
+      "expected": {
+        "kind": "routing",
+        "value": "fast",
+        "rawValue": "fast-model",
+        "evidence": "selected",
+        "scope": "request"
+      }
+    },
+    {
+      "id": "routing-balanced-model",
+      "adapter": "routing",
+      "rawValue": "balanced-model",
+      "provider": null,
+      "evidence": "selected",
+      "scope": "request",
+      "expected": {
+        "kind": "routing",
+        "value": "balanced",
+        "rawValue": "balanced-model",
+        "evidence": "selected",
+        "scope": "request"
+      }
+    },
+    {
+      "id": "routing-deep-model",
+      "adapter": "routing",
+      "rawValue": "deep-model",
+      "provider": null,
+      "evidence": "selected",
+      "scope": "request",
+      "expected": {
+        "kind": "routing",
+        "value": "deep",
+        "rawValue": "deep-model",
+        "evidence": "selected",
+        "scope": "request"
+      }
+    },
+    {
+      "id": "routing-auto",
+      "adapter": "routing",
+      "rawValue": "auto",
+      "provider": null,
+      "evidence": "selected",
+      "scope": "request",
+      "expected": {
+        "kind": "routing",
+        "value": "auto",
+        "rawValue": "auto",
+        "evidence": "selected",
+        "scope": "request"
+      }
+    },
+    {
+      "id": "workflow-fast",
+      "adapter": "workflow",
+      "rawValue": "fast",
+      "provider": null,
+      "evidence": "selected",
+      "scope": "turn",
+      "expected": {
+        "kind": "workflow",
+        "value": "fast",
+        "rawValue": "fast",
+        "evidence": "selected",
+        "scope": "turn"
+      }
+    },
+    {
+      "id": "workflow-planning",
+      "adapter": "workflow",
+      "rawValue": "planning",
+      "provider": null,
+      "evidence": "selected",
+      "scope": "turn",
+      "expected": {
+        "kind": "workflow",
+        "value": "planning",
+        "rawValue": "planning",
+        "evidence": "selected",
+        "scope": "turn"
+      }
+    },
+    {
+      "id": "turbo-is-not-workflow-fast",
+      "adapter": "workflow",
+      "rawValue": "turbo",
+      "provider": null,
+      "evidence": "selected",
+      "scope": "turn",
+      "expected": null
+    },
+    {
+      "id": "effort-xhigh",
+      "adapter": "effort",
+      "rawValue": "xhigh",
+      "evidence": "recorded",
+      "scope": "request",
+      "expected": {
+        "kind": "effort",
+        "value": "xhigh",
+        "rawValue": "xhigh",
+        "evidence": "recorded",
+        "scope": "request"
+      }
+    },
+    {
+      "id": "effort-upper",
+      "adapter": "effort",
+      "rawValue": "MAX",
+      "evidence": "recorded",
+      "scope": "request",
+      "expected": {
+        "kind": "effort",
+        "value": "max",
+        "rawValue": "MAX",
+        "evidence": "recorded",
+        "scope": "request"
+      }
+    },
+    {
+      "id": "effort-none-is-off",
+      "adapter": "effort",
+      "rawValue": "none",
+      "evidence": "recorded",
+      "scope": "request",
+      "expected": {
+        "kind": "effort",
+        "value": "off",
+        "rawValue": "none",
+        "evidence": "recorded",
+        "scope": "request"
+      }
+    },
+    {
+      "id": "effort-default",
+      "adapter": "effort",
+      "rawValue": "default",
+      "evidence": "recorded",
+      "scope": "request",
+      "expected": null
+    },
+    {
+      "id": "effort-auto",
+      "adapter": "effort",
+      "rawValue": "auto",
+      "evidence": "recorded",
+      "scope": "request",
+      "expected": null
+    },
+    {
+      "id": "effort-inherit",
+      "adapter": "effort",
+      "rawValue": "inherit",
+      "evidence": "recorded",
+      "scope": "request",
+      "expected": null
+    },
+    {
+      "id": "effort-ultra",
+      "adapter": "effort",
+      "rawValue": "ultra",
+      "evidence": "recorded",
+      "scope": "request",
+      "expected": {
+        "kind": "effort",
+        "value": "ultra",
+        "rawValue": "ultra",
+        "evidence": "recorded",
+        "scope": "request"
+      }
+    },
+    {
+      "id": "effort-ultracode",
+      "adapter": "effort",
+      "rawValue": "ultracode",
+      "evidence": "recorded",
+      "scope": "request",
+      "expected": {
+        "kind": "effort",
+        "value": "ultracode",
+        "rawValue": "ultracode",
+        "evidence": "recorded",
+        "scope": "request"
+      }
+    },
+    {
+      "id": "effort-future-token",
+      "adapter": "effort",
+      "rawValue": "persistent",
+      "evidence": "recorded",
+      "scope": "request",
+      "expected": {
+        "kind": "effort",
+        "value": "persistent",
+        "rawValue": "persistent",
+        "evidence": "recorded",
+        "scope": "request"
+      }
+    },
+    {
+      "id": "effort-unsafe",
+      "adapter": "effort",
+      "rawValue": "x high",
+      "evidence": "recorded",
+      "scope": "request",
+      "expected": null
+    },
+    {
+      "id": "effort-empty",
+      "adapter": "effort",
+      "rawValue": "",
+      "evidence": "recorded",
+      "scope": "request",
+      "expected": null
+    },
+    {
+      "id": "effort-too-long",
+      "adapter": "effort",
+      "rawValue": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "evidence": "recorded",
+      "scope": "request",
+      "expected": null
+    },
+    {
+      "id": "effort-selected-session",
+      "adapter": "effort",
+      "rawValue": "high",
+      "evidence": "selected",
+      "scope": "session",
+      "expected": {
+        "kind": "effort",
+        "value": "high",
+        "rawValue": "high",
+        "evidence": "selected",
+        "scope": "session"
+      }
+    },
+    {
+      "id": "effort-disabled-is-off",
+      "adapter": "effort",
+      "rawValue": "disabled",
+      "evidence": "selected",
+      "scope": "session",
+      "expected": {
+        "kind": "effort",
+        "value": "off",
+        "rawValue": "disabled",
+        "evidence": "selected",
+        "scope": "session"
+      }
+    },
+    {
+      "id": "effort-enabled-is-on",
+      "adapter": "effort",
+      "rawValue": "enabled",
+      "evidence": "recorded",
+      "scope": "request",
+      "expected": {
+        "kind": "effort",
+        "value": "on",
+        "rawValue": "enabled",
+        "evidence": "recorded",
+        "scope": "request"
+      }
+    },
+    {
+      "id": "effort-on-stays",
+      "adapter": "effort",
+      "rawValue": "on",
+      "evidence": "recorded",
+      "scope": "request",
+      "expected": {
+        "kind": "effort",
+        "value": "on",
+        "rawValue": "on",
+        "evidence": "recorded",
+        "scope": "request"
+      }
+    },
+    {
+      "id": "effort-adaptive-stays",
+      "adapter": "effort",
+      "rawValue": "adaptive",
+      "evidence": "recorded",
+      "scope": "turn",
+      "expected": {
+        "kind": "effort",
+        "value": "adaptive",
+        "rawValue": "adaptive",
+        "evidence": "recorded",
+        "scope": "turn"
+      }
+    },
+    {
+      "id": "effort-extra-low-stays",
+      "adapter": "effort",
+      "rawValue": "extra-low",
+      "evidence": "recorded",
+      "scope": "turn",
+      "expected": {
+        "kind": "effort",
+        "value": "extra-low",
+        "rawValue": "extra-low",
+        "evidence": "recorded",
+        "scope": "turn"
+      }
+    },
+    {
+      "id": "effort-gemini-level-lowered",
+      "adapter": "effort",
+      "rawValue": "HIGH",
+      "evidence": "configured",
+      "scope": "configuration",
+      "expected": {
+        "kind": "effort",
+        "value": "high",
+        "rawValue": "HIGH",
+        "evidence": "configured",
+        "scope": "configuration"
+      }
+    },
+    {
+      "id": "effort-gemini-unspecified",
+      "adapter": "effort",
+      "rawValue": "THINKING_LEVEL_UNSPECIFIED",
+      "evidence": "configured",
+      "scope": "configuration",
+      "expected": null
+    },
+    {
+      "id": "google-priority-is-fast",
+      "adapter": "serviceTier",
+      "rawValue": "priority",
+      "provider": "google",
+      "evidence": "served",
+      "scope": "response",
+      "expected": {
+        "kind": "serviceTier",
+        "value": "fast",
+        "rawValue": "priority",
+        "evidence": "served",
+        "scope": "response",
+        "provider": "google"
+      }
+    },
+    {
+      "id": "google-standard",
+      "adapter": "serviceTier",
+      "rawValue": "standard",
+      "provider": "google",
+      "evidence": "served",
+      "scope": "response",
+      "expected": {
+        "kind": "serviceTier",
+        "value": "standard",
+        "rawValue": "standard",
+        "evidence": "served",
+        "scope": "response",
+        "provider": "google"
+      }
+    },
+    {
+      "id": "google-flex-stays",
+      "adapter": "serviceTier",
+      "rawValue": "flex",
+      "provider": "google",
+      "evidence": "served",
+      "scope": "response",
+      "expected": {
+        "kind": "serviceTier",
+        "value": "flex",
+        "rawValue": "flex",
+        "evidence": "served",
+        "scope": "response",
+        "provider": "google"
+      }
+    },
+    {
+      "id": "google-unspecified",
+      "adapter": "serviceTier",
+      "rawValue": "unspecified",
+      "provider": "google",
+      "evidence": "configured",
+      "scope": "configuration",
+      "expected": null
+    },
+    {
+      "id": "zcode-glm-highspeed",
+      "adapter": "zcodeModel",
+      "rawValue": "GLM-5.1-Highspeed",
+      "provider": "zcode",
+      "evidence": "selected",
+      "scope": "request",
+      "expected": {
+        "kind": "modelVariant",
+        "value": "highspeed",
+        "rawValue": "GLM-5.1-Highspeed",
+        "evidence": "selected",
+        "scope": "request",
+        "provider": "zcode"
+      }
+    },
+    {
+      "id": "zcode-model-case-matters",
+      "adapter": "zcodeModel",
+      "rawValue": "glm-5.1-highspeed",
+      "provider": "zcode",
+      "evidence": "selected",
+      "scope": "request",
+      "expected": null
+    },
+    {
+      "id": "zcode-model-no-prefix-match",
+      "adapter": "zcodeModel",
+      "rawValue": "GLM-5.1-Highspeed-x",
+      "provider": "zcode",
+      "evidence": "selected",
+      "scope": "request",
+      "expected": null
+    },
+    {
+      "id": "zcode-card-zai",
+      "adapter": "zcodeProvider",
+      "rawValue": "account:zai-highspeed-card",
+      "provider": "zcode",
+      "evidence": "recorded",
+      "scope": "request",
+      "expected": {
+        "kind": "accelerator",
+        "value": "highspeed",
+        "rawValue": "account:zai-highspeed-card",
+        "evidence": "recorded",
+        "scope": "request",
+        "provider": "zcode"
+      }
+    },
+    {
+      "id": "zcode-card-bigmodel",
+      "adapter": "zcodeProvider",
+      "rawValue": "account:bigmodel-highspeed-card",
+      "provider": "zcode",
+      "evidence": "recorded",
+      "scope": "request",
+      "expected": {
+        "kind": "accelerator",
+        "value": "highspeed",
+        "rawValue": "account:bigmodel-highspeed-card",
+        "evidence": "recorded",
+        "scope": "request",
+        "provider": "zcode"
+      }
+    },
+    {
+      "id": "zcode-plain-account",
+      "adapter": "zcodeProvider",
+      "rawValue": "account:zai",
+      "provider": "zcode",
+      "evidence": "recorded",
+      "scope": "request",
+      "expected": null
+    },
+    {
+      "id": "droid-opus-fast",
+      "adapter": "droidModel",
+      "rawValue": "claude-opus-5-5-fast",
+      "evidence": "recorded",
+      "scope": "request",
+      "expected": {
+        "kind": "serviceTier",
+        "value": "fast",
+        "rawValue": "claude-opus-5-5-fast",
+        "evidence": "recorded",
+        "scope": "request",
+        "provider": "anthropic"
+      }
+    },
+    {
+      "id": "droid-gpt-fast",
+      "adapter": "droidModel",
+      "rawValue": "gpt-5.4-mini-fast",
+      "evidence": "recorded",
+      "scope": "request",
+      "expected": {
+        "kind": "serviceTier",
+        "value": "fast",
+        "rawValue": "gpt-5.4-mini-fast",
+        "evidence": "recorded",
+        "scope": "request",
+        "provider": "openai"
+      }
+    },
+    {
+      "id": "droid-alias-fast",
+      "adapter": "droidModel",
+      "rawValue": "gpt-5.6-fast",
+      "evidence": "recorded",
+      "scope": "request",
+      "expected": {
+        "kind": "serviceTier",
+        "value": "fast",
+        "rawValue": "gpt-5.6-fast",
+        "evidence": "recorded",
+        "scope": "request",
+        "provider": "openai"
+      }
+    },
+    {
+      "id": "droid-ultrafast",
+      "adapter": "droidModel",
+      "rawValue": "gpt-6.1-sol-ultrafast",
+      "evidence": "recorded",
+      "scope": "request",
+      "expected": {
+        "kind": "serviceTier",
+        "value": "ultrafast",
+        "rawValue": "gpt-6.1-sol-ultrafast",
+        "evidence": "recorded",
+        "scope": "request",
+        "provider": "openai"
+      }
+    },
+    {
+      "id": "droid-flex",
+      "adapter": "droidModel",
+      "rawValue": "gpt-5.6-terra-flex",
+      "evidence": "recorded",
+      "scope": "request",
+      "expected": {
+        "kind": "serviceTier",
+        "value": "flex",
+        "rawValue": "gpt-5.6-terra-flex",
+        "evidence": "recorded",
+        "scope": "request",
+        "provider": "openai"
+      }
+    },
+    {
+      "id": "droid-glm-fast-is-a-model",
+      "adapter": "droidModel",
+      "rawValue": "glm-5.2-fast",
+      "evidence": "recorded",
+      "scope": "request",
+      "expected": null
+    },
+    {
+      "id": "droid-router-is-not-a-tier",
+      "adapter": "droidModel",
+      "rawValue": "auto-fast",
+      "evidence": "recorded",
+      "scope": "request",
+      "expected": null
+    },
+    {
+      "id": "droid-custom-is-not-a-tier",
+      "adapter": "droidModel",
+      "rawValue": "custom:gpt-5.5-fast-1",
+      "evidence": "recorded",
+      "scope": "request",
+      "expected": null
+    },
+    {
+      "id": "droid-no-suffix-match",
+      "adapter": "droidModel",
+      "rawValue": "claude-sonnet-5-5-fast",
+      "evidence": "recorded",
+      "scope": "request",
+      "expected": null
+    },
+    {
+      "id": "omp-anthropic-priority",
+      "adapter": "ompTier",
+      "rawValue": "priority",
+      "provider": "anthropic",
+      "evidence": "selected",
+      "scope": "session",
+      "expected": {
+        "kind": "serviceTier",
+        "value": "fast",
+        "rawValue": "priority",
+        "evidence": "selected",
+        "scope": "session",
+        "provider": "anthropic"
+      }
+    },
+    {
+      "id": "omp-openai-default",
+      "adapter": "ompTier",
+      "rawValue": "default",
+      "provider": "openai",
+      "evidence": "selected",
+      "scope": "session",
+      "expected": {
+        "kind": "serviceTier",
+        "value": "standard",
+        "rawValue": "default",
+        "evidence": "selected",
+        "scope": "session",
+        "provider": "openai"
+      }
+    },
+    {
+      "id": "omp-codex-ultrafast",
+      "adapter": "ompTier",
+      "rawValue": "ultrafast",
+      "provider": "openai-codex",
+      "evidence": "recorded",
+      "scope": "response",
+      "expected": {
+        "kind": "serviceTier",
+        "value": "ultrafast",
+        "rawValue": "ultrafast",
+        "evidence": "recorded",
+        "scope": "response",
+        "provider": "openai"
+      }
+    },
+    {
+      "id": "omp-google-priority",
+      "adapter": "ompTier",
+      "rawValue": "priority",
+      "provider": "google-vertex",
+      "evidence": "recorded",
+      "scope": "response",
+      "expected": {
+        "kind": "serviceTier",
+        "value": "fast",
+        "rawValue": "priority",
+        "evidence": "recorded",
+        "scope": "response",
+        "provider": "google"
+      }
+    },
+    {
+      "id": "omp-other-provider",
+      "adapter": "ompTier",
+      "rawValue": "priority",
+      "provider": "openrouter",
+      "evidence": "recorded",
+      "scope": "response",
+      "expected": null
+    },
+    {
+      "id": "hermes-effort-high",
+      "adapter": "hermesEffort",
+      "rawValue": "high",
+      "evidence": "configured",
+      "scope": "configuration",
+      "expected": {
+        "kind": "effort",
+        "value": "high",
+        "rawValue": "high",
+        "evidence": "configured",
+        "scope": "configuration"
+      }
+    },
+    {
+      "id": "hermes-effort-ultra",
+      "adapter": "hermesEffort",
+      "rawValue": "ultra",
+      "evidence": "configured",
+      "scope": "configuration",
+      "expected": {
+        "kind": "effort",
+        "value": "ultra",
+        "rawValue": "ultra",
+        "evidence": "configured",
+        "scope": "configuration"
+      }
+    },
+    {
+      "id": "hermes-effort-none",
+      "adapter": "hermesEffort",
+      "rawValue": "none",
+      "evidence": "configured",
+      "scope": "configuration",
+      "expected": {
+        "kind": "effort",
+        "value": "off",
+        "rawValue": "none",
+        "evidence": "configured",
+        "scope": "configuration"
+      }
+    },
+    {
+      "id": "hermes-effort-false",
+      "adapter": "hermesEffort",
+      "rawValue": "false",
+      "evidence": "configured",
+      "scope": "configuration",
+      "expected": {
+        "kind": "effort",
+        "value": "off",
+        "rawValue": "false",
+        "evidence": "configured",
+        "scope": "configuration"
+      }
+    },
+    {
+      "id": "hermes-effort-disabled",
+      "adapter": "hermesEffort",
+      "rawValue": "disabled",
+      "evidence": "configured",
+      "scope": "configuration",
+      "expected": {
+        "kind": "effort",
+        "value": "off",
+        "rawValue": "disabled",
+        "evidence": "configured",
+        "scope": "configuration"
+      }
+    },
+    {
+      "id": "hermes-effort-typo",
+      "adapter": "hermesEffort",
+      "rawValue": "hgih",
+      "evidence": "configured",
+      "scope": "configuration",
+      "expected": null
+    },
+    {
+      "id": "hermes-tier-fast",
+      "adapter": "hermesServiceTier",
+      "rawValue": "fast",
+      "evidence": "configured",
+      "scope": "configuration",
+      "expected": {
+        "kind": "serviceTier",
+        "value": "fast",
+        "rawValue": "fast",
+        "evidence": "configured",
+        "scope": "configuration"
+      }
+    },
+    {
+      "id": "hermes-tier-priority",
+      "adapter": "hermesServiceTier",
+      "rawValue": "priority",
+      "evidence": "configured",
+      "scope": "configuration",
+      "expected": {
+        "kind": "serviceTier",
+        "value": "fast",
+        "rawValue": "priority",
+        "evidence": "configured",
+        "scope": "configuration"
+      }
+    },
+    {
+      "id": "hermes-tier-ultra",
+      "adapter": "hermesServiceTier",
+      "rawValue": "ultra",
+      "evidence": "configured",
+      "scope": "configuration",
+      "expected": {
+        "kind": "serviceTier",
+        "value": "ultrafast",
+        "rawValue": "ultra",
+        "evidence": "configured",
+        "scope": "configuration"
+      }
+    },
+    {
+      "id": "hermes-tier-normal",
+      "adapter": "hermesServiceTier",
+      "rawValue": "normal",
+      "evidence": "configured",
+      "scope": "configuration",
+      "expected": {
+        "kind": "serviceTier",
+        "value": "standard",
+        "rawValue": "normal",
+        "evidence": "configured",
+        "scope": "configuration"
+      }
+    },
+    {
+      "id": "hermes-tier-auto-is-a-window",
+      "adapter": "hermesServiceTier",
+      "rawValue": "auto",
+      "evidence": "configured",
+      "scope": "configuration",
+      "expected": null
+    },
+    {
+      "id": "hermes-tier-cold-is-a-window",
+      "adapter": "hermesServiceTier",
+      "rawValue": "cold",
+      "evidence": "configured",
+      "scope": "configuration",
+      "expected": null
+    },
+    {
+      "id": "hermes-tier-yaml-on",
+      "adapter": "hermesServiceTier",
+      "rawValue": "on",
+      "evidence": "configured",
+      "scope": "configuration",
+      "expected": null
+    }
+  ],
+  "attribution": [
+    {
+      "id": "missing",
+      "kind": "serviceTier",
+      "facts": [],
+      "expected": {
+        "mode": "unknown",
+        "evidence": "unknown"
+      }
+    },
+    {
+      "id": "configured-is-not-selected",
+      "kind": "serviceTier",
+      "facts": [
+        {
+          "kind": "serviceTier",
+          "value": "fast",
+          "rawValue": "fast",
+          "evidence": "configured",
+          "scope": "configuration",
+          "provider": "openai"
+        }
+      ],
+      "expected": {
+        "mode": "unknown",
+        "evidence": "unknown"
+      }
+    },
+    {
+      "id": "fast-request-standard-response",
+      "kind": "serviceTier",
+      "facts": [
+        {
+          "kind": "serviceTier",
+          "value": "fast",
+          "rawValue": "priority",
+          "evidence": "selected",
+          "scope": "request",
+          "provider": "openai"
+        },
+        {
+          "kind": "serviceTier",
+          "value": "standard",
+          "rawValue": "default",
+          "evidence": "served",
+          "scope": "response",
+          "provider": "openai"
+        }
+      ],
+      "expected": {
+        "mode": "standard",
+        "evidence": "served",
+        "provider": "openai"
+      }
+    },
+    {
+      "id": "selected-only",
+      "kind": "serviceTier",
+      "facts": [
+        {
+          "kind": "serviceTier",
+          "value": "ultrafast",
+          "rawValue": "ultrafast",
+          "evidence": "selected",
+          "scope": "turn",
+          "provider": "openai"
+        }
+      ],
+      "expected": {
+        "mode": "ultrafast",
+        "evidence": "selected",
+        "provider": "openai"
+      }
+    },
+    {
+      "id": "recorded-is-not-served",
+      "kind": "serviceTier",
+      "facts": [
+        {
+          "kind": "serviceTier",
+          "value": "fast",
+          "rawValue": "priority",
+          "evidence": "recorded",
+          "scope": "request",
+          "provider": "openai"
+        }
+      ],
+      "expected": {
+        "mode": "fast",
+        "evidence": "recorded",
+        "provider": "openai"
+      }
+    },
+    {
+      "id": "auto-is-unresolved",
+      "kind": "serviceTier",
+      "facts": [
+        {
+          "kind": "serviceTier",
+          "value": "auto",
+          "rawValue": "auto",
+          "evidence": "selected",
+          "scope": "turn",
+          "provider": "openai"
+        }
+      ],
+      "expected": {
+        "mode": "unknown",
+        "evidence": "unknown"
+      }
+    },
+    {
+      "id": "inherit-is-unresolved",
+      "kind": "serviceTier",
+      "facts": [
+        {
+          "kind": "serviceTier",
+          "value": "inherit",
+          "rawValue": "inherit",
+          "evidence": "selected",
+          "scope": "turn",
+          "provider": "openai"
+        }
+      ],
+      "expected": {
+        "mode": "unknown",
+        "evidence": "unknown"
+      }
+    },
+    {
+      "id": "turn-override",
+      "kind": "serviceTier",
+      "facts": [
+        {
+          "kind": "serviceTier",
+          "value": "fast",
+          "rawValue": "fast",
+          "evidence": "selected",
+          "scope": "session",
+          "provider": "openai"
+        },
+        {
+          "kind": "serviceTier",
+          "value": "ultrafast",
+          "rawValue": "ultrafast",
+          "evidence": "selected",
+          "scope": "turn",
+          "provider": "openai"
+        }
+      ],
+      "expected": {
+        "mode": "ultrafast",
+        "evidence": "selected",
+        "provider": "openai"
+      }
+    },
+    {
+      "id": "different-dimension",
+      "kind": "serviceTier",
+      "facts": [
+        {
+          "kind": "workflow",
+          "value": "fast",
+          "rawValue": "fast",
+          "evidence": "selected",
+          "scope": "turn"
+        }
+      ],
+      "expected": {
+        "mode": "unknown",
+        "evidence": "unknown"
+      }
+    },
+    {
+      "id": "routing-kept-separate",
+      "kind": "routing",
+      "facts": [
+        {
+          "kind": "routing",
+          "value": "fast",
+          "rawValue": "fast-model",
+          "evidence": "selected",
+          "scope": "request"
+        }
+      ],
+      "expected": {
+        "mode": "fast",
+        "evidence": "selected"
+      }
+    },
+    {
+      "id": "literal-unknown-unresolved",
+      "kind": "serviceTier",
+      "facts": [
+        {
+          "kind": "serviceTier",
+          "value": "unknown",
+          "rawValue": "unknown",
+          "evidence": "served",
+          "scope": "response",
+          "provider": "openai"
+        }
+      ],
+      "expected": {
+        "mode": "unknown",
+        "evidence": "unknown"
+      }
+    },
+    {
+      "id": "literal-none-unresolved",
+      "kind": "serviceTier",
+      "facts": [
+        {
+          "kind": "serviceTier",
+          "value": "none",
+          "rawValue": "none",
+          "evidence": "served",
+          "scope": "response",
+          "provider": "openai"
+        }
+      ],
+      "expected": {
+        "mode": "unknown",
+        "evidence": "unknown"
+      }
+    },
+    {
+      "id": "effort-recorded-turn-beats-selected-session",
+      "kind": "effort",
+      "facts": [
+        {
+          "kind": "effort",
+          "value": "high",
+          "rawValue": "high",
+          "evidence": "selected",
+          "scope": "session"
+        },
+        {
+          "kind": "effort",
+          "value": "ultra",
+          "rawValue": "ultra",
+          "evidence": "recorded",
+          "scope": "turn"
+        }
+      ],
+      "expected": {
+        "mode": "ultra",
+        "evidence": "recorded"
+      }
+    },
+    {
+      "id": "effort-off-is-resolved",
+      "kind": "effort",
+      "facts": [
+        {
+          "kind": "effort",
+          "value": "off",
+          "rawValue": "none",
+          "evidence": "recorded",
+          "scope": "request"
+        }
+      ],
+      "expected": {
+        "mode": "off",
+        "evidence": "recorded"
+      }
+    },
+    {
+      "id": "tied-facts-that-disagree-are-unknown",
+      "kind": "serviceTier",
+      "facts": [
+        {
+          "kind": "serviceTier",
+          "value": "fast",
+          "rawValue": "fast",
+          "evidence": "selected",
+          "scope": "session",
+          "provider": "openai"
+        },
+        {
+          "kind": "serviceTier",
+          "value": "standard",
+          "rawValue": "standard",
+          "evidence": "selected",
+          "scope": "session",
+          "provider": "anthropic"
+        }
+      ],
+      "expected": {
+        "mode": "unknown",
+        "evidence": "unknown"
+      }
+    },
+    {
+      "id": "a-stronger-fact-breaks-the-tie",
+      "kind": "serviceTier",
+      "facts": [
+        {
+          "kind": "serviceTier",
+          "value": "fast",
+          "rawValue": "fast",
+          "evidence": "selected",
+          "scope": "session",
+          "provider": "openai"
+        },
+        {
+          "kind": "serviceTier",
+          "value": "standard",
+          "rawValue": "standard",
+          "evidence": "selected",
+          "scope": "session",
+          "provider": "anthropic"
+        },
+        {
+          "kind": "serviceTier",
+          "value": "flex",
+          "rawValue": "flex",
+          "evidence": "recorded",
+          "scope": "response",
+          "provider": "openai"
+        }
+      ],
+      "expected": {
+        "mode": "flex",
+        "evidence": "recorded",
+        "provider": "openai"
+      }
+    }
+  ],
+  "capabilities": [
+    {
+      "id": "supported",
+      "extensions": {
+        "executionModes": 1
+      },
+      "modelsEnabled": true,
+      "expected": true,
+      "version": 1
+    },
+    {
+      "id": "absent",
+      "extensions": {},
+      "modelsEnabled": true,
+      "expected": false,
+      "version": 0
+    },
+    {
+      "id": "boolean",
+      "extensions": {
+        "executionModes": true
+      },
+      "modelsEnabled": true,
+      "expected": false,
+      "version": 0
+    },
+    {
+      "id": "version-2",
+      "extensions": {
+        "executionModes": 2
+      },
+      "modelsEnabled": true,
+      "expected": true,
+      "version": 2
+    },
+    {
+      "id": "disabled",
+      "extensions": {
+        "executionModes": 1
+      },
+      "modelsEnabled": false,
+      "expected": false,
+      "version": 0
+    },
+    {
+      "id": "future-3",
+      "extensions": {
+        "executionModes": 3
+      },
+      "modelsEnabled": true,
+      "expected": false,
+      "version": 0
+    }
+  ],
+  "speed": [
+    {
+      "id": "none",
+      "facts": [],
+      "expected": {
+        "mode": "unknown",
+        "evidence": "unknown"
+      }
+    },
+    {
+      "id": "tier-fast",
+      "facts": [
+        {
+          "kind": "serviceTier",
+          "value": "fast",
+          "rawValue": "priority",
+          "evidence": "selected",
+          "scope": "session",
+          "provider": "openai"
+        }
+      ],
+      "expected": {
+        "mode": "fast",
+        "evidence": "selected",
+        "provider": "openai"
+      }
+    },
+    {
+      "id": "tier-ultrafast",
+      "facts": [
+        {
+          "kind": "serviceTier",
+          "value": "ultrafast",
+          "rawValue": "ultrafast",
+          "evidence": "selected",
+          "scope": "session",
+          "provider": "openai"
+        }
+      ],
+      "expected": {
+        "mode": "ultrafast",
+        "evidence": "selected",
+        "provider": "openai"
+      }
+    },
+    {
+      "id": "tier-standard-beats-accelerator",
+      "facts": [
+        {
+          "kind": "serviceTier",
+          "value": "standard",
+          "rawValue": "standard",
+          "evidence": "served",
+          "scope": "response",
+          "provider": "anthropic"
+        },
+        {
+          "kind": "accelerator",
+          "value": "highspeed",
+          "rawValue": "highspeed",
+          "evidence": "selected",
+          "scope": "turn"
+        }
+      ],
+      "expected": {
+        "mode": "standard",
+        "evidence": "served",
+        "provider": "anthropic"
+      }
+    },
+    {
+      "id": "accelerator",
+      "facts": [
+        {
+          "kind": "accelerator",
+          "value": "highspeed",
+          "rawValue": "highspeed",
+          "evidence": "selected",
+          "scope": "turn"
+        }
+      ],
+      "expected": {
+        "mode": "highspeed",
+        "evidence": "selected"
+      }
+    },
+    {
+      "id": "model-variant-highspeed",
+      "facts": [
+        {
+          "kind": "modelVariant",
+          "value": "highspeed",
+          "rawValue": "k3.1-pro-highspeed",
+          "evidence": "selected",
+          "scope": "request",
+          "provider": "kimi"
+        }
+      ],
+      "expected": {
+        "mode": "highspeed",
+        "evidence": "selected",
+        "provider": "kimi"
+      }
+    },
+    {
+      "id": "model-variant-other-ignored",
+      "facts": [
+        {
+          "kind": "modelVariant",
+          "value": "mini",
+          "rawValue": "mini",
+          "evidence": "selected",
+          "scope": "request"
+        }
+      ],
+      "expected": {
+        "mode": "unknown",
+        "evidence": "unknown"
+      }
+    },
+    {
+      "id": "unresolved-tier-falls-through",
+      "facts": [
+        {
+          "kind": "serviceTier",
+          "value": "auto",
+          "rawValue": "auto",
+          "evidence": "selected",
+          "scope": "session",
+          "provider": "openai"
+        },
+        {
+          "kind": "accelerator",
+          "value": "highspeed",
+          "rawValue": "highspeed",
+          "evidence": "selected",
+          "scope": "turn"
+        }
+      ],
+      "expected": {
+        "mode": "highspeed",
+        "evidence": "selected"
+      }
+    },
+    {
+      "id": "configured-only",
+      "facts": [
+        {
+          "kind": "serviceTier",
+          "value": "fast",
+          "rawValue": "priority",
+          "evidence": "configured",
+          "scope": "configuration",
+          "provider": "openai"
+        }
+      ],
+      "expected": {
+        "mode": "unknown",
+        "evidence": "unknown"
+      }
+    },
+    {
+      "id": "served-beats-selected",
+      "facts": [
+        {
+          "kind": "serviceTier",
+          "value": "fast",
+          "rawValue": "priority",
+          "evidence": "selected",
+          "scope": "session",
+          "provider": "openai"
+        },
+        {
+          "kind": "serviceTier",
+          "value": "standard",
+          "rawValue": "default",
+          "evidence": "served",
+          "scope": "response",
+          "provider": "openai"
+        }
+      ],
+      "expected": {
+        "mode": "standard",
+        "evidence": "served",
+        "provider": "openai"
+      }
+    },
+    {
+      "id": "routing-is-not-speed",
+      "facts": [
+        {
+          "kind": "routing",
+          "value": "fast",
+          "rawValue": "fast-model",
+          "evidence": "selected",
+          "scope": "request"
+        }
+      ],
+      "expected": {
+        "mode": "unknown",
+        "evidence": "unknown"
+      }
+    },
+    {
+      "id": "droid-fast-is-a-tier",
+      "facts": [
+        {
+          "kind": "serviceTier",
+          "value": "fast",
+          "rawValue": "gpt-5.5-fast",
+          "evidence": "recorded",
+          "scope": "request",
+          "provider": "openai"
+        }
+      ],
+      "expected": {
+        "mode": "fast",
+        "evidence": "recorded",
+        "provider": "openai"
+      }
+    }
+  ],
+  "effortDisplay": [
+    {
+      "value": "off",
+      "expected": {
+        "level": 0,
+        "top": false
+      }
+    },
+    {
+      "value": "minimal",
+      "expected": {
+        "level": 1,
+        "top": false
+      }
+    },
+    {
+      "value": "low",
+      "expected": {
+        "level": 1,
+        "top": false
+      }
+    },
+    {
+      "value": "medium",
+      "expected": {
+        "level": 2,
+        "top": false
+      }
+    },
+    {
+      "value": "high",
+      "expected": {
+        "level": 3,
+        "top": false
+      }
+    },
+    {
+      "value": "xhigh",
+      "expected": {
+        "level": 4,
+        "top": false
+      }
+    },
+    {
+      "value": "max",
+      "expected": {
+        "level": 5,
+        "top": false
+      }
+    },
+    {
+      "value": "ultra",
+      "expected": {
+        "level": 5,
+        "top": true
+      }
+    },
+    {
+      "value": "ultracode",
+      "expected": {
+        "level": 5,
+        "top": true
+      }
+    },
+    {
+      "value": "persistent",
+      "expected": {
+        "level": null,
+        "top": false
+      }
+    },
+    {
+      "value": "on",
+      "expected": {
+        "level": null,
+        "top": false
+      }
+    },
+    {
+      "value": "adaptive",
+      "expected": {
+        "level": null,
+        "top": false
+      }
+    }
+  ],
+  "speedBolts": [
+    {
+      "value": "standard",
+      "bolts": 0
+    },
+    {
+      "value": "fast",
+      "bolts": 1
+    },
+    {
+      "value": "highspeed",
+      "bolts": 1
+    },
+    {
+      "value": "ultrafast",
+      "bolts": 2
+    },
+    {
+      "value": "scale",
+      "bolts": 0
+    },
+    {
+      "value": "flex",
+      "bolts": 0
+    }
+  ],
+  "displayOrder": [
+    {
+      "id": "effort",
+      "kind": "effort",
+      "values": [
+        "xhigh",
+        "unknown",
+        "persistent",
+        "max",
+        "low",
+        "ultracode",
+        "ultra",
+        "aardvark",
+        "off"
+      ],
+      "expected": [
+        "ultracode",
+        "ultra",
+        "max",
+        "xhigh",
+        "low",
+        "off",
+        "aardvark",
+        "persistent",
+        "unknown"
+      ]
+    },
+    {
+      "id": "speed",
+      "kind": "speed",
+      "values": [
+        "standard",
+        "unknown",
+        "fast",
+        "flex",
+        "ultrafast",
+        "highspeed"
+      ],
+      "expected": [
+        "ultrafast",
+        "fast",
+        "highspeed",
+        "standard",
+        "flex",
+        "unknown"
+      ]
+    }
+  ],
+  "reportRows": [
+    {
+      "id": "v1-leaves-effort-out",
+      "version": 1,
+      "sources": {
+        "claudeCode": {
+          "requests": 10,
+          "output": 1000,
+          "measuredOutput": 900,
+          "measuredMs": 9000
+        }
+      },
+      "groups": [
+        {
+          "source": "claudeCode",
+          "kind": "serviceTier",
+          "provider": "anthropic",
+          "mode": "fast",
+          "evidence": "served",
+          "requests": 4,
+          "output": 400,
+          "measuredOutput": 400,
+          "measuredMs": 2000
+        },
+        {
+          "source": "claudeCode",
+          "kind": "effort",
+          "mode": "xhigh",
+          "evidence": "recorded",
+          "requests": 7,
+          "output": 700,
+          "measuredOutput": 650,
+          "measuredMs": 6000
+        }
+      ],
+      "expected": [
+        {
+          "source": "claudeCode",
+          "kind": "serviceTier",
+          "mode": "unknown",
+          "evidence": "unknown",
+          "requests": 6,
+          "output": 600,
+          "measuredOutput": 500,
+          "measuredMs": 7000
+        },
+        {
+          "source": "claudeCode",
+          "kind": "serviceTier",
+          "provider": "anthropic",
+          "mode": "fast",
+          "evidence": "served",
+          "requests": 4,
+          "output": 400,
+          "measuredOutput": 400,
+          "measuredMs": 2000
+        }
+      ]
+    },
+    {
+      "id": "v2-adds-effort",
+      "version": 2,
+      "sources": {
+        "claudeCode": {
+          "requests": 10,
+          "output": 1000,
+          "measuredOutput": 900,
+          "measuredMs": 9000
+        }
+      },
+      "groups": [
+        {
+          "source": "claudeCode",
+          "kind": "serviceTier",
+          "provider": "anthropic",
+          "mode": "fast",
+          "evidence": "served",
+          "requests": 4,
+          "output": 400,
+          "measuredOutput": 400,
+          "measuredMs": 2000
+        },
+        {
+          "source": "claudeCode",
+          "kind": "effort",
+          "mode": "xhigh",
+          "evidence": "recorded",
+          "requests": 7,
+          "output": 700,
+          "measuredOutput": 650,
+          "measuredMs": 6000
+        }
+      ],
+      "expected": [
+        {
+          "source": "claudeCode",
+          "kind": "effort",
+          "mode": "unknown",
+          "evidence": "unknown",
+          "requests": 3,
+          "output": 300,
+          "measuredOutput": 250,
+          "measuredMs": 3000
+        },
+        {
+          "source": "claudeCode",
+          "kind": "effort",
+          "mode": "xhigh",
+          "evidence": "recorded",
+          "requests": 7,
+          "output": 700,
+          "measuredOutput": 650,
+          "measuredMs": 6000
+        },
+        {
+          "source": "claudeCode",
+          "kind": "serviceTier",
+          "mode": "unknown",
+          "evidence": "unknown",
+          "requests": 6,
+          "output": 600,
+          "measuredOutput": 500,
+          "measuredMs": 7000
+        },
+        {
+          "source": "claudeCode",
+          "kind": "serviceTier",
+          "provider": "anthropic",
+          "mode": "fast",
+          "evidence": "served",
+          "requests": 4,
+          "output": 400,
+          "measuredOutput": 400,
+          "measuredMs": 2000
+        }
+      ]
+    },
+    {
+      "id": "v2-effort-always-complete",
+      "version": 2,
+      "sources": {
+        "codex": {
+          "requests": 5,
+          "output": 500,
+          "measuredOutput": 500,
+          "measuredMs": 5000
+        }
+      },
+      "groups": [],
+      "expected": [
+        {
+          "source": "codex",
+          "kind": "effort",
+          "mode": "unknown",
+          "evidence": "unknown",
+          "requests": 5,
+          "output": 500,
+          "measuredOutput": 500,
+          "measuredMs": 5000
+        },
+        {
+          "source": "codex",
+          "kind": "serviceTier",
+          "mode": "unknown",
+          "evidence": "unknown",
+          "requests": 5,
+          "output": 500,
+          "measuredOutput": 500,
+          "measuredMs": 5000
+        }
+      ]
+    },
+    {
+      "id": "v2-per-source",
+      "version": 2,
+      "sources": {
+        "codex": {
+          "requests": 4,
+          "output": 400,
+          "measuredOutput": 300,
+          "measuredMs": 3000
+        },
+        "claudeCode": {
+          "requests": 2,
+          "output": 200,
+          "measuredOutput": 200,
+          "measuredMs": 1000
+        }
+      },
+      "groups": [
+        {
+          "source": "codex",
+          "kind": "effort",
+          "mode": "high",
+          "evidence": "recorded",
+          "requests": 4,
+          "output": 400,
+          "measuredOutput": 300,
+          "measuredMs": 3000
+        },
+        {
+          "source": "claudeCode",
+          "kind": "effort",
+          "mode": "max",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 100,
+          "measuredOutput": 100,
+          "measuredMs": 500
+        }
+      ],
+      "expected": [
+        {
+          "source": "claudeCode",
+          "kind": "effort",
+          "mode": "max",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 100,
+          "measuredOutput": 100,
+          "measuredMs": 500
+        },
+        {
+          "source": "claudeCode",
+          "kind": "effort",
+          "mode": "unknown",
+          "evidence": "unknown",
+          "requests": 1,
+          "output": 100,
+          "measuredOutput": 100,
+          "measuredMs": 500
+        },
+        {
+          "source": "claudeCode",
+          "kind": "serviceTier",
+          "mode": "unknown",
+          "evidence": "unknown",
+          "requests": 2,
+          "output": 200,
+          "measuredOutput": 200,
+          "measuredMs": 1000
+        },
+        {
+          "source": "codex",
+          "kind": "effort",
+          "mode": "high",
+          "evidence": "recorded",
+          "requests": 4,
+          "output": 400,
+          "measuredOutput": 300,
+          "measuredMs": 3000
+        },
+        {
+          "source": "codex",
+          "kind": "serviceTier",
+          "mode": "unknown",
+          "evidence": "unknown",
+          "requests": 4,
+          "output": 400,
+          "measuredOutput": 300,
+          "measuredMs": 3000
+        }
+      ]
+    },
+    {
+      "id": "v2-budget-drops-effort",
+      "version": 2,
+      "sources": {
+        "omp": {
+          "requests": 40,
+          "output": 400,
+          "measuredOutput": 400,
+          "measuredMs": 4000
+        }
+      },
+      "groups": [
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t00",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t01",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t02",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t03",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t04",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t05",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t06",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t07",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t08",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t09",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t10",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t11",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t12",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t13",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t14",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t15",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t16",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t17",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t18",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t19",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t20",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t21",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t22",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t23",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t24",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t25",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t26",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t27",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t28",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t29",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t30",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t31",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t32",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t33",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t34",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t35",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t36",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t37",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t38",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t39",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "effort",
+          "mode": "e00",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "effort",
+          "mode": "e01",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "effort",
+          "mode": "e02",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "effort",
+          "mode": "e03",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "effort",
+          "mode": "e04",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "effort",
+          "mode": "e05",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "effort",
+          "mode": "e06",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "effort",
+          "mode": "e07",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "effort",
+          "mode": "e08",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "effort",
+          "mode": "e09",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "effort",
+          "mode": "e10",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "effort",
+          "mode": "e11",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "effort",
+          "mode": "e12",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "effort",
+          "mode": "e13",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "effort",
+          "mode": "e14",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "effort",
+          "mode": "e15",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "effort",
+          "mode": "e16",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "effort",
+          "mode": "e17",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "effort",
+          "mode": "e18",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "effort",
+          "mode": "e19",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "effort",
+          "mode": "e20",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "effort",
+          "mode": "e21",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "effort",
+          "mode": "e22",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "effort",
+          "mode": "e23",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "effort",
+          "mode": "e24",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "effort",
+          "mode": "e25",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "effort",
+          "mode": "e26",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "effort",
+          "mode": "e27",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "effort",
+          "mode": "e28",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "effort",
+          "mode": "e29",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        }
+      ],
+      "expected": [
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t00",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t01",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t02",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t03",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t04",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t05",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t06",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t07",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t08",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t09",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t10",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t11",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t12",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t13",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t14",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t15",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t16",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t17",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t18",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t19",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t20",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t21",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t22",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t23",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t24",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t25",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t26",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t27",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t28",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t29",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t30",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t31",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t32",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t33",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t34",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t35",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t36",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t37",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t38",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t39",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        }
+      ]
+    },
+    {
+      "id": "v1-over-budget",
+      "version": 1,
+      "sources": {
+        "omp": {
+          "requests": 70,
+          "output": 700,
+          "measuredOutput": 700,
+          "measuredMs": 7000
+        }
+      },
+      "groups": [
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t00",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t01",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t02",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t03",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t04",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t05",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t06",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t07",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t08",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t09",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t10",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t11",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t12",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t13",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t14",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t15",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t16",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t17",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t18",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t19",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t20",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t21",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t22",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t23",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t24",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t25",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t26",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t27",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t28",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t29",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t30",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t31",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t32",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t33",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t34",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t35",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t36",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t37",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t38",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t39",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t40",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t41",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t42",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t43",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t44",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t45",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t46",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t47",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t48",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t49",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t50",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t51",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t52",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t53",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t54",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t55",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t56",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t57",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t58",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t59",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t60",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t61",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t62",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t63",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t64",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t65",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t66",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t67",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t68",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        },
+        {
+          "source": "omp",
+          "kind": "serviceTier",
+          "provider": "openai",
+          "mode": "t69",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 10,
+          "measuredOutput": 10,
+          "measuredMs": 100
+        }
+      ],
+      "expected": null
+    },
+    {
+      "id": "group-exceeds-total",
+      "version": 2,
+      "sources": {
+        "codex": {
+          "requests": 5,
+          "output": 500,
+          "measuredOutput": 500,
+          "measuredMs": 5000
+        }
+      },
+      "groups": [
+        {
+          "source": "codex",
+          "kind": "effort",
+          "mode": "high",
+          "evidence": "recorded",
+          "requests": 6,
+          "output": 500,
+          "measuredOutput": 500,
+          "measuredMs": 5000
+        }
+      ],
+      "expected": null
+    },
+    {
+      "id": "unsafe-effort-token",
+      "version": 2,
+      "sources": {
+        "codex": {
+          "requests": 5,
+          "output": 500,
+          "measuredOutput": 500,
+          "measuredMs": 5000
+        }
+      },
+      "groups": [
+        {
+          "source": "codex",
+          "kind": "effort",
+          "mode": "very high",
+          "evidence": "recorded",
+          "requests": 1,
+          "output": 100,
+          "measuredOutput": 100,
+          "measuredMs": 1000
+        }
+      ],
+      "expected": null
+    },
+    {
+      "id": "unknown-version",
+      "version": 3,
+      "sources": {
+        "codex": {
+          "requests": 5,
+          "output": 500,
+          "measuredOutput": 500,
+          "measuredMs": 5000
+        }
+      },
+      "groups": [],
+      "expected": null
+    }
+  ],
+  "current": [
+    {
+      "id": "own-fact-first",
+      "kind": "effort",
+      "facts": [
+        {
+          "kind": "effort",
+          "value": "high",
+          "rawValue": "high",
+          "evidence": "recorded",
+          "scope": "request"
+        }
+      ],
+      "session": [
+        {
+          "kind": "effort",
+          "value": "medium",
+          "rawValue": "medium",
+          "evidence": "selected",
+          "scope": "session"
+        }
+      ],
+      "configured": [
+        {
+          "kind": "effort",
+          "value": "low",
+          "rawValue": "low",
+          "evidence": "configured",
+          "scope": "configuration"
+        }
+      ],
+      "expected": {
+        "mode": "high",
+        "evidence": "recorded"
+      }
+    },
+    {
+      "id": "session-before-configured",
+      "kind": "effort",
+      "facts": [],
+      "session": [
+        {
+          "kind": "effort",
+          "value": "medium",
+          "rawValue": "medium",
+          "evidence": "selected",
+          "scope": "session"
+        }
+      ],
+      "configured": [
+        {
+          "kind": "effort",
+          "value": "low",
+          "rawValue": "low",
+          "evidence": "configured",
+          "scope": "configuration"
+        }
+      ],
+      "expected": {
+        "mode": "medium",
+        "evidence": "selected"
+      }
+    },
+    {
+      "id": "configured-last",
+      "kind": "effort",
+      "facts": [],
+      "session": [],
+      "configured": [
+        {
+          "kind": "effort",
+          "value": "low",
+          "rawValue": "low",
+          "evidence": "configured",
+          "scope": "configuration"
+        }
+      ],
+      "expected": {
+        "mode": "low",
+        "evidence": "configured"
+      }
+    },
+    {
+      "id": "nothing",
+      "kind": "effort",
+      "facts": [],
+      "expected": {
+        "mode": "unknown",
+        "evidence": "unknown"
+      }
+    },
+    {
+      "id": "unresolved-falls-through",
+      "kind": "effort",
+      "facts": [
+        {
+          "kind": "effort",
+          "value": "auto",
+          "rawValue": "auto",
+          "evidence": "selected",
+          "scope": "session"
+        }
+      ],
+      "configured": [
+        {
+          "kind": "effort",
+          "value": "low",
+          "rawValue": "low",
+          "evidence": "configured",
+          "scope": "configuration"
+        }
+      ],
+      "expected": {
+        "mode": "low",
+        "evidence": "configured"
+      }
+    },
+    {
+      "id": "off-is-known",
+      "kind": "effort",
+      "facts": [],
+      "session": [
+        {
+          "kind": "effort",
+          "value": "off",
+          "rawValue": "disabled",
+          "evidence": "selected",
+          "scope": "session"
+        }
+      ],
+      "configured": [
+        {
+          "kind": "effort",
+          "value": "low",
+          "rawValue": "low",
+          "evidence": "configured",
+          "scope": "configuration"
+        }
+      ],
+      "expected": {
+        "mode": "off",
+        "evidence": "selected"
+      }
+    },
+    {
+      "id": "a-configured-fact-among-own-facts-does-not-count",
+      "kind": "effort",
+      "facts": [
+        {
+          "kind": "effort",
+          "value": "low",
+          "rawValue": "low",
+          "evidence": "configured",
+          "scope": "configuration"
+        }
+      ],
+      "expected": {
+        "mode": "unknown",
+        "evidence": "unknown"
+      }
+    },
+    {
+      "id": "configured-speed",
+      "kind": "speed",
+      "facts": [],
+      "configured": [
+        {
+          "kind": "serviceTier",
+          "value": "fast",
+          "rawValue": "priority",
+          "evidence": "configured",
+          "scope": "configuration",
+          "provider": "openai"
+        }
+      ],
+      "expected": {
+        "mode": "fast",
+        "evidence": "configured",
+        "provider": "openai"
+      }
+    },
+    {
+      "id": "own-standard-beats-configured-fast",
+      "kind": "speed",
+      "facts": [
+        {
+          "kind": "serviceTier",
+          "value": "standard",
+          "rawValue": "default",
+          "evidence": "selected",
+          "scope": "session",
+          "provider": "openai"
+        }
+      ],
+      "configured": [
+        {
+          "kind": "serviceTier",
+          "value": "fast",
+          "rawValue": "priority",
+          "evidence": "configured",
+          "scope": "configuration",
+          "provider": "openai"
+        }
+      ],
+      "expected": {
+        "mode": "standard",
+        "evidence": "selected",
+        "provider": "openai"
+      }
+    },
+    {
+      "id": "accelerator-beats-configured-tier",
+      "kind": "speed",
+      "facts": [
+        {
+          "kind": "accelerator",
+          "value": "highspeed",
+          "rawValue": "highspeed",
+          "evidence": "recorded",
+          "scope": "request",
+          "provider": "zcode"
+        }
+      ],
+      "configured": [
+        {
+          "kind": "serviceTier",
+          "value": "fast",
+          "rawValue": "priority",
+          "evidence": "configured",
+          "scope": "configuration",
+          "provider": "openai"
+        }
+      ],
+      "expected": {
+        "mode": "highspeed",
+        "evidence": "recorded",
+        "provider": "zcode"
+      }
+    }
+  ],
+  "ledger": [
+    {
+      "id": "known-stays",
+      "response": {
+        "mode": "high",
+        "evidence": "recorded"
+      },
+      "current": {
+        "mode": "low",
+        "evidence": "selected"
+      },
+      "expected": {
+        "mode": "high",
+        "evidence": "recorded"
+      }
+    },
+    {
+      "id": "unknown-takes-selected",
+      "response": {
+        "mode": "unknown",
+        "evidence": "unknown"
+      },
+      "current": {
+        "mode": "medium",
+        "evidence": "selected"
+      },
+      "expected": {
+        "mode": "medium",
+        "evidence": "selected"
+      }
+    },
+    {
+      "id": "unknown-takes-recorded",
+      "response": {
+        "mode": "unknown",
+        "evidence": "unknown"
+      },
+      "current": {
+        "mode": "xhigh",
+        "evidence": "recorded"
+      },
+      "expected": {
+        "mode": "xhigh",
+        "evidence": "recorded"
+      }
+    },
+    {
+      "id": "unknown-takes-served",
+      "response": {
+        "mode": "unknown",
+        "evidence": "unknown"
+      },
+      "current": {
+        "mode": "max",
+        "evidence": "served"
+      },
+      "expected": {
+        "mode": "max",
+        "evidence": "served"
+      }
+    },
+    {
+      "id": "configured-is-never-reported",
+      "response": {
+        "mode": "unknown",
+        "evidence": "unknown"
+      },
+      "current": {
+        "mode": "high",
+        "evidence": "configured"
+      },
+      "expected": {
+        "mode": "unknown",
+        "evidence": "unknown"
+      }
+    },
+    {
+      "id": "unknown-stays-unknown",
+      "response": {
+        "mode": "unknown",
+        "evidence": "unknown"
+      },
+      "current": {
+        "mode": "unknown",
+        "evidence": "unknown"
+      },
+      "expected": {
+        "mode": "unknown",
+        "evidence": "unknown"
+      }
+    },
+    {
+      "id": "provider-is-dropped",
+      "response": {
+        "mode": "unknown",
+        "evidence": "unknown"
+      },
+      "current": {
+        "mode": "high",
+        "evidence": "selected",
+        "provider": "x"
+      },
+      "expected": {
+        "mode": "high",
+        "evidence": "selected"
+      }
+    }
+  ],
+  "antigravityEffort": [
+    {
+      "id": "flash-high",
+      "model": "gemini-3.7-flash-high",
+      "expected": [
+        "gemini-3.7-flash",
+        "high"
+      ]
+    },
+    {
+      "id": "pro-low",
+      "model": "gemini-3.1-pro-low",
+      "expected": [
+        "gemini-3.1-pro",
+        "low"
+      ]
+    },
+    {
+      "id": "flash-medium",
+      "model": "gemini-3.8-flash-medium",
+      "expected": [
+        "gemini-3.8-flash",
+        "medium"
+      ]
+    },
+    {
+      "id": "claude-max",
+      "model": "claude-opus-5-5-max",
+      "expected": [
+        "claude-opus-5-5",
+        "max"
+      ]
+    },
+    {
+      "id": "extra-low-before-low",
+      "model": "gemini-3.5-flash-extra-low",
+      "expected": [
+        "gemini-3.5-flash",
+        "extra-low"
+      ]
+    },
+    {
+      "id": "no-suffix",
+      "model": "gemini-3.1-pro",
+      "expected": null
+    },
+    {
+      "id": "routing-label",
+      "model": "gemini-3.8-flash-tiered",
+      "expected": null
+    },
+    {
+      "id": "not-a-whole-word",
+      "model": "gemini-3.7-flash-highest",
+      "expected": null
+    },
+    {
+      "id": "serving-variant-hides-it",
+      "model": "gemini-3.1-pro-high-exp-b",
+      "expected": null
+    },
+    {
+      "id": "only-a-suffix",
+      "model": "-high",
+      "expected": null
+    },
+    {
+      "id": "label-high",
+      "label": "Gemini 3.1 Pro (High)",
+      "expected": "High"
+    },
+    {
+      "id": "label-max",
+      "label": "Claude Opus 5.5 (Max)",
+      "expected": "Max"
+    },
+    {
+      "id": "label-without-effort",
+      "label": "Gemini 3.1 Flash Lite",
+      "expected": null
+    },
+    {
+      "id": "label-case-matters",
+      "label": "Gemini 3.1 Pro (high)",
+      "expected": null
+    },
+    {
+      "id": "label-trailing-space",
+      "label": "Gemini 3.1 Pro (High) ",
+      "expected": null
+    },
+    {
+      "id": "label-only-the-word",
+      "label": "(High)",
+      "expected": null
+    }
+  ]
+}

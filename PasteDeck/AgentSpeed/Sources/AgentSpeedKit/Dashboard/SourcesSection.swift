@@ -1,0 +1,149 @@
+import AgentSpeedCore
+import SwiftUI
+
+/// One row per source that produced tokens today, with its live speed and today's output (DESIGN section 4.3). Each
+/// row opens the Usage History window filtered to its source. The other sources are left to Settings → Data Sources.
+struct SourcesSection: View {
+    let model: AgentSpeedModel
+
+    var body: some View {
+        let l10n = model.l10n
+        let sources = SourceKind.allCases.compactMap { kind in
+            model.snapshot.sources.first { $0.kind == kind && $0.producedToday }
+        }
+
+        VStack(alignment: .leading, spacing: DashboardLayout.rowSpacing) {
+            HStack(spacing: Spacing.s) {
+                SectionTitle(text: l10n("dashboard.sources"), latin: model.dashboardLatinCaps)
+                Spacer(minLength: 0)
+                if !sources.isEmpty {
+                    ColumnCaption(text: l10n("dashboard.today"), width: DashboardLayout.tokensColumn)
+                    ColumnCaption(text: model.settings.liveUnit == .cost ? model.cost.unitPerSecond : l10n("unit.tokS"),
+                                  width: DashboardLayout.speedColumn)
+                }
+            }
+            .padding(.bottom, 2)
+            if sources.isEmpty {
+                Text(l10n("dashboard.sources.empty"))
+                    .font(DashboardFont.row)
+                    .foregroundStyle(.dashboardSecondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(minHeight: DashboardLayout.rowHeight, alignment: .leading)
+                    .transition(.opacity)
+            }
+            ForEach(sources) { source in
+                SourceRow(model: model, source: source)
+                    .transition(.opacity)
+            }
+        }
+        .animation(model.dashboardMotion, value: sources.map(\.kind))
+    }
+}
+
+extension SourceStatus {
+    /// The source's folder exists or it has data today.
+    var isDetected: Bool { available || today.requests > 0 }
+}
+
+extension SourceRow {
+    /// Today's cost of the source (DESIGN 9): `–` when nothing is priced, `≥` when part is; a subscription source
+    /// shows `cost.subscription.tag` unless subscriptions are included.
+    fileprivate var todayCost: String {
+        if model.settings.isSubscription(source.kind), !model.settings.includeSubscriptions {
+            return model.l10n("cost.subscription.tag")
+        }
+        return model.cost.tallyText(source.todayCost, requests: source.today.requests)
+    }
+
+    fileprivate var spokenCost: String {
+        if model.settings.isSubscription(source.kind), !model.settings.includeSubscriptions {
+            return model.l10n("cost.subscription.tag")
+        }
+        return model.cost.spokenTally(source.todayCost, requests: source.today.requests)
+    }
+}
+
+/// The live money value of a source row: the rate number (`≥` when partly priced), `–` below the visible minimum or
+/// when nothing is priced, in the same trailing slot as tok/s.
+private struct LiveCostValue: View {
+    let model: AgentSpeedModel
+    let source: SourceStatus
+
+    var body: some View {
+        var snapshot = SpeedSnapshot.empty
+        snapshot.sources = [source]
+        // A row always shows its own source's API-equivalent rate; marks only change what the totals count.
+        let reading = OrbSubset.cost(snapshot, sources: SourceSet(source.kind), billable: SourceSet(source.kind))
+        let money = model.cost.live(reading, agentCount: 0)
+        let idle = source.live.output < LiveSpeedValue.visibleMinimum && reading.microUsdPerSecond <= 0
+        let text = idle || money.unknown ? "–" : (money.atLeast ? "≥" : "") + money.number
+        return Text(verbatim: text)
+            .font(DashboardFont.rowNumber)
+            .foregroundStyle(text == "–" ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.primary))
+            .lineLimit(1)
+            .fixedSize()
+            .frame(minWidth: DashboardLayout.speedColumn, alignment: .trailing)
+            .accessibilityLabel(text == "–" ? model.l10n("cost.unknown") : model.cost.spoken(money.number))
+    }
+}
+
+private struct SourceRow: View {
+    let model: AgentSpeedModel
+    let source: SourceStatus
+
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.previewHoveredSource) private var previewHovered
+
+    var body: some View {
+        let l10n = model.l10n
+        let live = source.enabled
+        let speed = model.value(of: source.live)
+        let name = l10n(source.kind.titleKey)
+
+        Button {
+            model.commands?.showHistory(source: source.kind)
+        } label: {
+            HStack(spacing: Spacing.s) {
+                Circle()
+                    .fill(source.kind.tint(dark: colorScheme == .dark))
+                    .frame(width: 8, height: 8)
+                    .opacity(live ? 1 : 0.35)
+                    .accessibilityHidden(true)
+                Text(name)
+                    .font(DashboardFont.row)
+                    .foregroundStyle(live ? AnyShapeStyle(.primary) : AnyShapeStyle(.dashboardSecondary))
+                    .lineLimit(1)
+                    .layoutPriority(1)
+                Spacer(minLength: Spacing.xs)
+                if live {
+                    let today = SpeedFormat.tokens(source.today.output) + " · " + todayCost
+                    Text(today)
+                        .font(DashboardFont.detail)
+                        .foregroundStyle(.dashboardSecondary)
+                        .lineLimit(1)
+                        .fixedSize()
+                        .frame(minWidth: DashboardLayout.tokensColumn, alignment: .trailing)
+                        .accessibilityLabel("\(l10n("dashboard.today")) \(l10n("today.output")) \(SpeedFormat.tokens(source.today.output)), \(l10n("today.cost")) \(spokenCost)")
+                    if model.settings.liveUnit == .cost {
+                        LiveCostValue(model: model, source: source)
+                    } else {
+                        LiveSpeedValue(speed: speed, l10n: l10n, reduceMotion: model.accessibility.reduceMotion)
+                    }
+                } else {
+                    Text(l10n("source.disabled"))
+                        .font(DashboardFont.detail)
+                        .foregroundStyle(.dashboardSecondary)
+                        .lineLimit(1)
+                }
+            }
+            .frame(minHeight: DashboardLayout.rowHeight)
+        }
+        .buttonStyle(DashboardSourceRowButtonStyle(forcedHover: previewHovered == source.kind))
+        .animation(Motion.fade, value: model.cost.currency.code)
+        .focusEffectDisabled()
+        .help(l10n("mac.dashboard.sourceHint"))
+        .accessibilityElement(children: .combine)
+        .accessibilityHint(l10n("mac.dashboard.sourceHint"))
+    }
+}

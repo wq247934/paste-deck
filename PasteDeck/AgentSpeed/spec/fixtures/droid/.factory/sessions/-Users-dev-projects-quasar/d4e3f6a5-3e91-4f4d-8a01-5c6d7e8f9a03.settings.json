@@ -1,0 +1,34 @@
+{
+  "model": "auto",
+  "reasoningEffort": "high",
+  "interactionMode": "auto",
+  "autonomyLevel": "medium",
+  "assistantActiveTimeMs": 61000,
+  "tokenUsage": {
+    "inputTokens": 2000,
+    "outputTokens": 1500,
+    "cacheCreationTokens": 30000,
+    "cacheReadTokens": 0,
+    "thinkingTokens": 600,
+    "factoryCredits": 0
+  },
+  "inclusiveTokenUsage": {
+    "inputTokens": 2000,
+    "outputTokens": 1500,
+    "cacheCreationTokens": 30000,
+    "cacheReadTokens": 0,
+    "thinkingTokens": 600,
+    "factoryCredits": 0
+  },
+  "childInclusiveTokenUsageBySessionId": {},
+  "lastCallTokenUsage": {
+    "inputTokens": 10,
+    "outputTokens": 5,
+    "cacheReadTokens": 0
+  },
+  "effectiveFactoryRouterModel": {
+    "modelId": "claude-opus-5-5",
+    "reasoningEffort": "high",
+    "fallbacks": []
+  }
+}

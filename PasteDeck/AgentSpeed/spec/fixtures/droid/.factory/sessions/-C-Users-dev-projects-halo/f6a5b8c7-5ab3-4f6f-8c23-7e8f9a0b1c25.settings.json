@@ -1,0 +1,30 @@
+{
+  "model": "custom:GPT-5.5-[OpenAI-BYOK]-0",
+  "reasoningEffort": "high",
+  "interactionMode": "auto",
+  "autonomyLevel": "medium",
+  "assistantActiveTimeMs": 61000,
+  "tokenUsage": {
+    "inputTokens": 4700,
+    "outputTokens": 720,
+    "cacheCreationTokens": 500,
+    "cacheReadTokens": 20000,
+    "thinkingTokens": 900,
+    "factoryCredits": 0
+  },
+  "inclusiveTokenUsage": {
+    "inputTokens": 4700,
+    "outputTokens": 720,
+    "cacheCreationTokens": 500,
+    "cacheReadTokens": 20000,
+    "thinkingTokens": 900,
+    "factoryCredits": 0
+  },
+  "childInclusiveTokenUsageBySessionId": {},
+  "lastCallTokenUsage": {
+    "inputTokens": 10,
+    "outputTokens": 5,
+    "cacheReadTokens": 0
+  },
+  "providerLock": "openai"
+}

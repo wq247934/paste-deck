@@ -1,0 +1,2 @@
+{"type":"session","version":3,"id":"01a1594a-48f8-79e4-81ac-00163fcd1ce4","timestamp":"2026-10-20T12:30:03.000Z","cwd":"/Users/dev/projects/flat"}
+{"type":"message","id":"f6a50001","parentId":null,"timestamp":"2026-10-20T12:30:03.100Z","message":{"role":"user","content":[{"type":"text","text":"List the headings"}],"timestamp":1792499403100}}

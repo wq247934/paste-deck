@@ -1,0 +1,4 @@
+{"type":"session_start","id":"a7b6c9d8-6bc4-4a70-9d34-8f9a0b1c2d36","title":"Docs","owner":"dev","version":2,"cwd":"/Users/dev/projects/forge","hostId":"host-7f3a"}
+{"type":"message","id":"tg","timestamp":"2026-10-21T10:00:00.000Z","parentId":null,"message":{"role":"user","content":[{"type":"text","text":"Update the README"}]}}
+{"type":"message","timestamp":"2026-10-21T10:00:04.000Z","parentId":null,"message":{"role":"assistant","content":[{"type":"text","text":"Updated."}],"modelId":"glm-4.6","reasoningEffort":"medium"},"id":"a7-m1"}
+{"type":"message","id":"tg2","timestamp":"2026-10-21T10:05:00.000Z","parentId":null,"message":{"role":"user","content":[{"type":"text","text":"And the changelog"}]}}

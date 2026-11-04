@@ -1,0 +1,39 @@
+{
+  "model": "claude-sonnet-4-5-20250929",
+  "reasoningEffort": "high",
+  "interactionMode": "auto",
+  "autonomyLevel": "medium",
+  "assistantActiveTimeMs": 61000,
+  "tokenUsage": {
+    "inputTokens": 41003,
+    "outputTokens": 5207,
+    "cacheCreationTokens": 12011,
+    "cacheReadTokens": 380017,
+    "thinkingTokens": 905,
+    "factoryCredits": 1234.5
+  },
+  "inclusiveTokenUsage": {
+    "inputTokens": 50003,
+    "outputTokens": 5907,
+    "cacheCreationTokens": 12011,
+    "cacheReadTokens": 401017,
+    "thinkingTokens": 1145,
+    "factoryCredits": 1234.5
+  },
+  "childInclusiveTokenUsageBySessionId": {
+    "b2e1d4c3-1c7f-4d2b-8e8f-3a4b5c6d7e81": {
+      "inputTokens": 9000,
+      "outputTokens": 700,
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 21000,
+      "thinkingTokens": 240,
+      "factoryCredits": 0
+    }
+  },
+  "lastCallTokenUsage": {
+    "inputTokens": 10,
+    "outputTokens": 5,
+    "cacheReadTokens": 0
+  },
+  "providerLock": "anthropic"
+}

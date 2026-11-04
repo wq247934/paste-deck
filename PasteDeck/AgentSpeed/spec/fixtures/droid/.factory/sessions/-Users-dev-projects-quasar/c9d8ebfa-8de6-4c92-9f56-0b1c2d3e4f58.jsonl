@@ -1,0 +1,4 @@
+{"type":"session_start","id":"c9d8ebfa-8de6-4c92-9f56-0b1c2d3e4f58","title":"Benchmark","owner":"dev","version":2,"cwd":"/Users/dev/projects/quasar","hostId":"host-7f3a"}
+{"type":"message","id":"context-ti","timestamp":"2026-10-21T15:00:00.000Z","parentId":null,"message":{"role":"user","content":[{"type":"text","text":"<system-reminder>The date is today.</system-reminder>"}],"visibility":"llm_only"}}
+{"type":"message","id":"ti","timestamp":"2026-10-21T15:00:00.010Z","parentId":"context-ti","message":{"role":"user","content":[{"type":"text","text":"Benchmark the flush"}]}}
+{"type":"agent_turn_outcome","turnId":"ti","reason":"error","resultKind":"text"}

@@ -1,0 +1,146 @@
+import Foundation
+
+public struct ReportExtensions: Equatable, Codable, Sendable {
+    public var modelHarnessRequests: Bool
+    /// The negotiated execution-modes version: 0 (not advertised), 1, or 2 (adds the reasoning effort).
+    public var executionModesVersion: Int
+    public var executionModes: Bool {
+        get { executionModesVersion > 0 }
+        set { executionModesVersion = newValue ? max(executionModesVersion, 1) : 0 }
+    }
+    public var profileAvatar: Bool
+    public var sharedIdentity: Bool
+    /// The WebSocket transport (METRICS 11.9); usable only with a valid `websocket` object.
+    public var reportWebSocket: Bool
+    /// The retired task score: a service that still advertises it gets the thinking speed in its shape (METRICS 11.10
+    /// *Legacy*).
+    public var taskScore: Bool
+    /// The performance score with its statistics, with the `models` section (METRICS 11.10); advertising it asks for
+    /// no new consent.
+    public var perfScore: Bool
+    public static let none = ReportExtensions()
+
+    public init(modelHarnessRequests: Bool = false, executionModes: Bool = false, executionModesVersion: Int? = nil,
+                profileAvatar: Bool = false, sharedIdentity: Bool = false, reportWebSocket: Bool = false,
+                taskScore: Bool = false, perfScore: Bool = false) {
+        self.modelHarnessRequests = modelHarnessRequests
+        self.executionModesVersion = executionModesVersion.map { Self.modeVersions.contains($0) ? $0 : 0 } ?? (executionModes ? 1 : 0)
+        self.profileAvatar = profileAvatar; self.sharedIdentity = sharedIdentity
+        self.reportWebSocket = reportWebSocket; self.taskScore = taskScore; self.perfScore = perfScore
+    }
+
+    /// The execution-modes versions this client knows; any other number is not advertised.
+    static let modeVersions: ClosedRange<Int> = 1...2
+
+    init(_ value: JSONValue?) {
+        func version(_ key: String) -> Int {
+            guard let literal = value?[key]?.literal, literal.isInteger, let number = literal.int64 else { return 0 }
+            return number == 1 || (key == "executionModes" && Self.modeVersions.contains(Int(number))) ? Int(number) : 0
+        }
+        func supported(_ key: String) -> Bool { version(key) == 1 }
+        self.init(modelHarnessRequests: supported("modelHarnessRequests"), executionModesVersion: version("executionModes"),
+                  profileAvatar: supported("profileAvatar"), sharedIdentity: supported("sharedIdentity"),
+                  reportWebSocket: supported("reportWebSocket"), taskScore: supported("taskScore"),
+                  perfScore: supported("perfScore"))
+    }
+
+    private enum CodingKeys: CodingKey {
+        case modelHarnessRequests, executionModes, profileAvatar, sharedIdentity, reportWebSocket, taskScore, perfScore
+    }
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        func supported(_ key: CodingKeys) -> Bool { (try? c.decode(Int.self, forKey: key)) == 1 }
+        let modes = (try? c.decode(Int.self, forKey: .executionModes)) ?? 0
+        self.init(modelHarnessRequests: supported(.modelHarnessRequests), executionModesVersion: modes,
+                  profileAvatar: supported(.profileAvatar), sharedIdentity: supported(.sharedIdentity),
+                  reportWebSocket: supported(.reportWebSocket), taskScore: supported(.taskScore),
+                  perfScore: supported(.perfScore))
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        if modelHarnessRequests { try c.encode(1, forKey: .modelHarnessRequests) }
+        if executionModes { try c.encode(executionModesVersion, forKey: .executionModes) }
+        if profileAvatar { try c.encode(1, forKey: .profileAvatar) }
+        if sharedIdentity { try c.encode(1, forKey: .sharedIdentity) }
+        if reportWebSocket { try c.encode(1, forKey: .reportWebSocket) }
+        if taskScore { try c.encode(1, forKey: .taskScore) }
+        if perfScore { try c.encode(1, forKey: .perfScore) }
+    }
+}
+
+public struct ReportModeKey: Equatable, Hashable, Sendable {
+    public var model: ReportModelKey
+    public var attribution: ExecutionModeAttribution
+    public init(model: ReportModelKey, attribution: ExecutionModeAttribution) {
+        self.model = model; self.attribution = attribution
+    }
+}
+
+struct ReportModeGroup: Hashable {
+    var source: SourceKind
+    var attribution: ExecutionModeAttribution
+    var order: String { [source.rawValue, attribution.kind.rawValue, attribution.provider ?? "", attribution.mode, attribution.evidence].joined(separator: "/") }
+}
+
+enum ReportModelBreakdown {
+    static func harness(_ sources: [SourceKind: ReportUsage], total: ReportUsage) -> ReportJSON? {
+        let rows = sources.filter { $0.value.requests > 0 }.sorted { $0.key.rawValue < $1.key.rawValue }
+        guard rows.count <= 8, rows.reduce(Int64(0), { $0 + $1.value.requests }) == total.requests else { return nil }
+        return .array(rows.map { .object(["source": .string($0.key.rawValue), "requests": .int($0.value.requests)]) })
+    }
+
+    /// `models[].modeUsage` of one model (EXECUTION-MODES, *Report extension*): every kind of `version` that is observed,
+    /// plus `serviceTier` and (version 2) `effort`, complete per source with an unknown bucket. Over 64 rows, version 2
+    /// leaves `effort` out first; nil when the breakdown still does not fit or cannot be complete.
+    static func modes(_ sources: [SourceKind: ReportUsage], groups: [ReportModeGroup: ReportUsage], version: Int = 1) -> ReportJSON? {
+        let reported = ExecutionModeKind.reported(version: version)
+        guard !reported.isEmpty else { return nil }
+        let observed = Set(groups.filter { !$0.key.attribution.isUnknown }.map { $0.key.attribution.kind })
+        let kinds = observed.union([.serviceTier, .effort]).intersection(reported)
+        var complete: [ReportModeGroup: ReportUsage] = [:]
+        for kind in kinds {
+            for (source, total) in sources {
+                let parts = groups.filter { $0.key.source == source && $0.key.attribution.kind == kind }
+                var remaining = total
+                for (key, part) in parts {
+                    guard valid(key.attribution), fits(part, within: remaining) else { return nil }
+                    remaining = remaining - part
+                    complete[key, default: .zero] += part
+                }
+                if relevant(remaining) {
+                    complete[ReportModeGroup(source: source, attribution: .init(kind: kind)), default: .zero] += remaining
+                }
+            }
+        }
+        let rows = complete.filter { relevant($0.value) }.sorted { $0.key.order < $1.key.order }
+        guard rows.count <= 64 else {
+            return version == 2 ? modes(sources, groups: groups.filter { $0.key.attribution.kind != .effort }, version: 1) : nil
+        }
+        return .array(rows.map { key, usage in
+            var row: [ReportJSON.Member] = [
+                .init("source", .string(key.source.rawValue)), .init("kind", .string(key.attribution.kind.rawValue)),
+                .init("mode", .string(key.attribution.mode)), .init("evidence", .string(key.attribution.evidence)),
+                .init("requests", .int(usage.requests)), .init("output", .int(usage.output)),
+                .init("measuredOutput", .int(usage.measuredOutput)), .init("measuredMs", .int(usage.measuredMs)),
+            ]
+            if let provider = key.attribution.provider { row.append(.init("provider", .string(provider))) }
+            return .object(row)
+        })
+    }
+
+    private static func relevant(_ value: ReportUsage) -> Bool {
+        value.requests != 0 || value.output != 0 || value.measuredOutput != 0 || value.measuredMs != 0
+    }
+    private static func fits(_ part: ReportUsage, within total: ReportUsage) -> Bool {
+        let values = [part.requests, part.output, part.measuredOutput, part.measuredMs]
+        return values.allSatisfy { (0...9_007_199_254_740_991).contains($0) }
+            && part.requests <= total.requests && part.output <= total.output
+            && part.measuredOutput <= total.measuredOutput && part.measuredMs <= total.measuredMs
+    }
+    private static func valid(_ attribution: ExecutionModeAttribution) -> Bool {
+        guard ExecutionModeFact.isIdentifier(attribution.mode, limit: 64),
+              attribution.provider.map({ ExecutionModeFact.isIdentifier($0, limit: 32) }) ?? true else { return false }
+        if attribution.mode == "unknown" { return attribution.evidence == "unknown" && attribution.provider == nil }
+        return ["served", "recorded", "selected"].contains(attribution.evidence)
+    }
+}

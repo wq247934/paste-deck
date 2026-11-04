@@ -1,0 +1,4 @@
+{"type":"session_start","id":"dae9fc0b-9ef7-4da3-8a67-1c2d3e4f5a69","title":"Old notes","owner":"dev","version":2,"cwd":"/Users/dev/legacy","hostId":"host-7f3a"}
+{"type":"message","id":"tj","timestamp":"2026-10-20T07:00:00.000Z","parentId":null,"message":{"role":"user","content":[{"type":"text","text":"Summarize the notes"}]}}
+{"type":"message","timestamp":"2026-10-20T07:00:02.000Z","parentId":null,"message":{"role":"assistant","content":[{"type":"text","text":"Done."}],"modelId":"claude-opus-5-5"},"id":"da-m1"}
+{"type":"agent_turn_outcome","turnId":"tj","reason":"completed","resultKind":"text"}
