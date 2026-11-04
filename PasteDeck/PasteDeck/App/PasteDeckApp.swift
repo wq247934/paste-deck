@@ -8,6 +8,8 @@
 //  Created on 2026-05-23.
 //
 
+import AgentSpeedCore
+import AgentSpeedKit
 import SwiftUI
 import SwiftData
 
@@ -76,6 +78,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var isMenuBarQuotaDisplayEnabled = false
     private var quotaStatusObserver: NSObjectProtocol?
     private var quotaToolWindowController: ToolWindowController?
+    private var agentSpeedToolWindowController: ToolWindowController?
+    private var agentSpeedObservers: [NSObjectProtocol] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Setup UI first (status bar is always available)
@@ -91,6 +95,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         mainPanelController?.savePanelFrame()
+        AgentSpeedCenter.shared.shutdown()
         TranslationCoordinator.shared.stop()
         hotKeyManager?.unregister()
         removeSettingsAppearanceObserver()
@@ -100,6 +105,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if let quotaStatusObserver {
             NotificationCenter.default.removeObserver(quotaStatusObserver)
         }
+        for observer in agentSpeedObservers {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        agentSpeedObservers.removeAll()
     }
 
     // MARK: - Status Bar Setup
@@ -145,6 +154,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             },
             openQuotaSettings: { [weak self] in
                 self?.openQuotaToolWindow()
+            },
+            openAgentSpeed: { [weak self] in
+                self?.openAgentSpeedToolWindow()
+            },
+            toggleOrbsVisible: {
+                let center = AgentSpeedCenter.shared
+                center.setOrbsVisible(!center.model.orbs.masterVisible)
             },
             openSettings: { [weak self] in
                 self?.openSettings(pane: .general)
@@ -217,6 +233,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             QuotaStatusManager.shared.refreshIfStale(maxAge: 0)
         }
 
+        // AI 实时测速：引擎后台启动（FSEvents + 500ms 发布），悬浮球窗口按设置恢复。
+        AgentSpeedCenter.shared.activate()
+        installAgentSpeedObservers()
+
         // 监听快捷键变更通知（设置页修改快捷键后发送）
         NotificationCenter.default.addObserver(
             self,
@@ -257,7 +277,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         isMenuBarQuotaDisplayEnabled = enabled
         guard let statusItem else { return }
 
-        if enabled {
+        if enabled || AgentSpeedCenter.shared.model.settings.barSpeedDisplay != .off {
             statusItem.length = NSStatusItem.variableLength
             refreshMenuBarQuotaTitle()
         } else {
@@ -267,17 +287,85 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
 
-    /// 余额快照变化后重写菜单栏文本；未开启显示或暂无数据时仅保留图标。
+    /// 余额快照或速度快照变化后重写菜单栏文本。
+    /// 显示模式由 AI 测速设置决定：仅额度 / 仅速度 / 两者 / 关闭额外数据。
     private func refreshMenuBarQuotaTitle() {
-        guard isMenuBarQuotaDisplayEnabled, let button = statusItem?.button else { return }
-        button.attributedTitle = QuotaStatusManager.shared.menuBarAttributedTitle ?? NSAttributedString()
-        button.toolTip = QuotaStatusManager.shared.menuBarToolTip
+        guard let button = statusItem?.button else { return }
+        let mode = AgentSpeedCenter.shared.model.settings.barSpeedDisplay
+        var segments: [NSAttributedString] = []
+
+        switch mode {
+        case .off:
+            break
+        case .quotaOnly:
+            if isMenuBarQuotaDisplayEnabled,
+               let quota = QuotaStatusManager.shared.menuBarAttributedTitle {
+                segments.append(quota)
+            }
+        case .speedOnly:
+            if let speed = AgentSpeedCenter.shared.menuBarSpeedAttributedTitle() {
+                segments.append(speed)
+            }
+        case .both:
+            if isMenuBarQuotaDisplayEnabled,
+               let quota = QuotaStatusManager.shared.menuBarAttributedTitle {
+                segments.append(quota)
+            }
+            if let speed = AgentSpeedCenter.shared.menuBarSpeedAttributedTitle() {
+                segments.append(speed)
+            }
+        }
+
+        if segments.isEmpty {
+            button.attributedTitle = NSAttributedString()
+            button.toolTip = mode == .off ? nil : QuotaStatusManager.shared.menuBarToolTip
+            statusItem?.length = NSStatusItem.squareLength
+            return
+        }
+
+        let font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium)
+        let title = NSMutableAttributedString()
+        for (index, segment) in segments.enumerated() {
+            if index > 0 {
+                title.append(NSAttributedString(
+                    string: " · ",
+                    attributes: [.font: font, .foregroundColor: NSColor.secondaryLabelColor]
+                ))
+            }
+            title.append(segment)
+        }
+        button.attributedTitle = title
+        button.toolTip = agentSpeedMenuBarToolTip
+        statusItem?.length = NSStatusItem.variableLength
+    }
+
+    /// 显示速度时段的悬停提示：实时速度、活跃 Agent 与今日用量。
+    private var agentSpeedMenuBarToolTip: String {
+        let center = AgentSpeedCenter.shared
+        var lines: [String] = []
+        let snapshot = center.model.store.snapshot
+        let value = center.model.value(of: snapshot.live)
+        let unit = center.model.settings.metric == .output ? "输出" : "输入+输出"
+        lines.append("AI 实时速度：\(SpeedFormat.speed(value)) tok/s（\(unit)）")
+        lines.append("活跃 Agent：\(snapshot.generatingCount) 个生成中 · \(snapshot.toolsCount) 个工具调用")
+        lines.append(String(
+            format: "今日输出 %lld tok · 峰值 %@ tok/s",
+            snapshot.today.output,
+            SpeedFormat.speed(center.model.value(of: snapshot.peakToday))
+        ))
+        if let quotaTip = QuotaStatusManager.shared.menuBarToolTip.isEmpty ? nil : QuotaStatusManager.shared.menuBarToolTip {
+            lines.append("")
+            lines.append(quotaTip)
+        }
+        return lines.joined(separator: "\n")
     }
 
     @objc private func quotaMenuBarDisplaySettingDidChange(_ notification: Notification) {
         let enabled = (notification.userInfo?[QuotaStatusManager.menuBarDisplayEnabledKey] as? Bool) ?? false
         QuotaStatusManager.shared.setMenuBarDisplayEnabled(enabled)
         applyMenuBarQuotaDisplay(enabled: enabled)
+        // 显示模式可能仍要求展示实时速度，统一交给标题合成决定。
+        refreshMenuBarQuotaTitle()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -288,6 +376,47 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
         self.openMainPanel()
         return false
+    }
+
+    // MARK: - Agent Speed（AI 实时测速）
+
+    /// 监听测速模块的通知：快照刷新、显示模式变化与打开入口。
+    private func installAgentSpeedObservers() {
+        let center = NotificationCenter.default
+        agentSpeedObservers.append(center.addObserver(
+            forName: .agentSpeedSnapshotDidUpdate, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refreshMenuBarQuotaTitle() }
+        })
+        agentSpeedObservers.append(center.addObserver(
+            forName: .agentSpeedBarDisplayDidChange, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refreshMenuBarQuotaTitle() }
+        })
+        agentSpeedObservers.append(center.addObserver(
+            forName: .openAgentSpeedDashboard, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.openAgentSpeedToolWindow() }
+        })
+        agentSpeedObservers.append(center.addObserver(
+            forName: .openAgentSpeedSettings, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.openSettings(pane: .agentSpeed) }
+        })
+    }
+
+    /// 打开「AI 实时测速」独立工具窗口（与额度查看同形态）；已打开时直接前置。
+    private func openAgentSpeedToolWindow() {
+        if agentSpeedToolWindowController?.isWindowVisible == true {
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        if agentSpeedToolWindowController == nil {
+            agentSpeedToolWindowController = ToolWindowController()
+        }
+        agentSpeedToolWindowController?.show(tool: .agentSpeed, context: .standalone) { [weak self] in
+            self?.agentSpeedToolWindowController = nil
+        }
     }
 
     // MARK: - Menu Actions

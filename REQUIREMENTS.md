@@ -215,6 +215,23 @@
 - [x] 上下文工具面板宽度可拖拽调整（左边缘手柄，260–420pt，拖拽结束时持久化）；宽度以 `PanelResizeHandleState` 为唯一真相来源，原生命中测试与 SwiftUI 布局共享该状态，禁止在命中路径直接读取 UserDefaults（key 未写入时读数为 0，会导致手柄静默失效）
 - [x] 单元测试：TimestampMathTests、IPv4MathTests、ContentRecognizerTests、ToolSearchServiceTests、DateMathTests、IPGeoServiceTests、PreviewWindowDetectionTests、PanelResizeHandleTests 覆盖解析、边界、误判防护、搜索排序、工作日历、归属地解析与拖拽手柄命中/持久化行为
 
+### 16. AI 实时测速（Agent Speed 集成，v2.1.0）
+
+- [x] 内核整体移植：Agent Speed 的 AgentSpeedCore（发现/解析/测速引擎）、AgentSpeedOrbModel（仪表模型/磁吸/摆放）、AgentSpeedHero（载具动画）与 CZstd 作为独立 SwiftPM target 原样移植（MIT，`PasteDeck/AgentSpeed/LICENSE-AgentSpeed`）；不启动独立进程、不引入 WebView
+- [x] 数据来源自动发现（与上游一致）：Codex CLI/IDE/桌面、Claude Code + Claude Desktop、DeepSeek Harness、OpenCode、Gemini CLI、omp、Antigravity、WorkBuddy 国内版、WorkBuddy AI 国际版、ZCode、Kimi Code CLI、Grok Build、Pi、OpenClaw、Hermes Agent、Factory Droid；尊重上游环境变量与自定义根目录；来源不存在不报错，无可靠数据显示不可用、不伪造速度
+- [x] 测速语义与上游一致：3 秒实时窗口、10 分钟近期参考、30 分钟兜底、响应进行中的估算与完成后的实测校正、单 Agent/单来源/多 Agent 并行聚合、今日峰值与刷新纪录事件（20 tok/s 门槛 + 1 tok/s 增幅 + 60s 冷却）、输入/输出/缓存/推理 Token 统计、会话去重与子 Agent 归属、生成中/工具调用中/空闲状态（300 秒陈旧规则）；测量值、估算值、不可测量状态明确区分
+- [x] 采集与解析全部后台执行：FSEvents 监听 + 80ms 防抖、1 秒轮询兜底、10 秒重新发现、500ms 快照发布（SnapshotMailbox 合并突发）、SQLite 只读、zstd 压缩日志与日志轮转处理；主线程零文件 I/O
+- [x] 五种原版仪表样式（Metal 渲染）：LED 仪表、指针转速表、能量液球、反应堆、极简圆环；支持速度等级、动态颜色特效、动画强度（关闭/低/标准/最高）、空闲状态、亮暗主题与切换平滑过渡
+- [x] 载具动画与事件特效：步行到火箭的载具、运动轨迹、速度线、尾焰、粒子、等级过渡、响应完成冲击波、刷新纪录庆祝、空闲呼吸；全部由真实测速引擎事件驱动，无伪造数据
+- [x] 按需绘制：活跃正常帧、空闲降帧、静止停帧（CADisplayLink 按需帧时钟）、不可见暂停、恢复直接同步；遵循 Reduce Motion
+- [x] 悬浮仪表窗口：可创建多个（上限 8）、每球独立选择来源/样式/单位/大小、可拖动、16pt 吸附与对齐、按显示器 UUID 保存位置、鼠标穿透（圆盘外穿透）、始终置顶、空闲淡出、右键菜单管理、8 秒撤销
+- [x] 工具中心集成：注册「AI 实时测速」工具（搜索词：agent/ai/测速/token/codex/claude/gemini/workbuddy/zcode/速度/性能/tok/s 等），独立窗口与内嵌详情复用原版仪表盘视图（英雄区实时曲线、来源与 Agent 列表、今日用量、警告脚注），嵌入模式隐藏退出按钮
+- [x] 菜单栏集成：下拉菜单新增速度区块（实时速度、速度等级、活跃 Agent、打开工具与悬浮球开关按钮）；图标旁显示模式可选仅额度（默认，保持升级前行为）/仅速度/额度+速度/都不显示；速度分段使用等宽数字并按「变宽即时、收窄延迟 5 秒」治理宽度跳变
+- [x] 历史统计：每日聚合落在 PasteDeck 自己的 Application Support 数据库（不依赖原始日志），上游 HistoryService 后台分析（启动 20s 宽限 + 每 10 分钟 + 跨午夜）；历史窗口支持今日/昨日/自定义范围、按来源筛选、每日输入输出 Token、请求数、平均/峰值速度、趋势图与 CSV 导出
+- [x] 设置页「AI 测速」：总监控开关、各来源开关与检测状态、悬浮仪表开关与铭牌模式、动画强度、庆祝/脉冲特效开关、菜单栏显示模式、速度指标与满档速度、网络价格同步（默认关闭）、历史清除重建；配置持久化到 UserDefaults（键名与上游兼容）
+- [x] 隐私：监控只读、不修改其他 AI 工具数据、不上传对话内容；价格表/汇率同步为可选的公开数据下载，默认关闭
+- [x] 测试：上游算法测试整体迁移并全部通过（AgentSpeedCore 889 项、AgentSpeedOrbModel 409 项、AgentSpeedHero 40 项、AgentSpeedKit 4 项），测试数据集随仓库迁移（`PasteDeck/AgentSpeed/spec/fixtures`）；上游网络层测试在本沙盒无出网环境默认关闭，`AGENT_SPEED_NET_TESTS=1` 显式启用
+
 ---
 
 ## 待评估功能项

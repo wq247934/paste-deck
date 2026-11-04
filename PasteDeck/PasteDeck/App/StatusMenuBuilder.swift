@@ -8,6 +8,8 @@
 //  Created on 2026-07-08.
 //
 
+import AgentSpeedCore
+import AgentSpeedKit
 import AppKit
 import SwiftData
 
@@ -590,6 +592,128 @@ final class QuotaDetailButtonView: NSView {
     }
 }
 
+/// 菜单里的 AI 实时测速区块：当前总速度、速度等级、活跃 Agent 数与两个入口按钮。
+/// 数据来自 AgentSpeedCenter 的实时快照，菜单弹出与快照变化时刷新。
+final class AgentSpeedMenuItemView: NSView {
+
+    private let speedLabel = NSTextField(labelWithString: "0")
+    private let unitLabel = NSTextField(labelWithString: "tok/s")
+    private let tierLabel = NSTextField(labelWithString: "空闲")
+    private let agentsLabel = NSTextField(labelWithString: "活跃 Agent 0")
+    private let openSpeedButton: QuotaDetailButtonView
+    private let orbButton: QuotaDetailButtonView
+
+    private var snapshotObserver: NSObjectProtocol?
+
+    init(
+        frame frameRect: NSRect,
+        openAgentSpeed: @escaping () -> Void,
+        toggleOrbsVisible: @escaping () -> Void
+    ) {
+        openSpeedButton = QuotaDetailButtonView(
+            title: "打开 AI 实时测速…",
+            systemImage: "speedometer",
+            action: openAgentSpeed
+        )
+        orbButton = QuotaDetailButtonView(
+            title: "显示 / 隐藏悬浮仪表",
+            systemImage: "circle.circle",
+            action: toggleOrbsVisible
+        )
+        super.init(frame: frameRect)
+        setupUI()
+        snapshotObserver = NotificationCenter.default.addObserver(
+            forName: .agentSpeedSnapshotDidUpdate,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.refreshDisplay()
+        }
+    }
+
+    deinit {
+        if let snapshotObserver {
+            NotificationCenter.default.removeObserver(snapshotObserver)
+        }
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    private func setupUI() {
+        wantsLayer = true
+        layer?.cornerRadius = 10
+        layer?.masksToBounds = true
+
+        let speedFont = NSFont.monospacedDigitSystemFont(ofSize: 22, weight: .semibold)
+        speedLabel.font = speedFont
+        speedLabel.textColor = .labelColor
+        speedLabel.alignment = .right
+        speedLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
+
+        unitLabel.font = NSFont.systemFont(ofSize: 11, weight: .medium)
+        unitLabel.textColor = .secondaryLabelColor
+        unitLabel.alignment = .left
+
+        tierLabel.font = NSFont.systemFont(ofSize: 11, weight: .medium)
+        tierLabel.textColor = .secondaryLabelColor
+
+        agentsLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
+        agentsLabel.textColor = .secondaryLabelColor
+
+        let speedRow = NSStackView(views: [speedLabel, unitLabel])
+        speedRow.orientation = .horizontal
+        speedRow.spacing = 5
+        speedRow.alignment = .firstBaseline
+
+        let captionRow = NSStackView(views: [tierLabel, NSView(), agentsLabel])
+        captionRow.orientation = .horizontal
+        captionRow.spacing = 6
+        captionRow.alignment = .centerY
+        for view in captionRow.arrangedSubviews where view is NSView && !(view is NSTextField) {
+            view.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        }
+
+        let container = NSStackView(views: [speedRow, captionRow, openSpeedButton, orbButton])
+        container.orientation = .vertical
+        container.spacing = 8
+        container.translatesAutoresizingMaskIntoConstraints = false
+
+        addSubview(container)
+        NSLayoutConstraint.activate([
+            container.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
+            container.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
+            container.topAnchor.constraint(equalTo: topAnchor, constant: 10),
+            container.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -10),
+            speedLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 60),
+        ])
+    }
+
+    /// 菜单弹出前调用。
+    func refresh() {
+        refreshDisplay()
+    }
+
+    /// 与额度区块一致：注入所属菜单（当前无弹层按钮，保留统一接口）。
+    func attachToMenu(_ menu: NSMenu) {
+        // 速度区块的按钮通过闭包回调，无需菜单跟踪；此处保持与其它区块相同的生命周期挂载点。
+    }
+
+    private func refreshDisplay() {
+        let center = AgentSpeedCenter.shared
+        let model = center.model
+        let snapshot = model.store.snapshot
+        let value = model.value(of: snapshot.live)
+
+        speedLabel.stringValue = SpeedFormat.speed(value)
+        tierLabel.stringValue = model.l10n(model.gauge.title.titleKey)
+        agentsLabel.stringValue = "活跃 Agent \(snapshot.generatingCount) · 工具 \(snapshot.toolsCount)"
+        unitLabel.stringValue = model.settings.metric == .output ? "tok/s" : "tok/s 合计"
+    }
+}
+
 /// 菜单栏下拉菜单构建器。
 enum StatusMenuBuilder {
 
@@ -611,6 +735,8 @@ enum StatusMenuBuilder {
         translateInput: @escaping () -> Void,
         openTranslationSettings: @escaping () -> Void,
         openQuotaSettings: @escaping () -> Void,
+        openAgentSpeed: @escaping () -> Void,
+        toggleOrbsVisible: @escaping () -> Void,
         openSettings: @escaping () -> Void,
         openHelp: @escaping () -> Void,
         quit: @escaping () -> Void
@@ -623,6 +749,8 @@ enum StatusMenuBuilder {
             onTranslateScreenshot: translateScreenshot,
             onTranslateInput: translateInput,
             onOpenTranslationSettings: openTranslationSettings,
+            onOpenAgentSpeed: openAgentSpeed,
+            onToggleOrbsVisible: toggleOrbsVisible,
             onOpenSettings: openSettings,
             onOpenHelp: openHelp,
             quit: quit
@@ -650,6 +778,20 @@ enum StatusMenuBuilder {
         quotaItem.view = quotaView
         quotaItem.target = nil
         menu.addItem(quotaItem)
+
+        menu.addItem(NSMenuItem.separator())
+
+        // AI 实时测速区块：实时速度 + 活跃 Agent + 悬浮仪表开关
+        let speedView = AgentSpeedMenuItemView(
+            frame: NSRect(x: 0, y: 0, width: 300, height: 128),
+            openAgentSpeed: openAgentSpeed,
+            toggleOrbsVisible: toggleOrbsVisible
+        )
+        speedView.attachToMenu(menu)
+        let speedItem = NSMenuItem()
+        speedItem.view = speedView
+        speedItem.target = nil
+        menu.addItem(speedItem)
 
         menu.addItem(NSMenuItem.separator())
 
@@ -775,6 +917,8 @@ final class MenuRefreshDelegate: NSObject, NSMenuDelegate {
     let onTranslateScreenshot: () -> Void
     let onTranslateInput: () -> Void
     let onOpenTranslationSettings: () -> Void
+    let onOpenAgentSpeed: () -> Void
+    let onToggleOrbsVisible: () -> Void
     let onOpenSettings: () -> Void
     let onOpenHelp: () -> Void
     let onQuit: () -> Void
@@ -787,6 +931,8 @@ final class MenuRefreshDelegate: NSObject, NSMenuDelegate {
         onTranslateScreenshot: @escaping () -> Void,
         onTranslateInput: @escaping () -> Void,
         onOpenTranslationSettings: @escaping () -> Void,
+        onOpenAgentSpeed: @escaping () -> Void,
+        onToggleOrbsVisible: @escaping () -> Void,
         onOpenSettings: @escaping () -> Void,
         onOpenHelp: @escaping () -> Void,
         quit: @escaping () -> Void
@@ -798,6 +944,8 @@ final class MenuRefreshDelegate: NSObject, NSMenuDelegate {
         self.onTranslateScreenshot = onTranslateScreenshot
         self.onTranslateInput = onTranslateInput
         self.onOpenTranslationSettings = onOpenTranslationSettings
+        self.onOpenAgentSpeed = onOpenAgentSpeed
+        self.onToggleOrbsVisible = onToggleOrbsVisible
         self.onOpenSettings = onOpenSettings
         self.onOpenHelp = onOpenHelp
         self.onQuit = quit
@@ -810,6 +958,9 @@ final class MenuRefreshDelegate: NSObject, NSMenuDelegate {
                 view.refresh()
             }
             if let view = item.view as? QuotaOverviewMenuItemView {
+                view.refresh()
+            }
+            if let view = item.view as? AgentSpeedMenuItemView {
                 view.refresh()
             }
         }
@@ -841,6 +992,14 @@ final class MenuRefreshDelegate: NSObject, NSMenuDelegate {
 
     @objc func performOpenTranslationSettings(_ sender: NSMenuItem) {
         onOpenTranslationSettings()
+    }
+
+    @objc func performOpenAgentSpeed(_ sender: NSMenuItem) {
+        onOpenAgentSpeed()
+    }
+
+    @objc func performToggleOrbsVisible(_ sender: NSMenuItem) {
+        onToggleOrbsVisible()
     }
 
     @objc func performOpenSettings(_ sender: NSMenuItem) {

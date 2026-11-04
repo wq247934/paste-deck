@@ -16,6 +16,8 @@ enum BuiltinTool: String, CaseIterable, Identifiable, Equatable {
     case ipv4Subnet = "com.pastedeck.tool.ipv4-subnet"
     /// Codex / WorkBuddy 额度查看（复用现有额度服务）。
     case quotaOverview = "com.pastedeck.tool.quota"
+    /// AI 实时测速（Agent Speed 引擎与动画，见 PasteDeck/AgentSpeed/LICENSE-AgentSpeed）。
+    case agentSpeed = "com.pastedeck.tool.agent-speed"
 
     var id: String { rawValue }
 
@@ -51,6 +53,19 @@ enum BuiltinTool: String, CaseIterable, Identifiable, Equatable {
                 aliases: ["codex", "workbuddy", "gemini", "额度查看", "余额查询", "额度详情"],
                 preferredWindowSize: CGSize(width: 720, height: 720)
             )
+        case .agentSpeed:
+            return ToolDescriptor(
+                id: id,
+                name: "AI 实时测速",
+                symbolName: "speedometer",
+                summary: "实时监控 Codex / Claude / ZCode 等 AI Agent 的输出速度、活跃 Agent 与今日用量",
+                keywords: [
+                    "agent", "ai", "测速", "token", "codex", "claude", "gemini", "workbuddy", "zcode",
+                    "速度", "性能", "tok/s", "speed", "实时", "仪表", "悬浮球", "tts",
+                ],
+                aliases: ["测速", "agentspeed", "ai测速", "速度计", "实时测速"],
+                preferredWindowSize: CGSize(width: 430, height: 760)
+            )
         }
     }
 
@@ -59,7 +74,7 @@ enum BuiltinTool: String, CaseIterable, Identifiable, Equatable {
         switch self {
         case .timestampConversion, .ipv4Subnet:
             return true
-        case .quotaOverview:
+        case .quotaOverview, .agentSpeed:
             return false
         }
     }
@@ -79,6 +94,8 @@ extension BuiltinTool {
             IPv4SubnetToolView(context: context)
         case .quotaOverview:
             QuotaToolView()
+        case .agentSpeed:
+            AgentSpeedToolView()
         }
     }
 }

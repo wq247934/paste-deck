@@ -129,6 +129,8 @@ struct SettingsWindow: View {
             TranslationSettingsView()
         case .quota:
             QuotaSettingsView()
+        case .agentSpeed:
+            AgentSpeedSettingsView()
         case .advanced:
             AdvancedSettingsView()
         case .help:
@@ -146,6 +148,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
     case favorites
     case translation
     case quota
+    case agentSpeed
     case advanced
     case help
 
@@ -161,6 +164,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .favorites: return "收藏夹"
         case .translation: return "翻译"
         case .quota: return "额度"
+        case .agentSpeed: return "AI 测速"
         case .advanced: return "高级"
         case .help: return "帮助"
         }
@@ -176,6 +180,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .favorites: return "管理收藏夹名称和顺序"
         case .translation: return "划词、截图、快捷键与翻译服务"
         case .quota: return "菜单栏余额与代理连接配置"
+        case .agentSpeed: return "AI Agent 实时速度与悬浮仪表"
         case .advanced: return "预览配置和数据维护"
         case .help: return "用场景化导览快速上手所有功能"
         }
@@ -191,6 +196,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .favorites: return "star"
         case .translation: return "character.book.closed"
         case .quota: return "gauge.with.needle"
+        case .agentSpeed: return "speedometer"
         case .advanced: return "slider.horizontal.3"
         case .help: return "questionmark.circle"
         }

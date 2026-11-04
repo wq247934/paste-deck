@@ -2,7 +2,7 @@
 
 ## 项目状态
 
-**当前版本**：v2.0.21
+**当前版本**：v2.1.0
 **开始日期**：2026-05-23
 **完成度**：99%
 
@@ -122,6 +122,7 @@
 | 时间戳转换工具 | ✅ | v1.18.0 | 秒/毫秒双向转换、时区切换、ISO 8601、实时当前时间、一键复制；严格位数+范围校验 |
 | IPv4/子网工具 | ✅ | v1.18.0 | 地址校验、类型判断、CIDR、掩码、网络/广播、可用范围；正确处理 /0、/31、/32 |
 | 额度查看工具 | ✅ | v2.0.17 | 复用 QuotaStatusManager 与设置页共享组件；新增 Gemini 卡片；搜索“额度/codex/gemini/workbuddy/余额”可直达 |
+| AI 实时测速工具 | ✅ | v2.1.0 | Agent Speed 引擎与动画整体原生集成：五种 Metal 仪表、载具动画、悬浮球窗口、历史统计与设置页；搜索“agent/ai/测速/token/速度”直达 |
 | 时间日期计算器完整分区 | ✅ | v1.19.0 | 日期差/推算日期/推算工作日/工作天数（内置 2024–2025 法定节假日）、英文日期格式、世界时间、在线秒表 |
 | IPv4 归属地查询 | ✅ | v1.19.0 | ipwho.is 主源 + ipinfo.io 备源；仅点击查询时发送该 IP，私网地址拒绝；会话内缓存 |
 | 侧边栏拖拽调宽 | ✅ | v1.19.1 | 左边缘手柄 260–420pt；v1.19.0 实现因原生覆盖层直接读 UserDefaults，全新安装时该 key 从未写入导致宽度读为 0、手柄静默失效，v1.19.1 改为与 SwiftUI 共享同一状态对象并在 mouseUp 时落盘 |
@@ -155,6 +156,10 @@
 | ToolSearchServiceTests | ✅ | 中英文关键词、内容建议与预填、手机号不触发、排序与空查询 |
 | DateMathTests | ✅ | 严格解析、日期差与时长、推算、英文格式、法定节假日/调休工作日计算 |
 | IPGeoServiceTests | ✅ | ipwho.is/ipinfo 解析、私有地址防护、国家代码映射 |
+| AgentSpeedCoreTests | ✅ | 上游测速引擎算法测试 889 项随源码整体迁移（解析、时间戳、会话、引擎、监控、历史、成本），全部通过 |
+| AgentSpeedOrbModelTests | ✅ | 仪表数学、磁吸、摆放、铭牌与标题主题 409 项，全部通过 |
+| AgentSpeedHeroTests | ✅ | 载具运动轨迹与绘制清单 40 项，全部通过 |
+| AgentSpeedKitTests | ✅ | 集成层设置隔离、显示模式与监控开关语义 4 项 |
 
 ### 打包发布
 
@@ -246,4 +251,5 @@
 | v2.0.18 | 2026-10-13 | 补全 Gemini Token 消费统计看板与 WorkBuddy2API 自托管网关全量体系：1. 完整还原 Antigravity-Manager `token-stats` 消费看板（`GeminiTokenStatsView`）：顶部小时(24h)/日(7d)/周(30d)时钟切换与刷新，6 个 Summary KPI 卡片（总 Token、输入、输出、缓存命中、活跃账号、使用模型），堆叠柱状 Token 使用趋势图，分模型详细统计表格（请求数、输入、输出、缓存命中、合计与占比进度胶囊）与分账号分布；2. 深度移植 `codex-quota-utools` 的 `gateway.js` 与前端体系（`WorkBuddyGatewayService` 与 `WorkBuddyGatewayView`）：完整支持对 `http://127.0.0.1:17863` 网关的概览（账号池环形健康度、uptime、redis 模式与快捷操作）、账号（全量账号卡片、成功率/连败/在途展开与签到/查余额/解冻/禁用运维操作）、积分包（使用中/未动/已耗尽三层智能排序明细与进度条）、用量（6h~1440h 时段、总计 KPI、按模型 TOP 12 表格与按账号表格）、模型（20 个映射模型倍率与能力标签）及设置子视图；3. AppSettings 持久化网关配置并支持连接测试；4. 新增 4 项 Token 统计与网关数据单元测试，全套 168 项测试通过。 |
 | v2.0.19 | 2026-10-14 | 额度信息架构按职责重新分层（职责分离修复）：1. 菜单栏「额度详情…」由跳转设置页改为打开独立「额度查看」工具窗口（`AppDelegate.openQuotaToolWindow` + `ToolWindowController`，与时间/IP 工具同形态，已打开时直接前置不重复创建）；2. 设置页「额度」面板精简为纯配置项（菜单栏余额开关、Gemini 代理端点与 WEB_PASSWORD、workbuddy2api 网关地址与 API Key），不再堆叠数据看板；3. `QuotaToolView` 重构为概览 → 详情两级结构：概览页三张服务卡片（Codex / Gemini / WorkBuddy）各显示品牌图标、核心余量百分比/积分、进度条与重置倒计时，点击卡片下钻到对应详情页；4. Codex 详情页含 5 小时额度、每周额度与速率重置卡明细；Gemini 详情页含 5 小时/每周额度、模型额度明细与 Token 消费统计看板；WorkBuddy 详情页含合计可用、账户与订阅、积分包明细与 workbuddy2api 网关看板；5. 清理设置页冗余数据组件（hero 卡片、账户/合计/积分包面板等 600 余行），共享展示组件收敛到额度工具窗口复用；6. 工具窗口默认尺寸调整为 720×720。 |
 | v2.0.20 | 2026-10-14 | 修复速贴面板三项交互回归（对齐 master 主面板行为）：1. 「点选后回车贴出错误内容/看似不粘贴」：根因是 `MainPanelController` 开启 `isMovableByWindowBackground` 后所有 mouseDown 被窗口拖拽消费（NSHostingView 不下传 `mouseDownCanMoveWindow` 协商，v1.19.1 侧边栏手柄同类先例），SwiftUI 行点击与按钮手势全部失效，键盘选中索引纹丝不动，回车永远贴旧选中项；实测 AX 点击命中第 5 行后选中仍停在第 1 行、面板 ⌘K 按钮点击同样无效。修复为关闭背景拖拽（与 master NSCollectionView 面板手感一致），实机验证点击行 → 选中即变 → 回车粘贴正确内容；2. 补回 2.0 重构时丢失的 Shift 多选模型：`UnifiedSearchCoordinator` 移植 master 的 `selectedItems` + `anchorIndex` + `rebuildExtendedSelection` + `handleTap`（Cmd+Click 翻转、Shift+Click 区间、普通点击单选；方向键 `extending` 由键盘监视器从事件 modifiers 传入，工具条目不参与多选），行视图多选态显示 ✓ 徽章，回车走 `promotePastedItems` → `batchPaste` 按显示顺序批量粘贴，实机验证 Shift+↓ 两行同高亮、批量粘贴两条内容依序落入目标文档；3. 面板呼出默认选中第二条（对齐 master `selectDefaultCard()`：第一条通常是刚被上一轮粘贴顶到最前的"最旧"内容），`selectDefault()` 同步锚点与多选清空；4. 全套 168 项单元测试通过，真机 CGEvent/AX 全链路实测三项行为。 |
+| v2.1.0 | 2026-11-05 | **AI 实时测速 —— Agent Speed 引擎与原生动画全面集成（工具中心新模块）**：1. 整体移植 Agent Speed（MIT）的 AgentSpeedCore / AgentSpeedOrbModel / AgentSpeedHero / CZstd 为独立 SwiftPM target，测速语义、时间窗口与边界处理与上游逐字节一致（算法测试 889 项全通过）；2. 自动发现 Codex、Claude Code/Desktop、DSH、OpenCode、Gemini CLI、omp、Antigravity、WorkBuddy 双版、ZCode、Kimi、Grok Build、Pi、OpenClaw、Hermes、Factory Droid 共 16 类本地来源，FSEvents + 轮询兜底 + 500ms 快照发布全部后台执行；3. 五种 Metal 仪表（LED/指针/液球/反应堆/极简圆环）与步行到火箭的载具动画、冲击波、纪录庆祝、空闲呼吸全部由真实引擎事件驱动；4. 桌面悬浮球支持多球、独立来源/样式/单位/大小、拖动吸附、按显示器持久化、鼠标穿透、空闲淡出与 8 秒撤销；5. 工具中心新增「AI 实时测速」独立窗口，菜单栏新增速度区块与四种显示模式（宽度治理防跳变），设置页新增「AI 测速」页（总开关/来源开关/动画强度/满档速度/价格同步默认关），历史统计落 PasteDeck 专属 SQLite 并支持 CSV 导出；6. 新增 AgentSpeedKitTests，上游测试全部保留并通过；已知限制：上游网络层 5 项测试在无出网沙盒默认关闭（AGENT_SPEED_NET_TESTS=1 启用），悬浮球多显示器拖动、Reduce Motion 与窗口生命周期需真机人工验证。 |
 | v2.0.21 | 2026-10-14 | 修复工作台剪贴板记录「回车」与「右键粘贴为纯文本」完全无法粘贴：1. 粘贴链断裂：`WorkbenchView.executePrimaryAction` 对剪贴板条目只执行 `copyToPasteboard`（语义是复制而非粘贴），右键/检查器「粘贴为纯文本」只调 `preparePaste` 写剪贴板后便无下文——两者都从不调用 `PasteService.performPaste()` 模拟 ⌘V；统一改为完整粘贴链：`preparePaste`（暂停监控+写剪贴板）→ `WorkbenchWindowController.hideForPaste()`（收起工作台并在 app 激活时 `NSApp.hide` 让此前台应用恢复焦点）→ 100ms 后 `performPaste()`，与速贴面板 `pasteSnapshot` 同语义；2. 键盘监视器 guard 缺陷：实机日志实证 LSUIElement app 经菜单/NSApp.activate 路径获得焦点时 keyDown 事件 `event.window == nil`，`handleKey` 的 `guard let eventWindow = event.window` 将回车/方向键/Esc 全部放行（表现为键盘导航完全失效）；改为 `event.window ?? NSApp.keyWindow` 兜底并校验 identifier；3. 168 项单元测试通过。 |
