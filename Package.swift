@@ -53,11 +53,41 @@ let package = Package(
             path: "PasteDeck/AgentSpeed/Sources/AgentSpeedKit"
         ),
 
+        // MARK: - Codex 模型路由（纯 Swift 轻量路由引擎，参考 MIT 源码 codex-router v0.6.0）
+
+        /// zstd C 压缩库：Codex 原生 GPT 请求体再压缩（上游 zstd 1.5.7，见 VENDOR.md）。
+        .target(
+            name: "CZstdCompress",
+            path: "PasteDeck/CodexRouter/Sources/CZstdCompress",
+            exclude: ["LICENSE", "VENDOR.md"],
+            publicHeadersPath: ".",
+            cSettings: [
+                .define("ZSTD_DISABLE_ASM", to: "1"),
+                .define("ZSTD_LEGACY_SUPPORT", to: "0"),
+                .define("ZSTD_TRACE", to: "0"),
+            ]
+        ),
+        /// Codex 模型路由核心：端点/模型配置、Codex config.toml 托管切换、
+        /// 原生目录捕获与合并发布、本地 Responses 路由分发、SSE/WS 中继与代理。
+        .target(
+            name: "CodexRouterKit",
+            dependencies: ["CZstd", "CZstdCompress"],
+            path: "PasteDeck/CodexRouter/Sources/CodexRouterKit",
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
+        /// 路由守护进程：独立于 PasteDeck 主程序运行的本地路由服务入口。
+        .executableTarget(
+            name: "pastedeck-codex-router",
+            dependencies: ["CodexRouterKit"],
+            path: "PasteDeck/CodexRouter/Sources/RouterDaemon",
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
+
         // MARK: - PasteDeck 主程序
 
         .executableTarget(
             name: "PasteDeck",
-            dependencies: ["Highlightr", "AgentSpeedCore", "AgentSpeedKit"],
+            dependencies: ["Highlightr", "AgentSpeedCore", "AgentSpeedKit", "CodexRouterKit"],
             path: "PasteDeck/PasteDeck",
             resources: [
                 .process("Resources/Assets.xcassets"),
@@ -67,8 +97,15 @@ let package = Package(
         ),
         .testTarget(
             name: "PasteDeckTests",
-            dependencies: ["PasteDeck"],
+            dependencies: ["PasteDeck", "CodexRouterKit"],
             path: "PasteDeck/Tests",
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
+
+        .testTarget(
+            name: "CodexRouterKitTests",
+            dependencies: ["CodexRouterKit"],
+            path: "PasteDeck/CodexRouter/Tests/CodexRouterKitTests",
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
 

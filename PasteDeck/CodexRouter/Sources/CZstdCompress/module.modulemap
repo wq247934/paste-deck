@@ -1,0 +1,5 @@
+module CZstdCompress [extern_c] {
+    header "zstd.h"
+    header "zstd_errors.h"
+    export *
+}
