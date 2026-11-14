@@ -449,6 +449,115 @@ final class CodexRouterEngineTests: XCTestCase {
         guard case .reject = missingToken else { return XCTFail("缺协议令牌未被拒绝") }
     }
 
+
+    /// 原生 socket WS 客户端：逐字节验证服务器回帧。
+    func testWebSocketRawSocketFrameBytes() throws {
+        let mock = try MockUpstream(recorder: RequestRecorder(), responseBody: makeSSE(events: [
+            "{\"type\":\"response.created\"}",
+            "{\"type\":\"response.completed\"}",
+        ]))
+        defer { mock.stop() }
+        try installEndpoint(
+            baseURL: "http://127.0.0.1:\(mock.port)/v1",
+            models: [RouterEndpointModel.standard(modelID: "m1", displayName: "M")])
+        let dispatcher = makeDispatcher(nativeBaseURL: "http://127.0.0.1:\(mock.port)")
+
+        let serverPort = UInt16(49600 + Int.random(in: 0...600))
+        let server = RouterHTTPServer(port: serverPort) { [dispatcher] request, connection in
+            guard request.path == "/v1/responses" else {
+                RouterHTTPServer.writeSimpleError(connection, status: 404, message: "not_found")
+                return
+            }
+            guard case .accept(let key) = ResponsesWebSocketEdge.validateUpgrade(request: request) else {
+                RouterHTTPServer.writeSimpleError(connection, status: 426, message: "upgrade_required")
+                return
+            }
+            let accept = ResponsesWebSocketEdge.acceptHeaderValue(for: key)
+            let head = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: \(accept)\r\n\r\n"
+            connection.send(Data(head.utf8))
+            let session = ResponsesWebSocketSession(
+                connection: connection, dispatcher: dispatcher, upgradeHeaders: request.headers)
+            session.runBlocking()
+        }
+        XCTAssertTrue(server.start())
+        defer { server.stop() }
+
+        // 原生 socket 客户端。
+        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        XCTAssertGreaterThanOrEqual(fd, 0)
+        defer { Darwin.close(fd) }
+        var address = sockaddr_in()
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_port = serverPort.bigEndian
+        address.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
+        let connectResult = withUnsafePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        XCTAssertEqual(connectResult, 0, "connect 失败 errno=\(errno)")
+
+        let key = Data("dGhlIHNhbXBsZSBub25jZQ==".utf8)
+        let handshake = "GET /v1/responses HTTP/1.1\r\nHost: 127.0.0.1\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\nOpenAI-Beta: responses_websockets=2026-02-06\r\n\r\n"
+        let handshakeData = Data(handshake.utf8)
+        let sentResult = handshakeData.withUnsafeBytes { raw -> Int in
+            guard let base = raw.bindMemory(to: UInt8.self).baseAddress else { return -1 }
+            var sent = 0
+            while sent < handshakeData.count {
+                let n = Darwin.send(fd, base + sent, handshakeData.count - sent, 0)
+                if n <= 0 { break }
+                sent += n
+            }
+            return sent
+        }
+        _ = sentResult
+        // 读握手响应头（无鉴权 → 帧处理会回 401 error 帧）。
+        var responseBuffer = Data()
+        let headDeadline = Date().addingTimeInterval(10)
+        while Date() < headDeadline {
+            var chunk = [UInt8](repeating: 0, count: 4096)
+            let n = recv(fd, &chunk, chunk.count, 0)
+            if n <= 0 { break }
+            responseBuffer.append(contentsOf: chunk[0..<n])
+            if Data(responseBuffer).range(of: Data("\r\n\r\n".utf8)) != nil { break }
+        }
+        let headText = String(decoding: responseBuffer.prefix(120), as: UTF8.self)
+        XCTAssertTrue(headText.contains("101"), "握手响应: \(headText)")
+
+        // 发送文本帧（掩码）。
+        let payload = Data("{\"type\":\"response.create\",\"model\":\"relay/m1\",\"stream\":true,\"input\":[]}".utf8)
+        let frame = WebSocketFrameEncoder.encode(fin: true, opcode: 0x1, payload: payload, masked: true)
+        _ = frame.withUnsafeBytes { raw -> Int in
+            guard let base = raw.bindMemory(to: UInt8.self).baseAddress else { return -1 }
+            var frameSent = 0
+            while frameSent < frame.count {
+                let n = Darwin.send(fd, base + frameSent, frame.count - frameSent, 0)
+                if n <= 0 { break }
+                frameSent += n
+            }
+            return frameSent
+        }
+
+        // 读回帧字节。
+        var received = Data()
+        let frameDeadline = Date().addingTimeInterval(15)
+        while Date() < frameDeadline, received.count < 2 {
+            var chunk = [UInt8](repeating: 0, count: 4096)
+            let n = recv(fd, &chunk, chunk.count, 0)
+            if n <= 0 { 
+                print("RAWTEST recv returned \(n) errno=\(errno) after \(received.count) bytes")
+                break 
+            }
+            received.append(contentsOf: chunk[0..<n])
+            let frames = try? WebSocketFrameDecoder().feed(Data(received))
+            if let frames, !frames.isEmpty {
+                print("RAWTEST 收到 \(frames.count) 帧: opcodes=\(frames.map { $0.opcode }) payloadHead=\(String(decoding: frames[0].payload.prefix(80), as: UTF8.self))")
+                break
+            }
+        }
+        XCTAssertGreaterThanOrEqual(received.count, 2, "服务器回帧缺失；首字节: \(String(decoding: received.prefix(60), as: UTF8.self))")
+    }
+
     func testSSEEventParser() {
         var parser = SSEEventParser()
         let chunk = Data("data: {\"a\":1}\n\ndata: [DONE]\n\nevent: x\ndata: {\"b\":2}\n\n".utf8)

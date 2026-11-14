@@ -362,6 +362,7 @@ struct ToolCenterView: View {
         case .ipv4Subnet: return "网络与 IP"
         case .quotaOverview: return "AI 额度"
         case .agentSpeed: return "AI 测速"
+        case .codexRouter: return "Codex 路由"
         }
     }
 }

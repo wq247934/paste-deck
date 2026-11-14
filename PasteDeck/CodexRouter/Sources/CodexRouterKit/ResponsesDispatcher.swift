@@ -295,12 +295,22 @@ final class ResponsesDispatcher {
             if status >= 400 {
                 recordLastError("上游 \(status)（\(label)）")
             }
-            // SSE 按行转发：保留事件边界语义，内存占用与轮次大小无关。
+            // 字节级透传：SSE 的空行事件边界必须原样保留（.lines 会吞掉空行，
+            // 导致 Codex 无法分帧）。按行触发即时 flush，兼顾延迟与块大小。
             let stream = AsyncThrowingStream<Data, Error> { continuation in
                 let task = Task {
                     do {
-                        for try await line in upstreamResponse.bytes.lines {
-                            continuation.yield(Data((line + "\n").utf8))
+                        var pending = [UInt8]()
+                        pending.reserveCapacity(8192)
+                        for try await byte in upstreamResponse.bytes {
+                            pending.append(byte)
+                            if byte == 0x0A || pending.count >= 16384 {
+                                continuation.yield(Data(pending))
+                                pending.removeAll(keepingCapacity: true)
+                            }
+                        }
+                        if !pending.isEmpty {
+                            continuation.yield(Data(pending))
                         }
                         continuation.finish()
                     } catch is CancellationError {

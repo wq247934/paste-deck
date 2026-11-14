@@ -66,12 +66,13 @@ final class WorkbenchUnifiedSearchTests: XCTestCase {
 
     func testToolRegistryDiscoversAllBuiltinTools() {
         let tools = ToolRegistry.allTools
-        XCTAssertEqual(tools.count, 4)
+        XCTAssertEqual(tools.count, 5)
 
         let ids = Set(tools.map(\.id))
         XCTAssertTrue(ids.contains(BuiltinTool.timestampConversion.id))
         XCTAssertTrue(ids.contains(BuiltinTool.ipv4Subnet.id))
         XCTAssertTrue(ids.contains(BuiltinTool.quotaOverview.id))
         XCTAssertTrue(ids.contains(BuiltinTool.agentSpeed.id))
+        XCTAssertTrue(ids.contains(BuiltinTool.codexRouter.id))
     }
 }

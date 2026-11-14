@@ -18,6 +18,8 @@ enum BuiltinTool: String, CaseIterable, Identifiable, Equatable {
     case quotaOverview = "com.pastedeck.tool.quota"
     /// AI 实时测速（Agent Speed 引擎与动画，见 PasteDeck/AgentSpeed/LICENSE-AgentSpeed）。
     case agentSpeed = "com.pastedeck.tool.agent-speed"
+    /// Codex 模型路由：官方 Plus 通道 + 第三方 Responses API 合并进 Codex 模型选择器。
+    case codexRouter = "com.pastedeck.tool.codex-router"
 
     var id: String { rawValue }
 
@@ -66,6 +68,19 @@ enum BuiltinTool: String, CaseIterable, Identifiable, Equatable {
                 aliases: ["测速", "agentspeed", "ai测速", "速度计", "实时测速"],
                 preferredWindowSize: CGSize(width: 430, height: 760)
             )
+        case .codexRouter:
+            return ToolDescriptor(
+                id: id,
+                name: "Codex 模型路由",
+                symbolName: "arrow.triangle.swap",
+                summary: "把官方 GPT 与第三方 Responses API 模型合并进 Codex 模型选择器；一键启用、关闭与恢复",
+                keywords: [
+                    "codex", "路由", "router", "模型", "中转", "api", "responses", "代理", "plus",
+                    "第三方", "gpt", "切换", "模型选择器", "relay",
+                ],
+                aliases: ["codex路由", "模型路由", "router", "中转站", "codex router"],
+                preferredWindowSize: CGSize(width: 780, height: 640)
+            )
         }
     }
 
@@ -74,7 +89,7 @@ enum BuiltinTool: String, CaseIterable, Identifiable, Equatable {
         switch self {
         case .timestampConversion, .ipv4Subnet:
             return true
-        case .quotaOverview, .agentSpeed:
+        case .quotaOverview, .agentSpeed, .codexRouter:
             return false
         }
     }
@@ -96,6 +111,8 @@ extension BuiltinTool {
             QuotaToolView()
         case .agentSpeed:
             AgentSpeedToolView()
+        case .codexRouter:
+            CodexRouterToolView()
         }
     }
 }
