@@ -250,11 +250,16 @@ public final class CodexRouterController {
             URLSession.shared.dataTask(with: request) { _, _, _ in semaphore.signal() }.resume()
             _ = semaphore.wait(timeout: .now() + 3.5)
         }
-        // 2. 兜底：pidfile。
+        // 2. 兜底：pidfile —— 必须证明 PID 仍属于本模块守护进程才发信号，
+        //    防 PID 复用误杀无关进程。
         if let state = PrivateFile.readJSON(
             stateDirectory.appendingPathComponent("daemon.json"), as: RuntimeStateDocument.self),
            state.pid > 0 {
-            kill(pid_t(state.pid), SIGTERM)
+            let pid = pid_t(state.pid)
+            let healthy = Self.queryHealth(port: state.port) != nil
+            if healthy || Self.processBelongsToDaemon(pid) {
+                kill(pid, SIGTERM)
+            }
         }
         try? FileManager.default.removeItem(
             atPath: stateDirectory.appendingPathComponent("daemon.json").path)
@@ -263,28 +268,27 @@ public final class CodexRouterController {
     // MARK: - 恢复
 
     /// 一键恢复：清理托管残留与孤立状态。返回动作报告。
+    ///
+    /// 安全边界（对齐"外部配置改动不能被覆盖"）：
+    /// - 常规路径走所有权校验的外科手术式恢复；
+    /// - 所有权状态丢失时，只移除**本模块标记块内的内容**（标记定界即归属），
+    ///   model_provider 若仍为本模块托管值则回退为 Codex 默认 "openai"；
+    /// - **绝不整体覆盖 config.toml**。首次安装备份仅保留在磁盘上供用户
+    ///   自行比对（UI 与 CLI 恢复均不再自动整份回写备份）。
     public func restore() throws -> String {
         clearLastError()
         var actions: [String] = []
         let configStatus = try configManager.status()
 
-        // 1. 托管块仍在 → 外科手术式移除（等价 disable，但容忍所有权缺失：
-        //    状态文件可能已丢失，此时直接移除托管块并恢复 model_provider 默认值）。
+        // 1. 托管块仍在 → 外科手术式移除。
         if configStatus.managedArtifactsPresent {
             do {
                 try configManager.disable()
                 actions.append("已移除托管配置块并恢复 model_provider。")
-            } catch {
-                // 所有权状态丢失：回退到首次备份（仅在 config 无法自恢复时使用）。
-                if PrivateFile.exists(configManager.backupURL.path) {
-                    let backup = try Data(contentsOf: configManager.backupURL)
-                    try PrivateFile.writeAtomically(backup, to: configURL)
-                    try? FileManager.default.removeItem(
-                        atPath: configManager.ownershipStateURL.path)
-                    actions.append("托管块所有权校验失败，已从首次安装备份恢复原始 config.toml。")
-                } else {
-                    throw error
-                }
+            } catch CodexConfigError.ownershipLost {
+                // 所有权状态丢失：仅清理本模块拥有的标记块内容，不碰任何用户内容。
+                let report = try configManager.stripManagedContent()
+                actions.append(report)
             }
         } else if PrivateFile.exists(configManager.ownershipStateURL.path) {
             try? FileManager.default.removeItem(atPath: configManager.ownershipStateURL.path)
@@ -326,6 +330,9 @@ public final class CodexRouterController {
         if let apiKey, !apiKey.isEmpty {
             try keychain.setSecret(apiKey, kind: .endpointAPIKey, account: "endpoint/\(endpoint.id)")
         }
+        // 运行时同步：立即重写 credentials.json，守护进程按 mtime 热加载，
+        // 修改/删除 Key 不会继续使用旧凭据。
+        try materializeCredentials(document: document)
         if routed {
             _ = try? CatalogBuilder.publish(
                 stateDirectory: stateDirectory, endpoints: document.endpoints,
@@ -338,6 +345,7 @@ public final class CodexRouterController {
         document.endpoints.removeAll { $0.id == id }
         try endpointStore.save(document)
         keychain.deleteEndpointSecrets(endpointID: id)
+        try materializeCredentials(document: document)
         if routed {
             _ = try? CatalogBuilder.publish(
                 stateDirectory: stateDirectory, endpoints: document.endpoints,
@@ -349,7 +357,8 @@ public final class CodexRouterController {
         keychain.secret(kind: .endpointAPIKey, account: "endpoint/\(endpointID)")
     }
 
-    /// 保存代理配置（密码进 Keychain）。
+    /// 保存代理配置（密码进 Keychain）。同时重写 credentials.json，
+    /// 守护进程检测到变化后重建上游会话使新代理立即生效。
     public func saveProxy(_ proxy: RouterProxyConfig, password: String?) throws {
         var document = endpointStore.load()
         document.proxy = proxy
@@ -361,6 +370,7 @@ public final class CodexRouterController {
         } else {
             keychain.deleteSecret(kind: .proxyPassword, account: "proxy")
         }
+        try materializeCredentials(document: document)
     }
 
     public func proxyPassword() -> String? {
@@ -400,6 +410,14 @@ public final class CodexRouterController {
         )
         let data = try JSONEncoder().encode(credentials)
         try PrivateFile.writeAtomically(data, to: stateDirectory.appendingPathComponent("credentials.json"))
+    }
+
+    /// 验证 PID 是否属于本模块守护进程（按可执行文件路径判定）。
+    static func processBelongsToDaemon(_ pid: pid_t) -> Bool {
+        var pathBuffer = [CChar](repeating: 0, count: 4096)
+        let length = proc_pidpath(pid, &pathBuffer, UInt32(pathBuffer.count))
+        guard length > 0 else { return false }
+        return String(cString: pathBuffer).hasSuffix("pastedeck-codex-router")
     }
 
     static func probeFreePort(from base: Int) -> Int? {

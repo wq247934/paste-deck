@@ -68,10 +68,29 @@ public enum PrivateFile {
             throw error
         }
         try protect(temporary.path)
-        if FileManager.default.fileExists(atPath: targetPath) {
-            try FileManager.default.removeItem(atPath: targetPath)
+        // 同目录 rename() 是 POSIX 原子替换：任意时刻目标路径要么是完整旧文件，
+        // 要么是完整新文件，不存在"先删后移"的丢失窗口。rename 前后各 fsync
+        // 一次（文件已同步，这里刷目录项）保证崩溃后元数据一致。
+        let renameResult = temporary.path.withCString { temporaryPath in
+            targetPath.withCString { targetPointer in
+                rename(temporaryPath, targetPointer)
+            }
         }
-        try FileManager.default.moveItem(at: temporary, to: target)
+        if renameResult != 0 {
+            try? FileManager.default.removeItem(at: temporary)
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno),
+                          userInfo: [NSLocalizedDescriptionKey:
+                            "rename(\(temporary.lastPathComponent) → \(target.lastPathComponent)) 失败：\(String(cString: strerror(errno)))"])
+        }
+        syncDirectory(directory.path)
+    }
+
+    /// fsync 目录项，确保 rename 在掉电后同样可见。
+    private static func syncDirectory(_ path: String) {
+        let fd = open(path, O_RDONLY | O_DIRECTORY)
+        guard fd >= 0 else { return }
+        fsync(fd)
+        close(fd)
     }
 
     static func writeAtomically(_ text: String, to target: URL, directoryMode: mode_t = 0o700) throws {

@@ -177,8 +177,10 @@ final class ResponsesDispatcher {
             return await forwardExternal(route: route, payload: payload, request: request, compactV1: isCompactV1)
         }
 
-        // 路由规则 2：官方原生 GPT 透传。
-        return await forwardNative(payload: payload, request: request, compactV1: isCompactV1)
+        // 路由规则 2：官方原生 GPT 透传。无需要剥离的字段时保留原始请求字节。
+        return await forwardNative(
+            payload: payload, originalBody: payloadData,
+            request: request, compactV1: isCompactV1)
     }
 
     // MARK: - 第三方转发
@@ -236,15 +238,23 @@ final class ResponsesDispatcher {
     // MARK: - 原生转发
 
     private func forwardNative(
-        payload: [String: Any], request: DispatchRequest, compactV1: Bool
+        payload: [String: Any], originalBody: Data?,
+        request: DispatchRequest, compactV1: Bool
     ) async -> DispatchResult {
-        var native = payload
         // 原生轮次按无状态全量会话转发：剥离 previous_response_id（compact V1 例外）。
-        if !compactV1 { native.removeValue(forKey: "previous_response_id") }
-        guard JSONSerialization.isValidJSONObject(native),
-              let bodyData = try? JSONSerialization.data(withJSONObject: native) else {
-            recordLastError("原生请求体序列化失败")
-            return Self.errorResult(status: 400, type: "invalid_request_error", message: "请求体不是合法 JSON。")
+        // 无该字段时字节级透传原始请求体（JSON 反序列化仅用于路由判定）。
+        let bodyData: Data
+        if !compactV1, payload["previous_response_id"] == nil, let originalBody {
+            bodyData = originalBody
+        } else {
+            var native = payload
+            if !compactV1 { native.removeValue(forKey: "previous_response_id") }
+            guard JSONSerialization.isValidJSONObject(native),
+                  let serialized = try? JSONSerialization.data(withJSONObject: native) else {
+                recordLastError("原生请求体序列化失败")
+                return Self.errorResult(status: 400, type: "invalid_request_error", message: "请求体不是合法 JSON。")
+            }
+            bodyData = serialized
         }
         let (maybeCompressed, compressed) = ZstdSupport.compressNativeBodyIfBeneficial(bodyData)
         _ = compressed

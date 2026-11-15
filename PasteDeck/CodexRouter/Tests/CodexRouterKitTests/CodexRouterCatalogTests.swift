@@ -238,35 +238,32 @@ final class CodexRouterCatalogTests: XCTestCase {
         XCTAssertFalse(PrivateFile.exists(stateDirectory.appendingPathComponent("codex-provider-mode.json").path))
     }
 
-    func testRestoreFromBackupWhenOwnershipLost() throws {
+    func testRestoreWithoutOwnershipOnlyStripsOwnedContent() throws {
         let controller = makeController()
-        // 原始配置 + 备份。
-        let original = "model = \"gpt-6.1-sol\"\nmodel_provider = \"openai\"\n"
-        try original.write(to: temporaryHome.appendingPathComponent("config.toml"), atomically: true, encoding: .utf8)
-        try original.write(to: temporaryHome.appendingPathComponent("config.toml.pre-pastedeck-router"), atomically: true, encoding: .utf8)
-        // 托管块 + 状态被外部破坏（model_provider 已被改走）。
-        let drifted = """
-        model_provider = "something-else"
-
-        # BEGIN pastedeck-router-managed
-        openai_base_url = "http://127.0.0.1:4212/v1"
-        model_catalog_json = "\(stateDirectory.appendingPathComponent("merged-models.json").path)"
-        # END pastedeck-router-managed
-        """
-        try drifted.write(to: temporaryHome.appendingPathComponent("config.toml"), atomically: true, encoding: .utf8)
-        let state = ProviderModeState(
-            version: 1, managedProvider: "pastedeck-router-signed",
-            previousPresent: false, previousModelProvider: nil,
-            managedBaseURL: "http://127.0.0.1:4212/v1")
-        try PrivateFile.writeAtomically(
-            try JSONEncoder().encode(state),
-            to: stateDirectory.appendingPathComponent("codex-provider-mode.json"))
+        // 启用后的托管形态 + 用户后来新增的内容（必须原样保留）。
+        let managed = "# BEGIN pastedeck-router-managed\n"
+            + "openai_base_url = \"http://127.0.0.1:4212/v1\"\n"
+            + "model_catalog_json = \"\(stateDirectory.appendingPathComponent("merged-models.json").path)\"\n"
+            + "# END pastedeck-router-managed\n"
+        let userContent = "model = \"gpt-6.1-sol\"\n"
+            + "model_provider = \"pastedeck-router-signed\"\n\n"
+            + managed + "\n"
+            + "[projects.\"/Users/me/new-project\"]\n"
+            + "trust_level = \"trusted\"\n"
+        try userContent.write(to: temporaryHome.appendingPathComponent("config.toml"), atomically: true, encoding: .utf8)
+        // 所有权状态文件丢失（启用后状态目录被破坏的场景）：disable 不再
+        // 校验所有权，但仍只动自有内容并把托管 provider 回退为默认值。
 
         let report = try controller.restore()
-        XCTAssertTrue(report.contains("备份"))
-        // config 恢复为原始内容。
+        XCTAssertTrue(report.contains("已移除托管配置块"), report)
         let restored = try String(contentsOf: temporaryHome.appendingPathComponent("config.toml"), encoding: .utf8)
-        XCTAssertEqual(restored, original)
+        // 托管块消失、provider 回退默认值。
+        XCTAssertFalse(restored.contains("pastedeck-router-managed"))
+        XCTAssertFalse(restored.contains("pastedeck-router-signed"))
+        XCTAssertTrue(restored.contains("model_provider = \"openai\""))
+        // 用户后来的修改必须原样保留。
+        XCTAssertTrue(restored.contains("[projects.\"/Users/me/new-project\"]"))
+        XCTAssertTrue(restored.contains("trust_level = \"trusted\""))
     }
 
     func testControllerRecordsLastErrorOnEnableFailure() throws {

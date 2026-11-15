@@ -40,15 +40,27 @@ let hopByHopResponseHeaders: Set<String> = [
 
 /// 上游转发客户端。
 final class UpstreamClient {
+    /// 按代理配置构建的会话。
     let session: URLSession
+    /// 回环直连会话（无代理）：本地端点（如 LM Studio）与内部跳转绝不走代理，
+    /// 防止请求循环与代理误劫持。
+    private let directSession: URLSession
 
     init(proxy: RouterProxyConfig, proxyPassword: String?) {
         let configuration = ProxySupport.upstreamConfiguration(proxy: proxy, proxyPassword: proxyPassword)
         self.session = URLSession(configuration: configuration)
+        let direct = ProxySupport.upstreamConfiguration(proxy: .standard(), proxyPassword: nil)
+        self.directSession = URLSession(configuration: direct)
     }
 
     deinit {
         session.finishTasksAndInvalidate()
+        directSession.finishTasksAndInvalidate()
+    }
+
+    /// 按目标选择会话：回环地址绕过代理。
+    private func session(forURL urlString: String) -> URLSession {
+        ProxySupport.targetIsLoopback(urlString) ? directSession : session
     }
 
     /// 发起 POST，返回可流式读取的响应。请求体不得携带 Content-Encoding 之外
@@ -70,7 +82,8 @@ final class UpstreamClient {
         request.timeoutInterval = 600
 
         do {
-            let (bytes, response) = try await session.bytes(
+            let bytesSession = session(forURL: url)
+            let (bytes, response) = try await bytesSession.bytes(
                 for: request, delegate: nil)
             guard let httpResponse = response as? HTTPURLResponse else {
                 throw UpstreamError.transportFailed("非 HTTP 响应")
@@ -99,7 +112,8 @@ final class UpstreamClient {
         request.timeoutInterval = timeout
         let startedAt = Date()
         do {
-            let (_, response) = try await session.data(for: request)
+            let probeSession = session(forURL: url)
+            let (_, response) = try await probeSession.data(for: request)
             let status = (response as? HTTPURLResponse)?.statusCode
             return (status, nil)
         } catch {

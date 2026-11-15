@@ -246,6 +246,19 @@ public struct CodexConfigManager {
             }
         }
 
+        // 1b. 所有权状态文件丢失时：托管块仍属本模块（标记定界即归属），
+        //     model_provider 若仍为本模块托管值则回退 Codex 默认，避免留下
+        //     指向已拆除路由的悬空引用。其余用户内容不动。
+        if !PrivateFile.exists(ownershipStateURL.path) {
+            let currentProvider = scan.stringValue(tablePath: [], key: "model_provider")
+            if currentProvider == CodexRouterConstants.signedProviderID,
+               let assignment = scan.assignments.first(where: {
+                   $0.tablePath.isEmpty && $0.key == "model_provider"
+               }) {
+                lines[assignment.lineIndex] = "model_provider = \"openai\""
+            }
+        }
+
         // 2. 移除本模块托管块（成对标记）；不成对的标记按漂移拒绝。
         let (cleaned, drifted) = Self.removeManagedBlocks(lines: lines)
         if drifted {
@@ -274,6 +287,64 @@ public struct CodexConfigManager {
 
         try PrivateFile.writeAtomically(Self.normalizedOutput(lines), to: configURL)
         try? FileManager.default.removeItem(at: ownershipStateURL)
+    }
+
+    // MARK: - 无所有权恢复（标记定界即归属）
+
+    /// 所有权状态文件丢失时的兜底恢复：只移除**本模块标记块内**的内容，
+    /// model_provider 仅在仍是本模块托管值时回退为 Codex 默认 "openai"。
+    /// 绝不触碰标记块外的任何用户内容，也绝不整份回写备份。
+    /// 返回给用户的动作报告。
+    func stripManagedContent() throws -> String {
+        let original = PrivateFile.readText(configURL)
+        guard let original else { return "config.toml 不存在，无需恢复。" }
+        let scan: TOMLScanResult
+        do { scan = try TOMLScanner.scan(original) }
+        catch { throw CodexConfigError.unreadableStructure(error.localizedDescription) }
+
+        var lines = scan.lines
+        let (cleaned, drifted) = Self.removeManagedBlocks(lines: lines)
+        if drifted {
+            throw CodexConfigError.drifted("存在未成对的 pastedeck-router-managed 标记，已拒绝自动清理。")
+        }
+        lines = cleaned
+
+        let rescan = try TOMLScanner.scan(lines.joined(separator: "\n"))
+        var actions = ["已移除托管配置块。"]
+        // model_provider：只处理本模块设置的值（无法得知原始值时回退 Codex 默认）。
+        if let assignment = rescan.assignments.first(where: {
+            $0.tablePath.isEmpty && $0.key == "model_provider"
+        }),
+           rescan.stringValue(tablePath: [], key: "model_provider") == CodexRouterConstants.signedProviderID {
+            lines = rescan.lines
+            lines[assignment.lineIndex] = "model_provider = \"openai\""
+            actions.append("model_provider 已回退为 Codex 默认值 \"openai\"（原始自定义值未知，如需还原请对照备份 \(backupURL.lastPathComponent) 手工修改）。")
+        }
+        // 游离的托管根级赋值（旧布局残留）。
+        let finalScan = try TOMLScanner.scan(lines.joined(separator: "\n"))
+        let removals = finalScan.assignments.filter { assignment in
+            guard assignment.tablePath.isEmpty else { return false }
+            if assignment.key == "openai_base_url" {
+                return isManagedBaseURL(finalScan.stringValue(tablePath: [], key: "openai_base_url"))
+            }
+            if assignment.key == "model_catalog_json" {
+                return finalScan.stringValue(tablePath: [], key: "model_catalog_json") == mergedCatalogURL.path
+            }
+            return false
+        }
+        if !removals.isEmpty {
+            var cleanedLines = finalScan.lines
+            for assignment in removals.reversed() {
+                for index in stride(from: assignment.valueRange.upperBound, through: assignment.lineIndex, by: -1) {
+                    if index < cleanedLines.count { cleanedLines.remove(at: index) }
+                }
+            }
+            lines = cleanedLines
+            actions.append("已移除游离的托管根级配置项。")
+        }
+        try PrivateFile.writeAtomically(Self.normalizedOutput(lines), to: configURL)
+        try? FileManager.default.removeItem(atPath: ownershipStateURL.path)
+        return actions.joined(separator: " ")
     }
 
     // MARK: - 模板

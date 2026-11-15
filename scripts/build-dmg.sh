@@ -53,6 +53,17 @@ mkdir -p "$APP_BUNDLE/Contents/Resources"
 # Copy executable
 cp "${EXECUTABLE}" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
 
+# Copy Codex Router helper daemon (Codex model routing depends on it; DaemonLauncher
+# locates it in Contents/MacOS/ by name)
+ROUTER_HELPER="${BUILD_DIR}/pastedeck-codex-router"
+if [ ! -f "$ROUTER_HELPER" ]; then
+    echo "❌ Router helper missing: $ROUTER_HELPER"
+    exit 1
+fi
+cp "$ROUTER_HELPER" "$APP_BUNDLE/Contents/MacOS/pastedeck-codex-router"
+chmod 755 "$APP_BUNDLE/Contents/MacOS/pastedeck-codex-router"
+echo "🧩 Bundled Codex Router helper daemon"
+
 # Generate Info.plist with resolved values
 # (Source Info.plist uses Xcode build variables that won't resolve with swift build)
 cat > "$APP_BUNDLE/Contents/Info.plist" << EOF
@@ -157,6 +168,13 @@ if [ ! -f "$ENTITLEMENTS" ]; then
     echo "❌ Entitlements file not found at $ENTITLEMENTS"
     exit 1
 fi
+
+# 先签嵌套的 helper（外层包签名必须覆盖已签名的嵌套二进制）。
+echo "✍️ Signing Codex Router helper daemon..."
+codesign --force \
+    --sign "$CODE_SIGN_IDENTITY" \
+    --timestamp=none \
+    "$APP_BUNDLE/Contents/MacOS/pastedeck-codex-router"
 
 codesign --force \
     --sign "$CODE_SIGN_IDENTITY" \

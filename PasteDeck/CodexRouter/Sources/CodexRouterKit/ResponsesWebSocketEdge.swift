@@ -10,6 +10,7 @@
 
 import Foundation
 import CommonCrypto
+import os
 
 /// WS 升级握手校验结果。
 enum WebSocketUpgradeOutcome {
@@ -78,9 +79,17 @@ final class ResponsesWebSocketSession {
     /// previous_response_id → {input, output} 基线。
     private var continuations: [String: [String: Any]] = [:]
     private var continuationOrder: [String] = []
-    private var currentTask: Task<Void, Never>?
-    private var pendingRequests = 0
-    private var closed = false
+    private struct SessionState {
+        /// 串行链尾：新请求排队等待前一个完成后才执行（严格 FIFO）。
+        var tail: Task<Void, Never>?
+        /// 排队深度（含在途），超过上限直接关闭连接。
+        var pendingRequests = 0
+        /// 当前在途分发任务（interrupt 只取消它——串行化后同一时刻最多一个）。
+        var currentDispatch: Task<DispatchResult, Never>?
+        var closed = false
+    }
+
+    private let state = OSAllocatedUnfairLock<SessionState>(initialState: SessionState())
 
     init(connection: HTTPConnection, dispatcher: ResponsesDispatcher, upgradeHeaders: [String: String]) {
         self.connection = connection
@@ -93,7 +102,7 @@ final class ResponsesWebSocketSession {
     /// 阻塞式接收循环（运行在连接线程上）。
     func runBlocking() {
         var buffer = Data()
-        while !closed && !connection.isClosed {
+        while !isClosed && !connection.isClosed {
             var chunk = [UInt8](repeating: 0, count: 1 << 16)
             let n = recv(connection.fileDescriptor, &chunk, chunk.count, 0)
             if n <= 0 {
@@ -107,7 +116,7 @@ final class ResponsesWebSocketSession {
                 buffer = Data()
                 for frame in frames {
                     handleFrame(frame)
-                    if closed { return }
+                    if isClosed { return }
                 }
             } catch WebSocketFrameError.binaryFrame {
                 close(code: .unsupportedData, reason: "Binary messages are not supported")
@@ -156,16 +165,29 @@ final class ResponsesWebSocketSession {
         }
     }
 
+    /// 严格串行：请求按到达顺序链式执行，两个 response.create 不会并发
+    /// 修改 latestRequestInput / continuations。
     private func enqueue(_ work: @escaping () async -> Void) {
-        if pendingRequests >= Self.maxQueuedRequests {
+        let overflow = state.withLock { state -> Task<Void, Never>? in
+            guard state.pendingRequests < Self.maxQueuedRequests else { return nil }
+            state.pendingRequests += 1
+            let previousTail = state.tail
+            let chained = Task { [weak self] in
+                await previousTail?.value
+                guard let self, !self.isClosed else { return }
+                await work()
+                self.state.withLock { $0.pendingRequests -= 1 }
+            }
+            state.tail = chained
+            return chained
+        }
+        if overflow == nil {
             close(code: .policyViolation, reason: "Too many queued requests")
-            return
         }
-        pendingRequests += 1
-        currentTask = Task { [weak self] in
-            await work()
-            self?.pendingRequests -= 1
-        }
+    }
+
+    var isClosed: Bool {
+        state.withLock { $0.closed }
     }
 
     // MARK: - response.create
@@ -213,7 +235,12 @@ final class ResponsesWebSocketSession {
             headers: upgradeHeaders,
             body: bodyData
         )
-        let result = await dispatcher.dispatch(dispatchRequest)
+        // 在途分发单独建 Task，使 response.interrupt 能精确取消当前轮次
+        // （串行链保证同一时刻只有一个在途轮次）。
+        let dispatchTask = Task { await dispatcher.dispatch(dispatchRequest) }
+        state.withLock { $0.currentDispatch = dispatchTask }
+        let result = await dispatchTask.value
+        state.withLock { $0.currentDispatch = nil }
 
         if result.status >= 400 {
             latestRequestInput = nil
@@ -254,7 +281,8 @@ final class ResponsesWebSocketSession {
             sendErrorFrame(status: 400, type: "invalid_request_error", message: "response.interrupt requires response_id and mode.")
             return
         }
-        currentTask?.cancel()
+        // 只取消当前在途轮次（串行链保证它就是 interrupt 指向的那个）。
+        state.withLock { $0.currentDispatch }?.cancel()
         var accepted: [String: Any] = [
             "type": "response.interrupt.accepted",
             "response_id": responseID,
@@ -290,7 +318,7 @@ final class ResponsesWebSocketSession {
                 }
                 if connection.hasBackpressure {
                     // 简单背压：等待写队列消化。
-                    while connection.hasBackpressure, !closed {
+                    while connection.hasBackpressure, !isClosed {
                         try await Task.sleep(nanoseconds: 5_000_000)
                     }
                 }
@@ -365,49 +393,64 @@ final class ResponsesWebSocketSession {
     // MARK: - 关闭
 
     private func close(code: WebSocketCloseCode, reason: String = "") {
-        guard !closed else { return }
-        closed = true
-        currentTask?.cancel()
+        let inFlight = state.withLock { state -> Task<DispatchResult, Never>? in
+            state.closed = true
+            return state.currentDispatch
+        }
+        inFlight?.cancel()
         connection.send(WebSocketFrameEncoder.closeFrame(code: code, reason: reason)) {
             self.connection.close()
         }
     }
 
     private func transportClosed() {
-        guard !closed else { return }
-        closed = true
-        currentTask?.cancel()
+        let inFlight = state.withLock { state -> Task<DispatchResult, Never>? in
+            state.closed = true
+            return state.currentDispatch
+        }
+        inFlight?.cancel()
         connection.close()
     }
 }
 
-/// SSE 字节流解析器：按空行分隔事件，提取 data: 行内容。
+/// SSE 字节流解析器：行级解析，事件边界为空行。
+/// 行终止符支持 \n、\r\n 与 \r；字段只取 data:（事件类型由 JSON type 承载）。
 struct SSEEventParser {
-    private var buffer = Data()
+    private var buffer = [UInt8]()
+    private var dataLines: [String] = []
 
     mutating func feed(_ chunk: Data) -> [Data] {
-        buffer.append(chunk)
+        buffer.append(contentsOf: [UInt8](chunk))
         var events: [Data] = []
-        while let range = buffer.range(of: Data("\n\n".utf8)) {
-            let block = buffer[..<range.lowerBound]
-            buffer = buffer.subdata(in: range.upperBound..<buffer.endIndex)
-            let event = Self.dataPayload(from: block)
-            if let event { events.append(event) }
+        while let line = Self.takeLine(&buffer) {
+            if line.isEmpty {
+                if let event = Self.event(from: dataLines) {
+                    events.append(event)
+                }
+                dataLines.removeAll(keepingCapacity: true)
+            } else if line.hasPrefix("data:") {
+                dataLines.append(String(line.dropFirst(5)).trimmingCharacters(in: .whitespaces))
+            }
+            // event:/id:/retry: 等字段不影响按 JSON type 分帧的语义，忽略。
         }
         return events
     }
 
-    /// 从一个事件块提取 data: 负载（合并多行）。
-    static func dataPayload(from block: Data) -> Data? {
-        guard let text = String(data: block, encoding: .utf8) else { return nil }
-        var lines: [String] = []
-        for line in text.components(separatedBy: "\n") {
-            var trimmed = line
-            if trimmed.hasSuffix("\r") { trimmed.removeLast() }
-            if trimmed.hasPrefix("data:") {
-                lines.append(String(trimmed.dropFirst(5)).trimmingCharacters(in: .whitespaces))
-            }
+    /// 取一行（含终止符消费）；行尾 \r\n / \n / \r 均视为终止。
+    static func takeLine(_ buffer: inout [UInt8]) -> String? {
+        guard let terminator = buffer.firstIndex(where: { $0 == 0x0A || $0 == 0x0D }) else { return nil }
+        var line = buffer[..<terminator]
+        var consumed = terminator + 1
+        // \r\n 视为单个终止符。
+        if buffer[terminator] == 0x0D, consumed < buffer.count, buffer[consumed] == 0x0A {
+            consumed += 1
         }
+        if line.last == 0x0D { line = line.dropLast() }
+        buffer.removeFirst(consumed)
+        return String(decoding: line, as: UTF8.self)
+    }
+
+    static func event(from lines: [String]) -> Data? {
         guard !lines.isEmpty else { return nil }
         let joined = lines.joined(separator: "\n")
         guard joined != "[DONE]" else { return nil }

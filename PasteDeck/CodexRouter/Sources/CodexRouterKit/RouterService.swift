@@ -31,6 +31,8 @@ public final class RouterService {
     private(set) var dispatcher: ResponsesDispatcher?
     private var routeTable: RouteTable?
     private var callerSecret: String = ""
+    private var lastProxyRevision = 0
+    private let stateLock = NSLock()
 
     public init(stateDirectory: URL, port: UInt16) {
         self.stateDirectory = stateDirectory
@@ -54,21 +56,15 @@ public final class RouterService {
         // 2. 组装组件。
         let table = RouteTable(stateDirectory: stateDirectory)
         routeTable = table
-        let document = RouterEndpointStore(stateDirectory: stateDirectory).load()
-        let credentials = PrivateFile.readJSON(
-            stateDirectory.appendingPathComponent("credentials.json"),
-            as: RuntimeCredentialsDocument.self
-        )
-        let upstream = UpstreamClient(proxy: document.proxy, proxyPassword: credentials?.proxyPassword)
+        _ = table.allRoutes()  // 触发首次加载，取得代理基线
+        let upstream = UpstreamClient(proxy: table.proxy, proxyPassword: table.proxyPassword)
         let session = CodexAuthSession()
         let dispatcher = ResponsesDispatcher(
             routeTable: table, upstream: upstream, authSession: session, callerSecret: secret)
         self.dispatcher = dispatcher
+        lastProxyRevision = table.revision
 
-        // 3. 写 pidfile（供主程序识别与停止）。
-        writeRuntimeState()
-
-        // 4. 监听。
+        // 3. 监听（成功后再写 pidfile，避免残留状态误导停止逻辑）。
         let server = RouterHTTPServer(port: port) { [weak self] request, connection in
             self?.handleRequest(request, connection)
         }
@@ -77,6 +73,7 @@ public final class RouterService {
             return false
         }
         self.server = server
+        writeRuntimeState()
         RouterService.log("listening on 127.0.0.1:\(port)")
         return true
     }
@@ -105,6 +102,26 @@ public final class RouterService {
             atPath: stateDirectory.appendingPathComponent("daemon.json").path)
     }
 
+    /// 代理/凭据配置变化时重建 dispatcher（新的 UpstreamClient 会话）。
+    private func rebuildDispatcherIfProxyChanged() {
+        stateLock.lock()
+        let knownRevision = lastProxyRevision
+        stateLock.unlock()
+        guard let table = routeTable else { return }
+        table.reloadIfNeeded()
+        let current = table.revision
+        guard current != knownRevision else { return }
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        guard lastProxyRevision != current else { return }
+        let upstream = UpstreamClient(proxy: table.proxy, proxyPassword: table.proxyPassword)
+        let session = CodexAuthSession()
+        dispatcher = ResponsesDispatcher(
+            routeTable: table, upstream: upstream, authSession: session, callerSecret: callerSecret)
+        lastProxyRevision = current
+        RouterService.log("检测到端点/凭据/代理配置变化，已重建上游会话（revision \(current)）")
+    }
+
     // MARK: - 请求路由
 
     private func handleRequest(_ request: HTTPRequest, _ connection: HTTPConnection) {
@@ -119,6 +136,9 @@ public final class RouterService {
             handleUpgrade(request, connection)
             return
         }
+
+        // 代理配置热更新：endpoints/credentials 变更触发重建上游会话。
+        rebuildDispatcherIfProxyChanged()
 
         // 其余端点一律鉴权。
         let dispatcher = self.dispatcher

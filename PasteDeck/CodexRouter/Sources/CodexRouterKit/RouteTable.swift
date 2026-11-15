@@ -25,7 +25,12 @@ final class RouteTable {
     private let credentialsFileURL: URL
     private let lock = NSLock()
     private var routes: [String: ExternalRoute] = [:]
-    private var cachedMtime: (mtime: Date, size: Int)?
+    private var cachedFingerprint: (endpoints: (mtime: Date, size: Int), credentials: (mtime: Date, size: Int)?)?
+    /// 每次重建递增；代理配置变化时守护进程据此重建上游会话。
+    public private(set) var revision: Int = 0
+    /// 当前生效的代理配置（含凭据文件里的代理密码）。
+    public private(set) var proxy: RouterProxyConfig = .standard()
+    public private(set) var proxyPassword: String?
     private(set) var loadedAt: Date = .distantPast
 
     init(stateDirectory: URL) {
@@ -51,17 +56,23 @@ final class RouteTable {
         return lock.withLock { routes.values.contains { $0.endpointID == prefix } }
     }
 
-    private func reloadIfNeeded() {
-        let fingerprint = Self.fileFingerprint(endpointsFileURL)
-        guard let fingerprint = fingerprint else { return }
+    public func reloadIfNeeded() {
+        let endpointFingerprint = Self.fileFingerprint(endpointsFileURL)
+        let credentialFingerprint = Self.fileFingerprint(credentialsFileURL)
+        guard let endpointFingerprint else { return }
         let shouldReload = lock.withLock {
-            cachedMtime.map { $0.mtime != fingerprint.mtime || $0.size != fingerprint.size } ?? true
+            cachedFingerprint.map {
+                $0.endpoints.mtime != endpointFingerprint.mtime
+                    || $0.endpoints.size != endpointFingerprint.size
+                    || $0.credentials?.mtime != credentialFingerprint?.mtime
+                    || $0.credentials?.size != credentialFingerprint?.size
+            } ?? true
         }
         guard shouldReload else { return }
-        rebuild(fingerprint: fingerprint)
+        rebuild(fingerprint: (endpointFingerprint, credentialFingerprint))
     }
 
-    private func rebuild(fingerprint: (mtime: Date, size: Int)) {
+    private func rebuild(fingerprint: (endpoints: (mtime: Date, size: Int), credentials: (mtime: Date, size: Int)?)) {
         let store = RouterEndpointStore(stateDirectory: endpointsFileURL.deletingLastPathComponent())
         let document = store.load()
         let credentials = PrivateFile.readJSON(credentialsFileURL, as: RuntimeCredentialsDocument.self)
@@ -83,7 +94,10 @@ final class RouteTable {
         }
         lock.withLock {
             routes = newRoutes
-            cachedMtime = fingerprint
+            proxy = document.proxy
+            proxyPassword = credentials?.proxyPassword
+            cachedFingerprint = fingerprint
+            revision += 1
             loadedAt = Date()
         }
     }

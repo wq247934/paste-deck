@@ -39,12 +39,13 @@ final class CodexRouterEngineTests: XCTestCase {
 
     // MARK: - Mock 上游
 
-    /// 请求记录器（init 期闭包捕获的安全载体）。
+    /// 请求记录器（init 期闭包捕获的安全载体）：保序记录全部请求。
     final class RequestRecorder {
         private let lock = NSLock()
-        private var stored: HTTPRequest?
-        func record(_ request: HTTPRequest) { lock.withLock { stored = request } }
-        func latest() -> HTTPRequest? { lock.withLock { stored } }
+        private var stored: [HTTPRequest] = []
+        func record(_ request: HTTPRequest) { lock.withLock { stored.append(request) } }
+        func latest() -> HTTPRequest? { lock.withLock { stored.last } }
+        func all() -> [HTTPRequest] { lock.withLock { stored } }
     }
 
     /// 极简 mock 上游：记录收到的请求，回放预设 SSE/JSON。
@@ -556,6 +557,173 @@ final class CodexRouterEngineTests: XCTestCase {
             }
         }
         XCTAssertGreaterThanOrEqual(received.count, 2, "服务器回帧缺失；首字节: \(String(decoding: received.prefix(60), as: UTF8.self))")
+    }
+
+    // MARK: - 审查修复回归
+
+    func testPrivateFileAtomicReplaceKeepsFileIntact() throws {
+        let target = stateDirectory.appendingPathComponent("atomic-test.json")
+        try PrivateFile.writeAtomically("first".data(using: .utf8)!, to: target)
+        XCTAssertEqual(try String(contentsOf: target, encoding: .utf8), "first")
+        XCTAssertTrue(PrivateFile.isProtected(target.path))
+        // 二次覆盖：rename 原子替换，内容与权限保持正确。
+        try PrivateFile.writeAtomically("second-content".data(using: .utf8)!, to: target)
+        XCTAssertEqual(try String(contentsOf: target, encoding: .utf8), "second-content")
+        XCTAssertTrue(PrivateFile.isProtected(target.path))
+        // 无临时文件残留。
+        let leftovers = try FileManager.default.contentsOfDirectory(atPath: stateDirectory.path)
+            .filter { $0.hasPrefix(".tmp.") }
+        XCTAssertTrue(leftovers.isEmpty)
+    }
+
+    func testRouteTableReloadsCredentialsHot() throws {
+        try installEndpoint(baseURL: "https://relay.example.com/v1",
+                            models: [RouterEndpointModel.standard(modelID: "m1", displayName: "M")])
+        let table = RouteTable(stateDirectory: stateDirectory)
+        XCTAssertEqual(table.route(for: "relay/m1")?.apiKey, "sk-third-party-key")
+
+        // 改写凭据文件（模拟 PasteDeck 修改 Key 后重新物化），路由表热加载新 Key。
+        var credentials = try JSONDecoder().decode(
+            RuntimeCredentialsDocument.self,
+            from: Data(contentsOf: stateDirectory.appendingPathComponent("credentials.json")))
+        credentials.entries[0].apiKey = "sk-rotated-key"
+        let data = try JSONEncoder().encode(credentials)
+        try PrivateFile.writeAtomically(data, to: stateDirectory.appendingPathComponent("credentials.json"))
+        // mtime 精度兜底：显式推动修改时间。
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date().addingTimeInterval(1)],
+            ofItemAtPath: stateDirectory.appendingPathComponent("credentials.json").path)
+
+        XCTAssertEqual(table.route(for: "relay/m1")?.apiKey, "sk-rotated-key")
+        // 修订号随重建递增（代理热更新依据）。
+        let revisionAfterCredential = table.revision
+        XCTAssertGreaterThan(revisionAfterCredential, 0)
+        XCTAssertEqual(table.proxyPassword, nil)
+    }
+
+    func testProxyLoopbackDetection() {
+        XCTAssertTrue(ProxySupport.targetIsLoopback("http://127.0.0.1:4212/v1/responses"))
+        XCTAssertTrue(ProxySupport.targetIsLoopback("http://localhost:1234/v1"))
+        XCTAssertTrue(ProxySupport.targetIsLoopback("http://[::1]:8080/v1"))
+        XCTAssertFalse(ProxySupport.targetIsLoopback("https://watchdog02.senhe.work/v1/responses"))
+        XCTAssertFalse(ProxySupport.targetIsLoopback("https://chatgpt.com/backend-api/codex"))
+    }
+
+    func testProcessOwnershipRejectsForeignPID() throws {
+        // 当前测试进程与 sleep 进程都不是路由守护进程。
+        XCTAssertFalse(CodexRouterController.processBelongsToDaemon(getpid()))
+        let sleep = Process()
+        sleep.executableURL = URL(fileURLWithPath: "/bin/sleep")
+        sleep.arguments = ["0.5"]
+        try sleep.run()
+        defer { sleep.terminate() }
+        XCTAssertFalse(CodexRouterController.processBelongsToDaemon(pid_t(sleep.processIdentifier)))
+    }
+
+    func testSSEParserHandlesCRLFAndBareCR() {
+        // \r\n\r\n 事件边界 + \r\n 行尾。
+        var parser = SSEEventParser()
+        let crlf = Data("data: {\"a\":1}\r\n\r\ndata: {\"b\":2}\r\n\r\n".utf8)
+        XCTAssertEqual(parser.feed(crlf).count, 2)
+        // \n 与 \r\n 混排。
+        var mixed = SSEEventParser()
+        let mixedChunk = Data("data: {\"a\":1}\n\ndata: {\"b\":2}\r\n\r\n".utf8)
+        XCTAssertEqual(mixed.feed(mixedChunk).count, 2)
+        // 分块到达（事件边界跨 chunk）。
+        var chunked = SSEEventParser()
+        XCTAssertEqual(chunked.feed(Data("data: {\"a\":1}\r\n".utf8)).count, 0)
+        XCTAssertEqual(chunked.feed(Data("\r\n".utf8)).count, 1)
+    }
+
+    func testWebSocketRequestsAreProcessedSerially() async throws {
+        let mock = try MockUpstream(recorder: RequestRecorder(), responseBody: makeSSE(events: [
+            "{\"type\":\"response.completed\"}",
+        ]))
+        defer { mock.stop() }
+        try installEndpoint(
+            baseURL: "http://127.0.0.1:\(mock.port)/v1",
+            models: [
+                RouterEndpointModel.standard(modelID: "first", displayName: "F"),
+                RouterEndpointModel.standard(modelID: "second", displayName: "S"),
+            ])
+        let dispatcher = makeDispatcher(nativeBaseURL: "http://127.0.0.1:\(mock.port)")
+
+        let serverPort = UInt16(50200 + Int.random(in: 0...600))
+        let server = RouterHTTPServer(port: serverPort) { [dispatcher] request, connection in
+            guard request.path == "/v1/responses",
+                  case .accept(let key) = ResponsesWebSocketEdge.validateUpgrade(request: request) else {
+                RouterHTTPServer.writeSimpleError(connection, status: 426, message: "upgrade_required")
+                return
+            }
+            let accept = ResponsesWebSocketEdge.acceptHeaderValue(for: key)
+            let head = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: \(accept)\r\n\r\n"
+            connection.send(Data(head.utf8))
+            let session = ResponsesWebSocketSession(
+                connection: connection, dispatcher: dispatcher, upgradeHeaders: request.headers)
+            session.runBlocking()
+        }
+        XCTAssertTrue(server.start())
+        defer { server.stop() }
+
+        // 原生 socket 客户端：连续快速发送两个不同模型的请求帧。
+        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        defer { Darwin.close(fd) }
+        var address = sockaddr_in()
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_port = serverPort.bigEndian
+        address.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
+        _ = withUnsafePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        let handshake = "GET /v1/responses HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\nAuthorization: Bearer \(callerSecret!)\r\nOpenAI-Beta: responses_websockets=2026-02-06\r\n\r\n"
+        let handshakeData = Data(handshake.utf8)
+        handshakeData.withUnsafeBytes { raw in
+            _ = Darwin.send(fd, raw.baseAddress, handshakeData.count, 0)
+        }
+        // 等待 101。
+        var headBuffer = Data()
+        let headDeadline = Date().addingTimeInterval(10)
+        while Date() < headDeadline, !headBuffer.contains(Data("\r\n\r\n".utf8)) {
+            var chunk = [UInt8](repeating: 0, count: 4096)
+            let n = recv(fd, &chunk, chunk.count, 0)
+            if n <= 0 { break }
+            headBuffer.append(contentsOf: chunk[0..<n])
+        }
+        XCTAssertTrue(headBuffer.contains(Data("101".utf8)))
+
+        func sendFrame(_ payload: Data) {
+            let frame = WebSocketFrameEncoder.encode(fin: true, opcode: 0x1, payload: payload, masked: true)
+            frame.withUnsafeBytes { raw in
+                _ = Darwin.send(fd, raw.baseAddress, frame.count, 0)
+            }
+        }
+        func makeFrame(_ model: String) -> Data {
+            let body: [String: Any] = [
+                "type": "response.create", "model": model, "stream": true,
+                "input": [["type": "message", "role": "user",
+                           "content": [["type": "input_text", "text": "hi"]]]],
+            ]
+            return try! JSONSerialization.data(withJSONObject: body)
+        }
+        // 连续发送（无等待）→ 串行链必须保证上游按到达顺序处理。
+        sendFrame(makeFrame("relay/first"))
+        sendFrame(makeFrame("relay/second"))
+
+        // 等待两个上游请求都到达。
+        let deadline = Date().addingTimeInterval(15)
+        while Date() < deadline, mock.recorder.all().count < 2 {
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        let ordered = mock.recorder.all()
+        XCTAssertEqual(ordered.count, 2, "两个请求都应到达上游")
+        if ordered.count == 2 {
+            let first = try JSONSerialization.jsonObject(with: ordered[0].body) as! [String: Any]
+            let second = try JSONSerialization.jsonObject(with: ordered[1].body) as! [String: Any]
+            XCTAssertEqual(first["model"] as? String, "first")
+            XCTAssertEqual(second["model"] as? String, "second", "串行链必须保持到达顺序")
+        }
     }
 
     func testSSEEventParser() {
