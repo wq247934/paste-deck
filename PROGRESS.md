@@ -2,7 +2,7 @@
 
 ## 项目状态
 
-**当前版本**：v2.1.0
+**当前版本**：v2.3.0（feature/codex-model-router 分支）
 **开始日期**：2026-05-23
 **完成度**：99%
 
@@ -14,6 +14,7 @@
 
 | 功能 | 状态 | 版本 | 备注 |
 |------|------|------|------|
+| 鼠标长按超级面板 (Phase 1) | ✅ | v2.0.23 | 全局长按右键就地唤起；支持文件夹/文件/选中文本/空白处识别、复制绝对路径、终端打开、纯文本复制、即时翻译、就地速贴 |
 | 剪贴板监听与记录 | ✅ | v1.0.0 | NSPasteboard 轮询，0.5s 间隔 |
 | 内容类型识别 | ✅ | v1.0.0 | 文本/链接/图片/文件/颜色 |
 | Markdown / JSON 支持 | ✅ | v1.0.0 | 类型检测与预览 |
@@ -30,6 +31,17 @@
 | 删除与批量操作 | ✅ | v1.0.0 | 单选/多选删除 |
 | 图片资产生命周期 | ✅ | v1.15.3 | SHA-256 文件级去重；采用、最终引用删除与维护串行协调；缓存维护只扫描未引用图片 |
 | 批量粘贴 | ✅ | v1.0.0 | 多选批量粘贴 |
+| 来源 App 筛选 | ✅ | v2.0.22 | 速贴面板与工作台共用；菜单仅列出当前结果中出现过的来源 |
+| 收藏夹筛选标签 | ✅ | v2.0.22 | 全部 / 各自定义收藏夹胶囊切换，支持就地新建收藏夹 |
+| 条目重命名（别名） | ✅ | v2.0.22 | 右键菜单与工作台检查器；别名参与搜索且可清除 |
+| 收藏夹归属管理 | ✅ | v2.0.22 | 右键"添加到收藏夹"子菜单，勾选态同步；翻译系统分类不可手动关联 |
+| 键盘删除 / 复制 | ✅ | v2.0.22 | Delete 删除选中项、⌘C 复制选中项（速贴与工作台一致） |
+| Tab 切换筛选 | ✅ | v2.0.22 | 卡片区按 Tab 循环收藏夹筛选标签 |
+| 上下文工具面板（速贴） | ✅ | v2.0.22 | 选中时间戳/IP 条目时右侧自动推荐并内嵌工具，可手动关闭 |
+| 工作台全库搜索补全 | ✅ | v2.0.22 | 搜索字段补齐文件路径、网页标题与颜色值，与速贴面板 searchBlob 对齐 |
+| 工作台批量粘贴 | ✅ | v2.0.22 | Shift/⌘ 多选后回车按显示顺序批量粘贴并提升排序 |
+| 工作台自定义收藏夹导航 | ✅ | v2.0.22 | 侧边栏"收藏夹"分组可单独浏览任一收藏夹 |
+| 翻译历史入口 | ✅ | v2.0.22 | 速贴与工作台预览翻译分类条目时恢复原翻译工作区窗口 |
 
 ### 预览功能
 
@@ -77,7 +89,7 @@
 | 功能指南 | ✅ | v1.15.0 | 菜单栏和设置页均可进入；以场景卡片、三步操作与上下文快捷键导览现有能力 |
 | 设置窗口缩放 | ✅ | v1.16.0 | 默认 920×680、最小 760×520；支持自由拖动缩放并记住本次窗口尺寸 |
 | 额度设置页 | ✅ | v2.0.18 | Codex、Gemini（含 Token 消费统计看板）与 WorkBuddy/workbuddy2api 自托管网关全功能体系 |
-| 菜单栏余额显示 | ✅ | v2.0.18 | 开关开启后菜单栏图标旁显示 Codex（C）、Gemini（G）与 WorkBuddy（W）剩余余额，余额不足变红 |
+| 菜单栏余额显示 | ✅ | v2.0.18 | 开关开启后菜单栏图标旁分两行显示余额：上行 5 小时额度 Codex（C）/ Gemini（G）与 WorkBuddy（W）剩余余额，下行每周额度（C周 / G周，v2.1.2 新增），余额不足变红 |
 
 ### 统计功能
 
@@ -125,6 +137,7 @@
 | AI 实时测速工具 | ✅ | v2.1.0 | Agent Speed 引擎与动画整体原生集成：五种 Metal 仪表、载具动画、悬浮球窗口、历史统计与设置页；搜索“agent/ai/测速/token/速度”直达 |
 | 时间日期计算器完整分区 | ✅ | v1.19.0 | 日期差/推算日期/推算工作日/工作天数（内置 2024–2025 法定节假日）、英文日期格式、世界时间、在线秒表 |
 | IPv4 归属地查询 | ✅ | v1.19.0 | ipwho.is 主源 + ipinfo.io 备源；仅点击查询时发送该 IP，私网地址拒绝；会话内缓存 |
+| Codex 模型路由 | ✅ | v2.3.0 | 纯 Swift 路由引擎（CodexRouterKit + pastedeck-codex-router 守护进程）：官方 Plus 透传 + 第三方 Responses API 合并进 Codex 模型选择器；HTTP/WS 双通道、SSE 字节级透传、zstd 压缩、代理（HTTP/SOCKS5/系统）、Keychain 密钥、托管式 config.toml 切换与一键恢复；隔离 CODEX_HOME 端到端验证 8/8 |
 | 侧边栏拖拽调宽 | ✅ | v1.19.1 | 左边缘手柄 260–420pt；v1.19.0 实现因原生覆盖层直接读 UserDefaults，全新安装时该 key 从未写入导致宽度读为 0、手柄静默失效，v1.19.1 改为与 SwiftUI 共享同一状态对象并在 mouseUp 时落盘 |
 
 ### 性能优化
@@ -149,6 +162,8 @@
 | TranslationUsageStatsTests | ✅ | 翻译统计范围筛选、成功率、API 字符/大模型 Token 摘要，以及按日趋势与服务排行详情聚合 |
 | TranslationSelectionProbeTests | ✅ | 多格式剪贴板恢复与内部探测标记隔离 |
 | ClipboardAssetLifecycleTests | ✅ | 内容寻址复用、重复临时资产释放、共享引用删除、采用/删除竞态与图片目录安全清理 |
+| ClipboardDeduplicationTests | ✅ | 重新复制命中任意旧记录提升到顶部、新内容正常入库、翻译快照不参与匹配、图片按内容寻址路径匹配、文件/颜色独立键 |
+| SimilarContentScanTests | ✅ | dHash 纯缓冲与 rep 集成（尺度/亮度不变、镜像分离）、规范化键（空白折叠/链接去跟踪参数/短文本跳过/色值大小写）、三阶段分组（精确成组、图片阈值边界、模糊合并与 JSON/链接排除、组序）与 Delete 二次确认状态 |
 | QuotaServiceTests | ✅ | Codex 快照解析（窗口/重置卡/缺失窗口）、WorkBuddy 字符串容量解析与分层排序、倒计时与紧凑数字格式化 |
 | TimestampMathTests | ✅ | 时间戳严格解析（位数/非 ASCII 数字/手机号拒绝）、范围边界、时区格式化、ISO 8601 与往返转换 |
 | IPv4MathTests | ✅ | 地址解析拒绝项、地址类型（私网/回环/链路本地/CGNAT/组播/保留）、/0 /31 /32 边界与 CIDR 拒绝项 |
@@ -251,5 +266,12 @@
 | v2.0.18 | 2026-10-13 | 补全 Gemini Token 消费统计看板与 WorkBuddy2API 自托管网关全量体系：1. 完整还原 Antigravity-Manager `token-stats` 消费看板（`GeminiTokenStatsView`）：顶部小时(24h)/日(7d)/周(30d)时钟切换与刷新，6 个 Summary KPI 卡片（总 Token、输入、输出、缓存命中、活跃账号、使用模型），堆叠柱状 Token 使用趋势图，分模型详细统计表格（请求数、输入、输出、缓存命中、合计与占比进度胶囊）与分账号分布；2. 深度移植 `codex-quota-utools` 的 `gateway.js` 与前端体系（`WorkBuddyGatewayService` 与 `WorkBuddyGatewayView`）：完整支持对 `http://127.0.0.1:17863` 网关的概览（账号池环形健康度、uptime、redis 模式与快捷操作）、账号（全量账号卡片、成功率/连败/在途展开与签到/查余额/解冻/禁用运维操作）、积分包（使用中/未动/已耗尽三层智能排序明细与进度条）、用量（6h~1440h 时段、总计 KPI、按模型 TOP 12 表格与按账号表格）、模型（20 个映射模型倍率与能力标签）及设置子视图；3. AppSettings 持久化网关配置并支持连接测试；4. 新增 4 项 Token 统计与网关数据单元测试，全套 168 项测试通过。 |
 | v2.0.19 | 2026-10-14 | 额度信息架构按职责重新分层（职责分离修复）：1. 菜单栏「额度详情…」由跳转设置页改为打开独立「额度查看」工具窗口（`AppDelegate.openQuotaToolWindow` + `ToolWindowController`，与时间/IP 工具同形态，已打开时直接前置不重复创建）；2. 设置页「额度」面板精简为纯配置项（菜单栏余额开关、Gemini 代理端点与 WEB_PASSWORD、workbuddy2api 网关地址与 API Key），不再堆叠数据看板；3. `QuotaToolView` 重构为概览 → 详情两级结构：概览页三张服务卡片（Codex / Gemini / WorkBuddy）各显示品牌图标、核心余量百分比/积分、进度条与重置倒计时，点击卡片下钻到对应详情页；4. Codex 详情页含 5 小时额度、每周额度与速率重置卡明细；Gemini 详情页含 5 小时/每周额度、模型额度明细与 Token 消费统计看板；WorkBuddy 详情页含合计可用、账户与订阅、积分包明细与 workbuddy2api 网关看板；5. 清理设置页冗余数据组件（hero 卡片、账户/合计/积分包面板等 600 余行），共享展示组件收敛到额度工具窗口复用；6. 工具窗口默认尺寸调整为 720×720。 |
 | v2.0.20 | 2026-10-14 | 修复速贴面板三项交互回归（对齐 master 主面板行为）：1. 「点选后回车贴出错误内容/看似不粘贴」：根因是 `MainPanelController` 开启 `isMovableByWindowBackground` 后所有 mouseDown 被窗口拖拽消费（NSHostingView 不下传 `mouseDownCanMoveWindow` 协商，v1.19.1 侧边栏手柄同类先例），SwiftUI 行点击与按钮手势全部失效，键盘选中索引纹丝不动，回车永远贴旧选中项；实测 AX 点击命中第 5 行后选中仍停在第 1 行、面板 ⌘K 按钮点击同样无效。修复为关闭背景拖拽（与 master NSCollectionView 面板手感一致），实机验证点击行 → 选中即变 → 回车粘贴正确内容；2. 补回 2.0 重构时丢失的 Shift 多选模型：`UnifiedSearchCoordinator` 移植 master 的 `selectedItems` + `anchorIndex` + `rebuildExtendedSelection` + `handleTap`（Cmd+Click 翻转、Shift+Click 区间、普通点击单选；方向键 `extending` 由键盘监视器从事件 modifiers 传入，工具条目不参与多选），行视图多选态显示 ✓ 徽章，回车走 `promotePastedItems` → `batchPaste` 按显示顺序批量粘贴，实机验证 Shift+↓ 两行同高亮、批量粘贴两条内容依序落入目标文档；3. 面板呼出默认选中第二条（对齐 master `selectDefaultCard()`：第一条通常是刚被上一轮粘贴顶到最前的"最旧"内容），`selectDefault()` 同步锚点与多选清空；4. 全套 168 项单元测试通过，真机 CGEvent/AX 全链路实测三项行为。 |
-| v2.1.0 | 2026-11-05 | **AI 实时测速 —— Agent Speed 引擎与原生动画全面集成（工具中心新模块）**：1. 整体移植 Agent Speed（MIT）的 AgentSpeedCore / AgentSpeedOrbModel / AgentSpeedHero / CZstd 为独立 SwiftPM target，测速语义、时间窗口与边界处理与上游逐字节一致（算法测试 889 项全通过）；2. 自动发现 Codex、Claude Code/Desktop、DSH、OpenCode、Gemini CLI、omp、Antigravity、WorkBuddy 双版、ZCode、Kimi、Grok Build、Pi、OpenClaw、Hermes、Factory Droid 共 16 类本地来源，FSEvents + 轮询兜底 + 500ms 快照发布全部后台执行；3. 五种 Metal 仪表（LED/指针/液球/反应堆/极简圆环）与步行到火箭的载具动画、冲击波、纪录庆祝、空闲呼吸全部由真实引擎事件驱动；4. 桌面悬浮球支持多球、独立来源/样式/单位/大小、拖动吸附、按显示器持久化、鼠标穿透、空闲淡出与 8 秒撤销；5. 工具中心新增「AI 实时测速」独立窗口，菜单栏新增速度区块与四种显示模式（宽度治理防跳变），设置页新增「AI 测速」页（总开关/来源开关/动画强度/满档速度/价格同步默认关），历史统计落 PasteDeck 专属 SQLite 并支持 CSV 导出；6. 新增 AgentSpeedKitTests，上游测试全部保留并通过；已知限制：上游网络层 5 项测试在无出网沙盒默认关闭（AGENT_SPEED_NET_TESTS=1 启用），悬浮球多显示器拖动、Reduce Motion 与窗口生命周期需真机人工验证。 |
+| v2.0.22 | 2026-10-16 | 恢复 2.0 重构期间丢失的剪贴板管理能力并修复工作台搜索范围（对齐 master 主面板）：1. 新增共享剪贴板筛选组件 `ClipboardFilterControls`（来源 App 筛选菜单、收藏夹筛选标签、右键上下文菜单、重命名别名对话框、区分"无结果/无历史"的空态），速贴面板与工作台共用同一实现，杜绝两个界面能力再次漂移；2. 速贴面板补齐来源筛选、收藏夹筛选 Tab、右键菜单（复制/纯文本粘贴/预览/置顶/收藏/收藏夹归属/重命名/删除）、Delete 删除、⌘C 复制、Tab 循环筛选、左右方向键切换筛选标签，并在选中时间戳/IPv4 条目时恢复右侧上下文工具面板（可手动关闭、切换选中自动恢复）；3. 工作台补齐来源筛选菜单、完整右键菜单、检查器"…"菜单补置顶/重命名/清除别名/收藏夹归属/删除、Delete 与 ⌘C 键盘操作、Shift+方向键连续多选后回车批量粘贴（含 promotePastedItems 提升排序）、侧边栏"收藏夹"分组浏览任一自定义收藏夹；4. 修复工作台搜索字段不完整：SQL 原有 5 个字段遗漏 ZFILEPATH（实测目录名"xwechat_files"漏检 64 条）、ZLINKPAGETITLE 与 ZCOLORHEX，导致按文件路径、网页标题或颜色值搜索不到记录；补齐为 8 字段并与速贴面板 searchBlob 对齐，同时把来源与收藏夹条件下推为 SQL WHERE；5. 速贴与工作台预览"翻译"系统分类条目时恢复原翻译工作区窗口而非普通预览；6. `WorkbenchHistoryStore` 补齐 `toggleCollection` / `saveTitle` / `createCollection` / `batchPaste` / `promotePastedItems` 与来源列表发布，`UnifiedSearchCoordinator` 新增统一筛选状态入口（含工作台目标保持，避免筛选把侧边栏选中重置回历史）；7. 删除已无实例化的 `MainPanelView`（约 2000 行死代码），将其纯几何部分（布局度量、视口可见性、键盘导航）抽为 `MainPanelLayoutMetrics` 保持可测；8. 新增 10 项剪贴板筛选/搜索/归属/重命名回归测试，全套 178 项单元测试通过，并经 Computer Use 实机验证筛选、右键菜单、重命名、删除与批量粘贴全链路。 |
 | v2.0.21 | 2026-10-14 | 修复工作台剪贴板记录「回车」与「右键粘贴为纯文本」完全无法粘贴：1. 粘贴链断裂：`WorkbenchView.executePrimaryAction` 对剪贴板条目只执行 `copyToPasteboard`（语义是复制而非粘贴），右键/检查器「粘贴为纯文本」只调 `preparePaste` 写剪贴板后便无下文——两者都从不调用 `PasteService.performPaste()` 模拟 ⌘V；统一改为完整粘贴链：`preparePaste`（暂停监控+写剪贴板）→ `WorkbenchWindowController.hideForPaste()`（收起工作台并在 app 激活时 `NSApp.hide` 让此前台应用恢复焦点）→ 100ms 后 `performPaste()`，与速贴面板 `pasteSnapshot` 同语义；2. 键盘监视器 guard 缺陷：实机日志实证 LSUIElement app 经菜单/NSApp.activate 路径获得焦点时 keyDown 事件 `event.window == nil`，`handleKey` 的 `guard let eventWindow = event.window` 将回车/方向键/Esc 全部放行（表现为键盘导航完全失效）；改为 `event.window ?? NSApp.keyWindow` 兜底并校验 identifier；3. 168 项单元测试通过。 |
+| v2.1.0 | 2026-11-05 | **AI 实时测速 —— Agent Speed 引擎与原生动画全面集成（工具中心新模块）**：1. 整体移植 Agent Speed（MIT）的 AgentSpeedCore / AgentSpeedOrbModel / AgentSpeedHero / CZstd 为独立 SwiftPM target，测速语义、时间窗口与边界处理与上游逐字节一致（算法测试 889 项全通过）；2. 自动发现 Codex、Claude Code/Desktop、DSH、OpenCode、Gemini CLI、omp、Antigravity、WorkBuddy 双版、ZCode、Kimi、Grok Build、Pi、OpenClaw、Hermes、Factory Droid 共 16 类本地来源，FSEvents + 轮询兜底 + 500ms 快照发布全部后台执行；3. 五种 Metal 仪表（LED/指针/液球/反应堆/极简圆环）与步行到火箭的载具动画、冲击波、纪录庆祝、空闲呼吸全部由真实引擎事件驱动；4. 桌面悬浮球支持多球、独立来源/样式/单位/大小、拖动吸附、按显示器持久化、鼠标穿透、空闲淡出与 8 秒撤销；5. 工具中心新增「AI 实时测速」独立窗口，菜单栏新增速度区块与四种显示模式（宽度治理防跳变），设置页新增「AI 测速」页（总开关/来源开关/动画强度/满档速度/价格同步默认关），历史统计落 PasteDeck 专属 SQLite 并支持 CSV 导出；6. 新增 AgentSpeedKitTests，上游测试全部保留并通过；已知限制：上游网络层 5 项测试在无出网沙盒默认关闭（AGENT_SPEED_NET_TESTS=1 启用），悬浮球多显示器拖动、Reduce Motion 与窗口生命周期需真机人工验证。 |
+| v2.0.24 | 2026-10-25 | WorkBuddy 余额接入 routex 统一网关多账号合计与菜单栏余额每分钟刷新：1. 新增 `RoutexQuotaService`：WorkBuddy 多账号余额改由 routex 项目统一管理，通过管理端 `POST /api/admin/login` 换取 `routex_session` 会话（进程内缓存，401 自动重登一次），读取 `/api/admin/upstreams/workbuddy/api/overview` 账号池数据，合计全部参与路由账号（排除 disabled / paused）的 `credits` / `credits_total`，并与上游选号口径一致；2. `QuotaStatusManager` 查询链改为 routex 优先 + 本机凭证回退：配置 routex（地址 + 管理密码）后读账号池合计，routex 未配置或查询失败时自动回退本机 WorkBuddy 桌面版凭证直连腾讯计费接口（单账号），失败原因如实上报不静默吞掉；3. `WorkBuddyQuotaService.Snapshot` 扩展 `source`（routexPool / localCredential）与逐账号 `accounts` 明细，菜单栏 W 段显示「合计 · N 号」，悬停提示逐账号列出昵称/区域/状态（禁用/暂停/冷却）与积分；额度工具窗口 WorkBuddy 详情页在 routex 模式下展示账号池逐账号余额卡片并隐藏本机凭证专属的账户/订阅与积分包区块；4. 网关看板自动路由：配置 routex 后 `WorkBuddyGatewayService` 全部 `/panel/api/*` 请求自动转接为 routex 管理端 `/api/admin/upstreams/workbuddy/api/*`（复用登录会话与重试），未配置时保持直连自托管网关，运维操作（签到/查余额/解冻/禁用）一并迁移；5. 菜单栏余额后台刷新间隔由 15 分钟缩短为 60 秒（刷新按数据新鲜度去重，实际每轮都会发起查询），余额显示及时；6. 设置页「额度」新增 routex 统一网关配置卡片（启用开关、Base URL、管理密码，修改密码即时失效会话缓存），`AppSettings` 持久化 `routexBaseURL` / `routexAdminPassword` / `routexQuotaEnabled`；7. 新增 routex 账号池解析测试（多账号合计、disabled/paused 排除、排序与缺字段容错），全套 187 项单元测试通过。 |
+| v2.1.1 | 2026-11-06 | 速贴面板搜索键盘交互优化（对齐主面板既有焦点交接模型）：1. 搜索模式下 ←/→ 不再切换收藏夹筛选标签，改为透传给搜索输入框移动文本光标（⌥/⌘ 组合跳词、跳行同样透传）；2. 搜索模式下 Enter / ↓ 把焦点交还下方剪贴板记录区（高亮行保持不变），再次 Enter 才执行粘贴，与主面板"搜索时进入历史区"语义一致；3. Tab 在两种模式下统一循环切换收藏夹筛选标签，修复搜索模式下 Tab 字符落入输入框或漂移到键位环下一个视图的问题；4. `controlTextDidEndEditing` 时同步 focusZone 回卡片区，修复搜索框失焦后高亮残留与模式判断漂移；5. 底部快捷键提示新增 ⌘F 搜索；同步更新 README / REQUIREMENTS 键盘说明。 |
+| v2.1.2 | 2026-11-11 | 菜单栏余额两行显示（修复周额度不可见导致误读）：原来菜单栏仅拼接 5 小时窗口，Codex 5h 显示 100% 时每周额度可能已耗尽；现拆分 `QuotaStatusManager.menuBarSessionSegments` / `menuBarWeeklySegments`（纯静态函数便于单测），存在每周窗口数据时菜单栏分上下两行 9.5pt（固定行高 10.5，总高约 21pt 适配 22-24pt 菜单栏）——上行 5 小时额度 C/G + W 积分（+AI 速度分段），下行每周额度 C周/G周，颜色阈值与 5h 一致（触顶/≤15% 红、≤40% 橙）；仅速度模式下保持单行不变，无每周数据时回退原单行 11pt；额度专属模式下悬停提示改回余额详情（原误用测速提示）；新增 2 项菜单栏分段单测（22 项全过），实机替换 /Applications 验证两行渲染正常、同一本地证书重签辅助功能授权保留。 |
+| v2.1.5 | 2026-11-13 | 去重修复：重新复制历史中的内容不再产生重复记录。原 `ClipboardMonitor.isDuplicate` 只与最新一条对比（fetchLimit 1），重抄任意更早内容都会新建记录；现改为 `findExistingMatch` 按内容谓词查找最新同内容记录——文本类按原文、图片按内容寻址路径（文件名即规范 PNG 的 SHA-256）、文件按路径、颜色按色值，并跳过翻译工作区快照（快照原文与剪贴板原文相同，不能被提升）；命中后 `promoteExistingItem` 把原记录 createdAt 提到当前、刷新来源应用并广播新增的 `.promoted` 变更类型：速贴面板 `ClipboardHistoryStore.promoteItem` 原地移顶快照，工作台 `WorkbenchHistoryStore` 重载第一页。移除已无调用方的 `CacheManager.imageContentIdentifier`（旧版 UUID 命名文件对比遗留）。新增 ClipboardDeduplicationTests 覆盖旧记录命中、新内容放行、提升不改条数、翻译快照跳过、图片路径匹配与文件/颜色独立键。 |
+| v2.1.6 | 2026-11-13 | 菜单栏两行余额渲染修复（v2.1.2 两行方案真机验证发现首行顶部被裁切，且宽度截断）。根因有三层：①按钮富文本标题按单元格固有度量垂直居中绘制，两行总高超出标题绘制区时首行顶部被裁；②状态项窗口宽度只跟随按钮标题变化，不跟随后续 `statusItem.length`/子视图 frame 增长（实验实测：显式 length=128 时窗口停在首次部分数据的 75pt，条带占位与实际渲染宽度不一致）；③vibrancy 渲染下 `NSColor.clear` 前景色会被替换成可见的主文本样式，占位标题变成幽灵重影。最终方案：新增 `MenuBarQuotaLineView` 作为状态项按钮的子视图，`draw(_:)` 直接 `NSAttributedString.draw(at:)` 手绘两行（无任何单元格截断路径，Y 翻转坐标系），图标经 NSImageView 保留模板着色；按钮标题改为纯空格占位（空格字形无墨迹，任何渲染模式不可见），按内容宽度撑起状态项窗口；单行（无周数据/仅速度）与空数据回退原可见标题路径。`QuotaStatusManager` 拆分 `menuBarSessionSegments` / `menuBarWeeklySegments` 纯静态函数并新增 2 项单测（22 项全过）；额度专属模式悬停提示改回余额详情。实机替换 /Applications 验证：两行完整（上行 C/G 5h + W 积分、下行 C周/G周），C 触顶红色警示正常，同一本地证书重签辅助功能授权保留。 |
+| v2.2.0 | 2026-11-13 | 两项新功能（对照 PasteBar 补强）：1. 键盘 Delete 二次确认：共享 `PendingDeleteConfirmation`（ClipboardFilterControls），第一次按压武装警告——选中行变红 + 徽章换 trash，速贴面板 footer 整条替换为红色提示、工作台在内容区底部覆盖提示条；2.5 秒内再按才删除，移动选中/切换焦点区/超时自动解除武装；右键菜单与检查器删除保持显式动作。2. 清理相似内容（设置 → 历史 → 手动清理第五项）：新增 `SimilarContentScanner`——图片 9×8 dHash 感知指纹（CoreGraphics 位图上下文重采样；实测 NSImage.draw 重采样 9×8 恒输出全黑、NSBitmapImageRep setColor→colorAt 往返亦恒为黑，故弃用 AppKit 绘制路径）、文本空白折叠规范化键（≥12 字符）+ 模糊匹配（.text/.markdown ≥24 字符，长度窗口 ±8% + 字节直方图 bag-distance 预筛 + 去公共前后缀后字符级 Levenshtein 比率 ≥0.92）、链接剥离跟踪参数（utm_*/fbclid/gclid 等）后规范化、文件按路径、颜色按色值；并查集三阶段分组，组内最新一条标记"保留"，置顶/收藏夹成员锁定；文本 >5 万条或图片 >2 万条时如实提示跳过对应阶段。新增 `SimilarContentCleanupSheet`（760×560 分组预览：缩略图/摘要、元信息、逐项勾选、确认后按 id 重取 + 复查 isCleanupEligible + 统一生命周期删除 + 通用变更通知）。性能：扫描全程后台独立 ModelContext、纯数据候选跨线程、预筛与比较次数双上限。新增 SimilarContentScanTests 23 项；全套测试通过（Swift Testing 1342 + XCTest 218）。 |

@@ -6,6 +6,13 @@ PasteDeck 2.0 is a native macOS productivity workbench, smart toolbox, and clipb
 
 ## Highlights
 
+- **Super Panel (超级面板 / Long-Press Right-Click)**:
+  - Long-press the right mouse button (default ~350ms, configurable) anywhere in macOS to trigger a context-aware floating palette directly under your cursor.
+  - **Folder Context**: Instant one-click Copy Absolute Path, Copy Folder Name, Open in Terminal, or Open in VS Code.
+  - **File Context**: Copy Absolute Path, Copy Filename, Open Parent Directory in Terminal, or Open in Default App.
+  - **Selected Text Context**: Copy as Plain Text (strips formatting & line breaks), Instant Selected-Text Translation, or Web Search.
+  - **Idle / Empty Context**: Fast in-situ Quick Paste displaying the latest clipboard clips (click to simulate paste right at cursor), plus instant shortcuts to the full Workbench and Screenshot OCR.
+  - Non-activating, edge-clamped glass panel that retains your target window's focus for seamless in-place pasting.
 - **Dual-Surface Architecture**:
   - **Full macOS Workbench** (`Command + K` / Menu bar -> 打开工作台): Independent, resizable 3-column native window (1080 × 720 pt) featuring a navigation sidebar, high-density content list/grid, and a live context inspector.
   - **Quick Paste Panel** (`Command + Shift + V` / Menu bar -> 快速粘贴面板): Lightweight, non-activating floating panel with instant keyboard navigation (arrow keys, `Shift`+arrow multi-selection, Enter to paste — batch paste for multi-selection, Esc to dismiss), click-to-select rows, opens with the second row pre-selected, and quick tool execution.
@@ -14,7 +21,7 @@ PasteDeck 2.0 is a native macOS productivity workbench, smart toolbox, and clipb
 - **Built-in Smart Toolbox & Tool Center**: Standalone tools discovered dynamically from `ToolRegistry` with independent AppKit windows:
   - **Time & Date Calculator**: Unix timestamp bi-directional conversion, date difference, date arithmetic, holiday-aware working days, English date formats, world time, and stopwatch.
   - **IPv4 / Subnet Calculator**: IP validation, address classes, CIDR prefix calculations, subnet masks, usable host ranges, and optional IP geolocation.
-  - **Quota Overview**: Real-time local Codex (ChatGPT desktop) rate-limit windows and Tencent WorkBuddy credits.
+  - **Quota Overview**: Real-time local Codex (ChatGPT desktop) rate-limit windows and Tencent WorkBuddy credits — single-account via the local credential, or a routex-managed multi-account pool aggregate.
   - **AI Live Speed (AI 实时测速)**: A full native integration of the Agent Speed measurement engine and animation system (MIT, see `PasteDeck/AgentSpeed/LICENSE-AgentSpeed`). It auto-discovers local transcripts of Codex (CLI/IDE/desktop), Claude Code + Claude Desktop, DeepSeek Harness, OpenCode, Gemini CLI, omp, Antigravity, WorkBuddy (CN + AI), ZCode, Kimi Code CLI, Grok Build, Pi, OpenClaw, Hermes Agent and Factory Droid; measures output tok/s and total throughput with the upstream engine's exact semantics (3 s live window, 10-minute recent references, in-flight estimates corrected on completion, per-agent/per-source/parallel aggregation, measured-vs-estimated-vs-unmeasurable states); and drives the original five Metal-rendered gauge styles (LED, needle tachometer, liquid orb, reactor, minimal ring), the walking→rocket vehicle hero, response shockwaves and record celebrations. It ships as a tool-center module with an independent window, floating desktop orbs (drag, edge snap, click-through, idle fade, per-orb source/style/size), a menu-bar speed block with width governor, a usage-history window (daily aggregates in PasteDeck's own SQLite, CSV export), and a settings pane (master switch, per-source toggles, animation intensity, orb behavior, bar display mode, price sync opt-in). All parsing and file I/O run on background queues; Reduce Motion and off/low/standard/max intensity levels are honored; idle orbs stop drawing.
 - **Frosted-Glass Workbench Motion** (macOS 14+, no macOS 26 dependency):
   - **Sliding selection capsule**: The sidebar's current item is marked by a translucent glass capsule that slides to its new position when you switch sections — stretching along the direction of travel mid-flight and settling with a springy rebound. It travels across the "Smart Categories" group header without clipping.
@@ -25,14 +32,19 @@ PasteDeck 2.0 is a native macOS productivity workbench, smart toolbox, and clipb
   > **Implementation note.** Glass needs two layers to read as glass: a coloured ambient gradient behind everything for the material to refract, and a low-opacity milky surface plus a real drop shadow on top. Material alone is not enough — inside a window it samples a near-uniform background, which renders as a flat grey slab. The same warning applies to tint: a high-opacity colour painted over the material hides it completely and yields a solid block.
 - **Pure Native Design Language**: Automatically follows macOS system Light and Dark appearance with native materials, contrast-safe semantic colors, and PasteDeck's brand orange accent (`#FF7314`).
 - Records clipboard history for text, rich text, links, Markdown, JSON, images, files, and colors.
+- Re-copying content that is already in history promotes the existing record to the top (refreshing its time and source app) instead of creating a duplicate entry.
+- Pressing `Delete` arms a two-press confirmation before deleting: the selected row turns red with a hint, and the second press within 2.5 seconds completes the deletion (moving the selection or pressing other keys cancels it).
+- Settings → History offers "clean similar content": groups near-duplicate images (perceptual dHash), near-identical text (whitespace-normalized plus 92% fuzzy matching), and duplicate links after stripping tracking parameters; each group defaults to keeping the newest copy, pinned and collection members are never deletable, and deletions reuse the same preview-then-confirm flow as manual cleanup.
 - Shows website names for link cards and lets link history be searched by site name. Automatically fetches webpage titles for copied links.
 - Opens from the menu bar or the global shortcut `Command + Shift + V`.
 - Login launches remain silent in the menu bar; reopening the running app shows the clipboard panel or workbench.
 - Click an item to select it, or double-click it to paste or open immediately.
 - Menu bar dropdown includes a stats overview header showing today's copies, total items, and cache size, plus a quota block with progress bars for Codex 5-hour/weekly windows and WorkBuddy remaining credits, a one-click refresh, and shortcuts to the workbench, quick panel, and settings.
-- Shows local quota balances in a dedicated settings pane: Codex (ChatGPT desktop) plan status, 5-hour and weekly rate-limit windows, and rate-limit reset credits are queried through the local codex app-server without network access; WorkBuddy (Tencent CodeBuddy) per-package totals, usage, and remaining credits are read from the local desktop credential file and fetched directly from Tencent's official billing endpoint with automatic token renewal. An optional settings toggle displays compact balances (`C` remaining percent and `W` remaining credits) next to the menu bar icon, turning red when a balance runs low.
+- Shows local quota balances in a dedicated settings pane: Codex (ChatGPT desktop) plan status, 5-hour and weekly rate-limit windows, and rate-limit reset credits are queried through the local codex app-server without network access; WorkBuddy (Tencent CodeBuddy) balances support two sources that complement each other — when a routex gateway (base URL + admin password) is configured, the aggregate of all routing-enabled pool accounts (disabled/paused excluded) is read from routex's admin API with per-account breakdowns in the menu bar tooltip; otherwise, or when routex is unreachable, it falls back to the local desktop credential file and Tencent's official billing endpoint (single account, automatic token renewal). An optional settings toggle displays compact balances in two lines next to the menu bar icon — the 5-hour windows (`C` remaining percent plus `W` remaining credits) on top, Codex/Gemini weekly windows (`C周` / `G周`) below — turning red when a balance runs low; with the toggle enabled balances refresh automatically every minute.
 - Includes a visual, scenario-based Feature Guide in Settings and the menu bar, covering everyday actions, organization, previews, translation, analytics, and maintenance without a wall of text.
-- Provides fast keyboard navigation that keeps the selected card fully visible at every panel size, plus favorite filters, custom collections, pinning, deletion, and batch paste.
+- Provides fast keyboard navigation that keeps the selected card fully visible at every panel size, plus source-app filtering, favorite and custom-collection filter tabs, item renaming (aliases participate in search), collection membership, pinning, deletion, and batch paste.
+- Both the Quick Paste Panel and the Workbench share one implementation of the clipboard filter bar, right-click context menu, rename dialog, and empty states, so the two surfaces never drift apart in capability.
+- Workbench search covers the whole database across text content, file names, file paths, aliases, source apps, OCR text, link page titles, and color values — the same fields the quick panel's in-memory search matches.
 - Preserves RTF data for rich text paste and supports plain-text paste with `Shift + Command + V` or `Shift + Enter`.
 - Renders Markdown, JSON, code snippets, images, image files, file metadata, links, and colors in the preview window.
 - Runs OCR for copied images so recognized text can be searched later.
@@ -117,12 +129,17 @@ Clipboard polling uses `NSPasteboard`; it does not require Accessibility by itse
 | `Option + A` | Open the input translation window (customizable) |
 | `Command + F` | Focus unified search field |
 | `Up` / `Down` | Move unified selection across tools and clipboard items (`Shift` extends a continuous multi-selection) |
-| `Enter` | Paste selected clipboard item(s) — multi-selection pastes in display order — or open selected tool window |
+| `Left` / `Right` | Switch between collection filter tabs (move text cursor while the search field is focused) |
+| `Enter` | In search mode hand focus back to the clipboard list; otherwise paste selected clipboard item(s) — multi-selection pastes in display order — or open selected tool window |
 | `Shift + Command + V` / `Shift + Enter` | Paste selected item as plain text |
 | `Command + C` | Copy selected item to clipboard |
 | `Space` | Quick Look / Preview selected item |
-| `Delete` | Delete selected item |
+| `Delete` | Delete selected item (press twice within 2.5 seconds to confirm) |
+| `Tab` | Cycle collection filter tab |
+| `1` – `9` | Select the row with the matching shortcut number |
 | `Esc` | Clear search or close tool popup / preview / panel |
+
+> Quick Paste Panel search flow: type any character or press `⌘F` to jump into the search field (`←`/`→` only move the text cursor there), then press `Enter` or `↓` to hand focus back to the clipboard list — from there `Enter` pastes, `Delete` removes the record, and `←`/`→`/`Tab` switch collection tabs.
 
 ## Supported Content
 
@@ -161,6 +178,7 @@ Clipboard polling uses `NSPasteboard`; it does not require Accessibility by itse
 - `PasteService` writes selected content back to the pasteboard and simulates paste through `CGEvent`.
 - `CacheManager` manages SHA-256 content-addressed images at `~/Library/Caches/PasteDeck/images/`; cache limits are soft limits that never delete files still referenced by history, favorites, or pinned items.
 - `ImageOCRService` runs Vision OCR for copied images and persists searchable text.
+- `SimilarContentScanner` powers the similar-content cleanup tool: image perceptual dHash (9×8, CoreGraphics resample), text whitespace normalization plus 92% fuzzy matching via union-find grouping, and link keys stripped of tracking parameters; scanning runs off-main with progress callbacks and stage-skipping guards for oversized libraries.
 - `LinkTitleService` fetches webpage titles for copied links asynchronously without blocking UI.
 - `TranslateService` provides Baidu, Tencent Cloud, Youdao, and Alibaba Cloud translation adapters plus OpenAI-compatible LLM translation, model-list retrieval, and request timeouts.
 - `TranslationWorkspaceCache` persists translation workspaces in the protected translation collection so they can be reopened with their original source and results.
@@ -188,6 +206,8 @@ Clipboard polling uses `NSPasteboard`; it does not require Accessibility by itse
 - `CodeHighlightView` — editable code preview with syntax highlighting.
 - `MarkdownRenderedText` — Markdown rendering support.
 - `SettingsWindow` — native settings window: General, Hotkey, History, Stats, Filter, Favorites, Translation, Quota, Advanced, Help. (Appearance settings removed; UI automatically follows system appearance).
+- `SimilarContentCleanupSheet` — grouped preview sheet for similar-content cleanup (keep newest per group, lock protected members, batch delete through the shared lifecycle service).
+- `ClipboardFilterControls` — shared clipboard UI used by both the quick panel and the workbench: source-app filter menu, collection filter tabs, per-item context menu (copy, plain-text paste, preview, pin, favorite, collection membership, rename, delete), rename sheet, and empty states that distinguish "no history" from "no matches".
 - `HelpCenterView` — scenario-based, card-led feature guide with three-step workflows and contextual shortcuts.
 - `StatsSettingsView` / `StatsViewModel` — responsive statistics dashboard with KPI cards, interactive trend charts, content composition, source insights, and translation usage details.
 
@@ -200,6 +220,14 @@ Clipboard polling uses `NSPasteboard`; it does not require Accessibility by itse
 - `ToolWindowController` — 独立工具弹窗管理，参考预览窗口实现，关闭后把焦点交还搜索框。
 - `ContextToolPanel` — 右侧上下文工具面板，跟随卡片选择切换，与工具弹窗共用界面。
 
+### Codex 模型路由（CodexRouter/）
+- `CodexRouterKit` — 纯 Swift 轻量 Codex 模型路由（参考 MIT 源码 codex-router v0.6.0 移植，见分支内 VENDOR/说明）：
+  - 官方 ChatGPT Plus 登录保持不变，官方 GPT 模型继续走订阅通道，凭据零落地；
+  - 第三方 OpenAI Responses API 端点与模型管理（Keychain 存 API Key）；
+  - 一键把官方模型与第三方模型合并发布进 Codex 原生模型选择器（`model_catalog_json`）；
+  - 本地路由守护进程 `pastedeck-codex-router`（独立于主程序，仅监听 127.0.0.1，HTTP + Responses WebSocket 双通道，凭据隔离：第三方请求绝不携带官方 OAuth）；
+  - HTTP / HTTPS / SOCKS5 代理（回环地址自动绕过）；一键启用 / 关闭 / 异常恢复（托管标记块 + 所有权校验 + 首次安装备份）。
+
 ### Smart Toolbox (Tools/)
 - `ToolDescriptor` / `ToolContext` — stable tool metadata (ID, name, SF Symbol, summary, keywords, aliases) and the launch context (search vs. selected card, prefilled text).
 - `BuiltinTool` / `ToolRegistry` — built-in tool enum with per-tool views and the central registry/lookup.
@@ -208,6 +236,14 @@ Clipboard polling uses `NSPasteboard`; it does not require Accessibility by itse
 - `TimestampMath` / `IPv4Math` — pure conversion/subnet logic built on Foundation `Date`/`Calendar`/`TimeZone` and `UInt32` bit math, covered by unit tests.
 - `ToolWindowController` — independent tool popup window management modeled on the preview window, with focus handed back to the search field on close.
 - `ContextToolPanel` — right-hand context panel that follows card selection and shares tool views with the popup window.
+
+### Codex Model Router (CodexRouter/)
+- `CodexRouterKit` — a lightweight, pure-Swift Codex model router (ported from the MIT-licensed codex-router v0.6.0):
+  - keeps the existing ChatGPT Plus login untouched — official GPT models keep using the subscription channel with credentials never persisted;
+  - manages third-party OpenAI Responses API endpoints and models (API keys in Keychain);
+  - publishes a merged catalog so official and third-party models appear together in Codex's native model picker (`model_catalog_json`);
+  - runs the `pastedeck-codex-router` daemon independent of the main app (loopback-only, HTTP + Responses WebSocket transports, credential isolation);
+  - supports HTTP/HTTPS/SOCKS5 proxies (loopback always bypassed) and one-click enable / disable / recovery with marker-block ownership checks and a first-install backup.
 
 ### Utilities
 - `AppearanceManager` centralizes theme → `NSAppearance` resolution for the main panel, preview window, and settings window.
@@ -252,17 +288,21 @@ PasteDeck 是一个原生 macOS 剪贴板管理器，用浮动面板快速搜索
 ## 功能亮点
 
 - 记录文本、富文本、链接、Markdown、JSON、图片、文件和颜色。
+- 重新复制已在历史中的内容时，会把原记录提升到历史顶部（刷新时间与来源应用），不会产生重复记录。
+- 按 `Delete` 删除需要二次确认：第一次按压选中行变红并提示，2.5 秒内再按一次才真正删除（移动选中或按其他键自动取消）。
+- 设置 → 历史提供"清理相似内容"：图片按感知指纹（dHash）、文本按空白规范化与 92% 模糊匹配、链接按剥离跟踪参数分组预览，默认保留每组最新一条；置顶与收藏夹成员永不被删，删除走与手动清理相同的预览-确认流程。
 - 链接卡片会显示网站名称，并支持按网站名搜索链接历史。自动抓取复制链接的网页标题。
 - 支持菜单栏打开，也支持全局快捷键 `Command + Shift + V`。
 - 开机登录后静默常驻菜单栏；重新打开已运行的应用时，会显示剪贴板主面板。
 - 单击卡片可选中，双击卡片可立即粘贴。
 - 菜单栏下拉菜单内嵌统计概览，展示今日复制次数、总条数和缓存占用；并新增额度区块，以进度条展示 Codex 5 小时 / 每周额度窗口、Gemini 5 小时 / 每周额度窗口与 WorkBuddy 剩余积分，支持一键刷新和打开独立「额度查看」工具窗口。
 - 内置智能工具箱：搜索同时匹配工具（名称、别名、关键词、描述）与剪贴板历史；选中时间戳或 IPv4 卡片时，右侧上下文面板自动推荐对应工具；工具在独立弹窗中打开，不写入历史数据库。首批内置工具包括完整的时间日期计算器（时间戳转换、计算日期差、推算日期、推算工作日（内置 2024–2025 年法定节假日与调休数据）、工作天数、英文日期格式、世界时间转换器、键盘秒表）、IPv4/子网计算（地址校验、地址类型、CIDR、掩码、网络/广播地址、可用范围，正确处理 /0、/31、/32；支持点击按钮在线查询归属地与运营商，主源 ipwho.is、备源 ipinfo.io，私网地址不发起查询）和额度查看。侧边栏左边缘有一条竖直手柄，鼠标移到上面会变成左右拉伸光标，按住拖动即可调整宽度（可调范围 260–420pt），松手后记住，下次打开主面板自动恢复。
+- WorkBuddy 余额支持两种来源，可同时保留互为回退：配置 routex 统一网关（地址 + 管理密码）后，优先读取 routex 账号池 overview 并合计全部参与路由账号（排除禁用与暂停）的积分，菜单栏 W 与悬停提示展示多账号明细；routex 未配置或查询失败时自动回退本机 WorkBuddy 桌面版凭证直连腾讯官方计费接口（单账号，token 失效自动续期）。
 - 独立「额度查看」工具窗口（菜单栏「额度详情…」或工作台搜索「额度查看」打开），概览页以 Codex / Gemini / WorkBuddy 三张卡片展示各服务核心余量、进度条与重置倒计时，点击卡片下钻到对应详情页：
   - **Codex 详情**：套餐状态、5 小时 / 每周速率窗口与重置卡明细（通过本机 codex app-server 查询，不访问网络；两个窗口独立计算余量）。
   - **Gemini 详情**：5 小时 / 每周速率窗口、各细分模型额度明细，以及 Token 消费统计看板（小时/日/周三档时段切换、6 个 Summary KPI 概览卡片、堆叠柱状 Token 消耗趋势图、分模型详细统计表格含请求数/输入/输出/缓存命中/合计/占比进度胶囊、分账号使用分布）。
-  - **WorkBuddy 详情**：合计可用积分、账户与订阅信息、积分包明细，以及 workbuddy2api 自托管网关看板（默认直连 17863 端口）——概览（账号池环形健康度、运行时间、Redis、粘性、快捷操作）、账号（全量账号池列表、展开查看成功率/成功/失败/连败/在途/最近成功、单号签到/查余额/解冻/禁用）、积分包（使用中/未动/已耗尽三层智能排序明细）、用量（6h~1440h 时段切换、总计 KPI、按模型 TOP 12 表格、按账号表格）、模型（20 个映射模型倍率与图片/思考/工具能力标签）。
-- 设置页「额度」面板仅提供配置项：菜单栏余额显示开关（开启后菜单栏图标旁显示 C 剩余百分比、G 剩余百分比、W 剩余积分，余额不足自动变红）、Gemini 代理端点与 WEB_PASSWORD、workbuddy2api 网关地址与 API Key。
+  - **WorkBuddy 详情**：合计可用积分、账户与订阅信息、积分包明细（本机凭证模式），或 routex 账号池合计与逐账号余额明细（routex 模式），以及网关看板——配置 routex 后自动走 routex 管理端转接（账号池健康度、运行时间、账号池运维操作、积分包三层智能排序、用量统计、模型倍率），未配置 routex 时保持直连自托管网关（默认 17863 端口）。
+- 设置页「额度」面板仅提供配置项：菜单栏余额显示开关（开启后菜单栏图标旁分两行显示余额——上行 5 小时额度 C/G 剩余百分比与 W 剩余积分、下行 Codex/Gemini 每周额度 C周/G周，余额不足自动变红，开启后每分钟自动刷新）、routex 统一网关地址与管理密码（WorkBuddy 多账号余额来源）、Gemini 代理端点与 WEB_PASSWORD、workbuddy2api 网关地址与 API Key。
 - 菜单栏和设置页均提供“功能指南”：按快速开始、查找整理、预览编辑、翻译、统计、个性化六个场景，用卡片、三步操作和快捷键帮助理解全部功能。
 - 支持键盘导航，并会按当前面板可视区域自动滚动选中卡片；同时支持收藏筛选、自定义收藏夹、系统“翻译”分类、置顶、删除和批量粘贴。翻译分类固定在“收藏”之后，不能删除、改名或排序。
 - 支持横向和竖向面板布局，竖向提供紧凑列表、大卡片和自适应网格三种样式。
@@ -357,7 +397,7 @@ PasteDeck 需要辅助功能权限来读取前台应用选中文字，并模拟 
 | `Enter` | 粘贴选中项目（多选时按显示顺序批量粘贴）；搜索时若已高亮工具则打开工具，否则进入历史区 |
 | `Shift + Enter` | 以纯文本粘贴 |
 | `Space` | 预览选中项目 |
-| `Delete` | 删除选中项目 |
+| `Delete` | 删除选中项目（2.5 秒内按两次确认） |
 | `Esc` | 优先关闭工具弹窗，其次预览或面板 |
 
 ## 测试
