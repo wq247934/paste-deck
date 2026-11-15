@@ -477,7 +477,9 @@ final class CodexRouterEngineTests: XCTestCase {
             let head = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: \(accept)\r\n\r\n"
             connection.send(Data(head.utf8))
             let session = ResponsesWebSocketSession(
-                connection: connection, dispatcher: dispatcher, upgradeHeaders: request.headers)
+                connection: connection,
+                dispatcherProvider: { dispatcher },
+                upgradeHeaders: request.headers)
             session.runBlocking()
         }
         XCTAssertTrue(server.start())
@@ -552,7 +554,6 @@ final class CodexRouterEngineTests: XCTestCase {
             received.append(contentsOf: chunk[0..<n])
             let frames = try? WebSocketFrameDecoder().feed(Data(received))
             if let frames, !frames.isEmpty {
-                print("RAWTEST 收到 \(frames.count) 帧: opcodes=\(frames.map { $0.opcode }) payloadHead=\(String(decoding: frames[0].payload.prefix(80), as: UTF8.self))")
                 break
             }
         }
@@ -659,7 +660,9 @@ final class CodexRouterEngineTests: XCTestCase {
             let head = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: \(accept)\r\n\r\n"
             connection.send(Data(head.utf8))
             let session = ResponsesWebSocketSession(
-                connection: connection, dispatcher: dispatcher, upgradeHeaders: request.headers)
+                connection: connection,
+                dispatcherProvider: { dispatcher },
+                upgradeHeaders: request.headers)
             session.runBlocking()
         }
         XCTAssertTrue(server.start())
@@ -692,6 +695,14 @@ final class CodexRouterEngineTests: XCTestCase {
             headBuffer.append(contentsOf: chunk[0..<n])
         }
         XCTAssertTrue(headBuffer.contains(Data("101".utf8)))
+        // 101 之后同段到达的帧字节必须保留（本地 mock 响应极快）。
+        var frameBuffer = Data()
+        if let headEnd = headBuffer.range(of: Data("\r\n\r\n".utf8)) {
+            frameBuffer = headBuffer.subdata(in: headEnd.upperBound..<headBuffer.endIndex)
+        }
+        // 读超时兜底：recv 永不无限阻塞。
+        var receiveTimeout = timeval(tv_sec: 3, tv_usec: 0)
+        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &receiveTimeout, socklen_t(MemoryLayout<timeval>.size))
 
         func sendFrame(_ payload: Data) {
             let frame = WebSocketFrameEncoder.encode(fin: true, opcode: 0x1, payload: payload, masked: true)
@@ -724,6 +735,260 @@ final class CodexRouterEngineTests: XCTestCase {
             XCTAssertEqual(first["model"] as? String, "first")
             XCTAssertEqual(second["model"] as? String, "second", "串行链必须保持到达顺序")
         }
+    }
+
+    // MARK: - 审查二轮回归
+
+    func testSSEParserHandlesCRSplitAcrossChunks() {
+        // \r\n 恰好被网络分块拆开：第一块以 \r 结尾时必须等待下一块，
+        // 否则下一块开头的 \n 会被误判为空行事件边界。
+        var parser = SSEEventParser()
+        XCTAssertEqual(parser.feed(Data("data: {\"a\":1}\r".utf8)).count, 0)
+        XCTAssertEqual(parser.feed(Data("\ndata: {\"b\":2}\r\n\r\n".utf8)).count, 1)
+    }
+
+    func testLaunchAgentPlistContentAndLifecycle() throws {
+        let agentsDirectory = temporaryHome.appendingPathComponent("LaunchAgents")
+        var commands: [[String]] = []
+        let agent = LaunchAgentManager(launchAgentsDirectory: agentsDirectory) { commands.append($0) }
+
+        try agent.install(
+            daemonPath: "/opt/PasteDeck/pastedeck-codex-router",
+            stateDirectory: stateDirectory,
+            port: 4212,
+            logPath: stateDirectory.appendingPathComponent("router.log"))
+        XCTAssertTrue(agent.isInstalled())
+
+        let plist = try String(contentsOf: agent.plistURL, encoding: .utf8)
+        XCTAssertTrue(plist.contains("com.pastedeck.codex-router"))
+        XCTAssertTrue(plist.contains("<key>RunAtLoad</key>"))
+        XCTAssertTrue(plist.contains("<key>KeepAlive</key>"))
+        XCTAssertTrue(plist.contains("/opt/PasteDeck/pastedeck-codex-router"))
+        XCTAssertTrue(plist.contains("<string>4212</string>"))
+        // bootout（清理旧定义）→ bootstrap，bootstrap 指向 plist。
+        XCTAssertEqual(commands.first?.first, "bootout")
+        XCTAssertEqual(commands[1].first, "bootstrap")
+        XCTAssertEqual(commands[1].last, agent.plistURL.path)
+
+        agent.uninstall()
+        XCTAssertFalse(agent.isInstalled())
+        XCTAssertEqual(commands.last?.first, "bootout")
+    }
+
+    /// 保持连接的 mock 上游：发出首个事件后等待客户端断开（模拟长生成）。
+    final class HoldOpenUpstream {
+        private let lock = NSLock()
+        private var disconnected = false
+        let port: Int
+        private let listenerFD: Int32
+        private let queue = DispatchQueue(label: "hold-open-mock")
+
+        init(port: Int) throws {
+            self.port = port
+            let fd = socket(AF_INET, SOCK_STREAM, 0)
+            var reuse: Int32 = 1
+            setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, socklen_t(MemoryLayout<Int32>.size))
+            var address = sockaddr_in()
+            address.sin_family = sa_family_t(AF_INET)
+            address.sin_port = UInt16(port).bigEndian
+            address.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
+            let bindResult = withUnsafePointer(to: &address) {
+                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                    Darwin.bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+                }
+            }
+            guard bindResult == 0, Darwin.listen(fd, 8) == 0 else { Darwin.close(fd); throw NSError(domain: "mock", code: 2) }
+            listenerFD = fd
+            let condition = NSCondition()
+            var accepted = false
+            queue.async { [weak self] in
+                guard let self else { return }
+                while true {
+                    var clientAddress = sockaddr_in()
+                    var length = socklen_t(MemoryLayout<sockaddr_in>.size)
+                    let clientFD = withUnsafeMutablePointer(to: &clientAddress) {
+                        $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                            accept(self.listenerFD, $0, &length)
+                        }
+                    }
+                    guard clientFD >= 0 else { return }
+                    condition.lock()
+                    accepted = true
+                    condition.signal()
+                    condition.unlock()
+                    // 读掉请求头。
+                    var head = Data()
+                    while !head.contains(Data("\r\n\r\n".utf8)) {
+                        var chunk = [UInt8](repeating: 0, count: 8192)
+                        let n = recv(clientFD, &chunk, chunk.count, 0)
+                        if n <= 0 { break }
+                        head.append(contentsOf: chunk[0..<n])
+                    }
+                    let sseHead = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n\r\n"
+                    let firstEvent = "data: {\"type\":\"response.created\"}\n\n"
+                    var payload = Data(sseHead.utf8)
+                    payload.append(Data(firstEvent.utf8))
+                    payload.withUnsafeBytes { raw in
+                        _ = Darwin.send(clientFD, raw.baseAddress, payload.count, 0)
+                    }
+                    // 保持连接直到客户端断开。
+                    while true {
+                        var probe = [UInt8](repeating: 0, count: 1024)
+                        let n = recv(clientFD, &probe, probe.count, 0)
+                        if n <= 0 { break }
+                    }
+                    self.lock.lock()
+                    self.disconnected = true
+                    self.lock.unlock()
+                    Darwin.close(clientFD)
+                }
+            }
+            // 等待监听就绪。
+            let deadline = Date().addingTimeInterval(5)
+            while Date() < deadline {
+                condition.lock()
+                let ready = accepted
+                condition.unlock()
+                if ready { break }
+                Thread.sleep(forTimeInterval: 0.05)
+            }
+        }
+
+        var clientDisconnected: Bool {
+            lock.lock(); defer { lock.unlock() }
+            return disconnected
+        }
+
+        func stop() { Darwin.close(listenerFD) }
+    }
+
+    func testWebSocketInterruptCancelsUpstreamGeneration() async throws {
+        let mock = try HoldOpenUpstream(port: Int.random(in: 50000...51000))
+        defer { mock.stop() }
+        try installEndpoint(
+            baseURL: "http://127.0.0.1:\(mock.port)/v1",
+            models: [RouterEndpointModel.standard(modelID: "slow", displayName: "S")])
+        let dispatcher = makeDispatcher(nativeBaseURL: "http://127.0.0.1:\(mock.port)")
+
+        let serverPort = UInt16(51100 + Int.random(in: 0...600))
+        let server = RouterHTTPServer(port: serverPort) { [dispatcher] request, connection in
+            guard request.path == "/v1/responses",
+                  case .accept(let key) = ResponsesWebSocketEdge.validateUpgrade(request: request) else {
+                RouterHTTPServer.writeSimpleError(connection, status: 426, message: "upgrade_required")
+                return
+            }
+            let accept = ResponsesWebSocketEdge.acceptHeaderValue(for: key)
+            let head = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: \(accept)\r\n\r\n"
+            connection.send(Data(head.utf8))
+            let session = ResponsesWebSocketSession(
+                connection: connection,
+                dispatcherProvider: { dispatcher },
+                upgradeHeaders: request.headers)
+            session.runBlocking()
+        }
+        XCTAssertTrue(server.start())
+        defer { server.stop() }
+
+        // 原生 socket WS 客户端。
+        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        defer { Darwin.close(fd) }
+        var address = sockaddr_in()
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_port = serverPort.bigEndian
+        address.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
+        _ = withUnsafePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        let handshake = "GET /v1/responses HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\nAuthorization: Bearer \(callerSecret!)\r\nOpenAI-Beta: responses_websockets=2026-02-06\r\n\r\n"
+        let handshakeData = Data(handshake.utf8)
+        handshakeData.withUnsafeBytes { raw in
+            _ = Darwin.send(fd, raw.baseAddress, handshakeData.count, 0)
+        }
+        var headBuffer = Data()
+        let headDeadline = Date().addingTimeInterval(10)
+        while Date() < headDeadline, !headBuffer.contains(Data("\r\n\r\n".utf8)) {
+            var chunk = [UInt8](repeating: 0, count: 4096)
+            let n = recv(fd, &chunk, chunk.count, 0)
+            if n <= 0 { break }
+            headBuffer.append(contentsOf: chunk[0..<n])
+        }
+        XCTAssertTrue(headBuffer.contains(Data("101".utf8)))
+        // 101 之后同段到达的帧字节必须保留（本地 mock 响应极快）。
+        var frameBuffer = Data()
+        if let headEnd = headBuffer.range(of: Data("\r\n\r\n".utf8)) {
+            frameBuffer = headBuffer.subdata(in: headEnd.upperBound..<headBuffer.endIndex)
+        }
+        var receiveTimeout = timeval(tv_sec: 3, tv_usec: 0)
+        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &receiveTimeout, socklen_t(MemoryLayout<timeval>.size))
+
+
+        func sendFrame(_ payload: Data) {
+            let frame = WebSocketFrameEncoder.encode(fin: true, opcode: 0x1, payload: payload, masked: true)
+            frame.withUnsafeBytes { raw in
+                _ = Darwin.send(fd, raw.baseAddress, frame.count, 0)
+            }
+        }
+        let createBody: [String: Any] = [
+            "type": "response.create", "model": "relay/slow", "stream": true,
+            "input": [["type": "message", "role": "user",
+                       "content": [["type": "input_text", "text": "长任务"]]]],
+        ]
+        sendFrame(try JSONSerialization.data(withJSONObject: createBody))
+
+        // 等待 response.created 帧回流（说明轮次已建立、SSE 消费中）。
+        // 客户端模式解码器（服务端帧不掩码）；整个测试共用一个实例以保留分片状态。
+        let clientDecoder = WebSocketFrameDecoder(requireMasking: false)
+        func readFrames(timeout: TimeInterval, initial: Data = Data()) -> [[String: Any]] {
+            var events: [[String: Any]] = []
+            var buffer = initial
+            let deadline = Date().addingTimeInterval(timeout)
+                while Date() < deadline {
+                if let frames = try? clientDecoder.feed(buffer) {
+                    buffer = Data()
+                    for frame in frames {
+                        if frame.opcode == 0x8 { return events }
+                        if frame.opcode == 0x1,
+                           let object = try? JSONSerialization.jsonObject(with: frame.payload) as? [String: Any] {
+                            events.append(object)
+                        }
+                    }
+                }
+                if events.contains(where: {
+                    ["response.incomplete", "response.completed", "response.failed", "error"].contains($0["type"] as? String ?? "")
+                }) { break }
+                var chunk = [UInt8](repeating: 0, count: 65536)
+                let n = recv(fd, &chunk, chunk.count, 0)
+                if n <= 0 { continue }
+                buffer.append(contentsOf: chunk[0..<n])
+            }
+            return events
+        }
+        let createdFrames = readFrames(timeout: 15, initial: frameBuffer)
+        XCTAssertTrue(createdFrames.contains(where: { ($0["type"] as? String) == "response.created" }),
+                      "应先收到 created 帧: \(createdFrames.map { $0["type"] ?? "?" })")
+
+        // 生成中途发送 interrupt。
+        let interrupt: [String: Any] = [
+            "type": "response.interrupt",
+            "response_id": "whatever",
+            "mode": "discard_partial_items",
+        ]
+        sendFrame(try JSONSerialization.data(withJSONObject: interrupt))
+
+        let interruptFrames = readFrames(timeout: 15)
+        let types = interruptFrames.map { $0["type"] as? String ?? "?" }
+        XCTAssertTrue(types.contains("response.interrupt.accepted"), "types=\(types)")
+        XCTAssertTrue(types.contains("response.incomplete"), "types=\(types)")
+        XCTAssertEqual(types.filter { $0 == "response.completed" }.count, 0, "中断后不应出现 completed 终态")
+
+        // 上游连接被真正断开（生成中止，不再继续计费）。
+        let disconnectDeadline = Date().addingTimeInterval(10)
+        while Date() < disconnectDeadline, !mock.clientDisconnected {
+            Thread.sleep(forTimeInterval: 0.1)
+        }
+        XCTAssertTrue(mock.clientDisconnected, "interrupt 应取消上游生成连接")
     }
 
     func testSSEEventParser() {

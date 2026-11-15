@@ -34,15 +34,22 @@ struct WebSocketFrame {
     var payload: Data
 }
 
-/// 服务端帧编解码器（逐帧累积解析）。
+/// 帧解码器（逐帧累积解析）。
+/// - 服务端模式（默认）：客户端帧必须掩码（RFC 6455 强制）。
+/// - 客户端模式（requireMasking=false）：解析服务端下行帧（不掩码）。
 final class WebSocketFrameDecoder {
     static let maxMessageBytes = 32 * 1024 * 1024
     static let maxFragmentFrames = 1024
 
+    private let requireMasking: Bool
     private var buffered = Data()
     private(set) var messageBuffer = Data()
     private var fragmentOpcode: UInt8?
     private var fragmentCount = 0
+
+    init(requireMasking: Bool = true) {
+        self.requireMasking = requireMasking
+    }
 
     /// 一次性解析缓冲区中所有完整帧；返回帧数组与剩余未消费字节数说明。
     /// 抛错表示协议违规，调用方应关闭连接。
@@ -114,7 +121,7 @@ final class WebSocketFrameDecoder {
             throw WebSocketFrameError.protocolViolation("RSV 位被设置（扩展未协商）")
         }
         let masked = (second & 0x80) != 0
-        guard masked else {
+        guard masked || !requireMasking else {
             throw WebSocketFrameError.invalidMasking
         }
         var index = 2
@@ -131,13 +138,21 @@ final class WebSocketFrameDecoder {
                 index += 1
             }
         }
-        guard bytes.count >= index + 4 else { return nil }
-        let mask = Array(bytes[index..<(index + 4)])
-        index += 4
+        // 掩码仅存在于客户端帧（RFC 6455）：无掩码帧不预留 4 字节掩码位。
+        guard bytes.count >= index + (masked ? 4 : 0) else { return nil }
+        let mask: [UInt8]
+        if masked {
+            mask = Array(bytes[index..<(index + 4)])
+            index += 4
+        } else {
+            mask = []
+        }
         guard bytes.count >= index + Int(length) else { return nil }
         var payload = Array(bytes[index..<(index + Int(length))])
-        for offset in 0..<payload.count {
-            payload[offset] ^= mask[offset % 4]
+        if masked {
+            for offset in 0..<payload.count {
+                payload[offset] ^= mask[offset % 4]
+            }
         }
         buffered = Data(bytes[(index + Int(length))...])
         return WebSocketFrame(fin: fin, opcode: opcode, payload: Data(payload))

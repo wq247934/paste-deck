@@ -90,7 +90,8 @@ final class CodexRouterCatalogTests: XCTestCase {
     }
 
     func testNativeCaptureRejectsContaminatedCache() throws {
-        // 缓存里混入路由 slug（带 / 前缀）→ 拒绝当作原生目录。
+        // 缓存里混入带 "/" 前缀的路由 slug（旧 Codex Router 合并产物的特征，
+        // 官方原生 slug 不含 "/"）→ 整份拒绝，绝不把旧路由模型当官方原生模型。
         try writeModelsCache()
         let url = temporaryHome.appendingPathComponent("models_cache.json")
         var object = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as! [String: Any]
@@ -98,12 +99,32 @@ final class CodexRouterCatalogTests: XCTestCase {
         models.append(["slug": "relay/glm-5.3", "priority": 99, "visibility": "list"])
         object["models"] = models
         try JSONSerialization.data(withJSONObject: object).write(to: url)
-        // 注意：当前实现对整个缓存按 slug 过滤仅在 capture 阶段生效；
-        // 带路由 slug 的模型进入合并会被 CatalogBuilder 的外部构建覆盖。
-        // 这里验证 capture 仍然产出目录，但外部条目由 publish 阶段接管。
-        let native = try NativeCatalog.captureNative(
-            stateDirectory: stateDirectory, codexHome: temporaryHome.path, codexBinary: "")
-        XCTAssertTrue(native.contains { $0.slug == "relay/glm-5.3" })
+
+        XCTAssertThrowsError(try NativeCatalog.captureNative(
+            stateDirectory: stateDirectory, codexHome: temporaryHome.path, codexBinary: "")) { error in
+            guard case NativeCatalogError.contaminatedCache = error else {
+                return XCTFail("意外错误类型: \(error)")
+            }
+        }
+        // 拒绝后不得产出原生目录文件。
+        XCTAssertFalse(PrivateFile.exists(stateDirectory.appendingPathComponent("native-models.json").path))
+    }
+
+    func testRepeatedEnableThenDisableRestoresOriginalProvider() throws {
+        // 强制回归：重复启用绝不覆盖原始 Provider 快照。
+        let configURL = temporaryHome.appendingPathComponent("config.toml")
+        let localManager = CodexConfigManager(configURL: configURL, stateDirectory: stateDirectory)
+        try "model = \"m\"\nmodel_provider = \"openai\"\n\n[features]\njs_repl = false\n"
+            .write(to: configURL, atomically: true, encoding: .utf8)
+        try localManager.enable(port: 4212)
+        try localManager.enable(port: 4212)  // 第二次启用：快照必须保持 openai
+        try localManager.disable()
+        let contents = try String(contentsOf: configURL, encoding: .utf8)
+        XCTAssertTrue(contents.contains("model_provider = \"openai\""),
+                      "重复启用后关闭必须恢复原始 provider：\(contents)")
+        XCTAssertFalse(contents.contains("pastedeck-router-signed"))
+        XCTAssertTrue(contents.contains("[features]"))
+        XCTAssertTrue(contents.contains("js_repl = false"))
     }
 
     func testNativeCaptureFailsWithoutAnySource() throws {

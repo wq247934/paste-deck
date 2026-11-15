@@ -73,7 +73,9 @@ final class ResponsesWebSocketSession {
     static let maxContinuationBytes = 8 * 1024 * 1024
 
     private let connection: HTTPConnection
-    private let dispatcher: ResponsesDispatcher
+    /// 每轮请求时取当前生效的分发器快照（代理热更新后新轮次用新会话；
+    /// 进行中的轮次继续使用其创建时的快照）。
+    private let dispatcherProvider: () -> ResponsesDispatcher?
     private let upgradeHeaders: [String: String]
     private let decoder = WebSocketFrameDecoder()
     /// previous_response_id → {input, output} 基线。
@@ -84,16 +86,27 @@ final class ResponsesWebSocketSession {
         var tail: Task<Void, Never>?
         /// 排队深度（含在途），超过上限直接关闭连接。
         var pendingRequests = 0
-        /// 当前在途分发任务（interrupt 只取消它——串行化后同一时刻最多一个）。
-        var currentDispatch: Task<DispatchResult, Never>?
+        /// 当前在途整轮任务（dispatch + SSE 消费 + 上游取消统一归属；
+        /// interrupt 取消它即取消整个轮次生命周期）。
+        var currentTurn: Task<Void, Never>?
         var closed = false
+    }
+
+    /// 在途轮次登记框：链式任务创建后回填自身引用（Swift 不允许任务闭包
+    /// 直接引用未初始化的自身变量）。
+    private final class TurnBox {
+        var task: Task<Void, Never>?
     }
 
     private let state = OSAllocatedUnfairLock<SessionState>(initialState: SessionState())
 
-    init(connection: HTTPConnection, dispatcher: ResponsesDispatcher, upgradeHeaders: [String: String]) {
+    init(
+        connection: HTTPConnection,
+        dispatcherProvider: @escaping () -> ResponsesDispatcher?,
+        upgradeHeaders: [String: String]
+    ) {
         self.connection = connection
-        self.dispatcher = dispatcher
+        self.dispatcherProvider = dispatcherProvider
         self.upgradeHeaders = upgradeHeaders
     }
 
@@ -168,22 +181,30 @@ final class ResponsesWebSocketSession {
     /// 严格串行：请求按到达顺序链式执行，两个 response.create 不会并发
     /// 修改 latestRequestInput / continuations。
     private func enqueue(_ work: @escaping () async -> Void) {
-        let overflow = state.withLock { state -> Task<Void, Never>? in
-            guard state.pendingRequests < Self.maxQueuedRequests else { return nil }
+        let overflow = state.withLock { state -> Bool in
+            guard state.pendingRequests < Self.maxQueuedRequests else { return true }
             state.pendingRequests += 1
-            let previousTail = state.tail
-            let chained = Task { [weak self] in
-                await previousTail?.value
-                guard let self, !self.isClosed else { return }
-                await work()
-                self.state.withLock { $0.pendingRequests -= 1 }
-            }
-            state.tail = chained
-            return chained
+            return false
         }
-        if overflow == nil {
+        if overflow {
             close(code: .policyViolation, reason: "Too many queued requests")
+            return
         }
+        let previousTail = state.withLock { $0.tail }
+        let box = TurnBox()
+        let chained = Task { [weak self, box] in
+            await previousTail?.value
+            guard let self, !self.isClosed else { return }
+            // 登记整轮任务：interrupt 取消它 = 取消 dispatch、SSE 消费与上游。
+            self.state.withLock { $0.currentTurn = box.task }
+            await work()
+            self.state.withLock {
+                $0.pendingRequests -= 1
+                $0.currentTurn = nil
+            }
+        }
+        box.task = chained
+        state.withLock { $0.tail = chained }
     }
 
     var isClosed: Bool {
@@ -229,18 +250,23 @@ final class ResponsesWebSocketSession {
         // 暂存基线 input（response.completed 时与 output 一起登记）。
         latestRequestInput = request["input"] as? [[String: Any]] ?? []
 
+        guard let dispatcher = dispatcherProvider() else {
+            sendErrorFrame(status: 503, type: "local_router_error", message: "Router dispatcher unavailable.")
+            return
+        }
         let dispatchRequest = DispatchRequest(
             method: "POST",
             path: "/v1/responses",
             headers: upgradeHeaders,
             body: bodyData
         )
-        // 在途分发单独建 Task，使 response.interrupt 能精确取消当前轮次
-        // （串行链保证同一时刻只有一个在途轮次）。
+        // 内层分发任务随所在整轮任务的取消而取消（interrupt → 上游中断）。
         let dispatchTask = Task { await dispatcher.dispatch(dispatchRequest) }
-        state.withLock { $0.currentDispatch = dispatchTask }
-        let result = await dispatchTask.value
-        state.withLock { $0.currentDispatch = nil }
+        let result: DispatchResult = await withTaskCancellationHandler {
+            await dispatchTask.value
+        } onCancel: {
+            dispatchTask.cancel()
+        }
 
         if result.status >= 400 {
             latestRequestInput = nil
@@ -281,8 +307,9 @@ final class ResponsesWebSocketSession {
             sendErrorFrame(status: 400, type: "invalid_request_error", message: "response.interrupt requires response_id and mode.")
             return
         }
-        // 只取消当前在途轮次（串行链保证它就是 interrupt 指向的那个）。
-        state.withLock { $0.currentDispatch }?.cancel()
+        // 取消在途整轮（串行链保证它就是 interrupt 指向的那个；取消传播到
+        // 内层 dispatch 与 SSE 消费，上游生成随之中止，不会出现重复终态）。
+        state.withLock { $0.currentTurn }?.cancel()
         var accepted: [String: Any] = [
             "type": "response.interrupt.accepted",
             "response_id": responseID,
@@ -393,9 +420,9 @@ final class ResponsesWebSocketSession {
     // MARK: - 关闭
 
     private func close(code: WebSocketCloseCode, reason: String = "") {
-        let inFlight = state.withLock { state -> Task<DispatchResult, Never>? in
+        let inFlight = state.withLock { state -> Task<Void, Never>? in
             state.closed = true
-            return state.currentDispatch
+            return state.currentTurn
         }
         inFlight?.cancel()
         connection.send(WebSocketFrameEncoder.closeFrame(code: code, reason: reason)) {
@@ -404,9 +431,9 @@ final class ResponsesWebSocketSession {
     }
 
     private func transportClosed() {
-        let inFlight = state.withLock { state -> Task<DispatchResult, Never>? in
+        let inFlight = state.withLock { state -> Task<Void, Never>? in
             state.closed = true
-            return state.currentDispatch
+            return state.currentTurn
         }
         inFlight?.cancel()
         connection.close()
@@ -436,18 +463,25 @@ struct SSEEventParser {
         return events
     }
 
-    /// 取一行（含终止符消费）；行尾 \r\n / \n / \r 均视为终止。
+    /// 取一行（含终止符消费）；行尾 \n / \r\n / \r 均视为终止。
+    /// \r 若位于缓冲末尾则等待更多数据——它可能是被网络分块拆开的 \r\n 前半，
+    /// 提前消费会把下一块开头的 \n 误判为空行边界。
     static func takeLine(_ buffer: inout [UInt8]) -> String? {
         guard let terminator = buffer.firstIndex(where: { $0 == 0x0A || $0 == 0x0D }) else { return nil }
-        var line = buffer[..<terminator]
-        var consumed = terminator + 1
-        // \r\n 视为单个终止符。
-        if buffer[terminator] == 0x0D, consumed < buffer.count, buffer[consumed] == 0x0A {
-            consumed += 1
+        if buffer[terminator] == 0x0D {
+            let nextIndex = buffer.index(after: terminator)
+            guard nextIndex < buffer.endIndex else { return nil }
+            var consumed = nextIndex
+            if buffer[consumed] == 0x0A {
+                consumed = buffer.index(after: consumed)
+            }
+            let line = String(decoding: buffer[..<terminator], as: UTF8.self)
+            buffer.removeFirst(consumed)
+            return line
         }
-        if line.last == 0x0D { line = line.dropLast() }
-        buffer.removeFirst(consumed)
-        return String(decoding: line, as: UTF8.self)
+        let line = String(decoding: buffer[..<terminator], as: UTF8.self)
+        buffer.removeFirst(buffer.index(after: terminator))
+        return line
     }
 
     static func event(from lines: [String]) -> Data? {

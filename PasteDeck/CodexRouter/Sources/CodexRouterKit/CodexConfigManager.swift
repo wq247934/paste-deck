@@ -186,18 +186,34 @@ public struct CodexConfigManager {
         }
 
         // 3. 记录恢复状态（先写状态文件，再改配置；失败可回滚）。
-        let previousProvider = scan?.stringValue(tablePath: [], key: "model_provider")
-        let state = ProviderModeState(
-            version: ProviderModeState.currentVersion,
-            managedProvider: CodexRouterConstants.signedProviderID,
-            previousPresent: previousProvider != nil,
-            previousModelProvider: previousProvider,
-            managedBaseURL: baseURL
-        )
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
-        let stateData = try encoder.encode(state)
-        try PrivateFile.writeAtomically(stateData, to: ownershipStateURL)
+        //    幂等保护：已有合法所有权快照时绝不重写——否则重复启用会把托管
+        //    provider 误记为"原始值"，关闭后留下指向已拆表的悬空引用。
+        let existingState = PrivateFile.readJSON(ownershipStateURL, as: ProviderModeState.self)
+        let stateIsReusable: Bool
+        if let existingState, existingState.version == ProviderModeState.currentVersion,
+           existingState.managedProvider == CodexRouterConstants.signedProviderID,
+           existingState.previousModelProvider != CodexRouterConstants.signedProviderID {
+            stateIsReusable = true
+        } else {
+            stateIsReusable = false
+        }
+        if !stateIsReusable {
+            let previousProvider = scan?.stringValue(tablePath: [], key: "model_provider")
+            // 原始值若是本模块托管值（历史脏状态），保守记为 openai 并注明。
+            let cleanPrevious = (previousProvider != CodexRouterConstants.signedProviderID)
+                ? previousProvider : nil
+            let state = ProviderModeState(
+                version: ProviderModeState.currentVersion,
+                managedProvider: CodexRouterConstants.signedProviderID,
+                previousPresent: cleanPrevious != nil,
+                previousModelProvider: cleanPrevious,
+                managedBaseURL: baseURL
+            )
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys]
+            let stateData = try encoder.encode(state)
+            try PrivateFile.writeAtomically(stateData, to: ownershipStateURL)
+        }
 
         // 4. 生成新配置内容。
         do {

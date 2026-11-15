@@ -41,12 +41,18 @@ enum NativeCatalogError: LocalizedError {
 enum NativeCatalog {
 
     /// 读取 Codex 自身的账户目录缓存。
-    static func readModelsCache(codexHome: String? = nil) -> [CatalogModel]? {
+    /// 缓存中出现带 "/" 前缀的 slug（路由模型的特征，官方原生 slug 不含 "/"）
+    /// 视为被旧路由合并产物污染，整份拒绝——避免把旧路由模型误当官方原生模型。
+    static func readModelsCache(codexHome: String? = nil) throws -> [CatalogModel] {
         let url = CodexRouterConstants.modelsCachePath(codexHome: codexHome)
         guard let data = FileManager.default.contents(atPath: url.path),
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let models = object["models"] as? [[String: Any]], !models.isEmpty else { return nil }
-        return models.map(CatalogModel.init)
+              let models = object["models"] as? [[String: Any]], !models.isEmpty else { return [] }
+        let catalog = models.map(CatalogModel.init)
+        if catalog.contains(where: { $0.slug.contains("/") }) {
+            throw NativeCatalogError.contaminatedCache
+        }
+        return catalog
     }
 
     /// `codex debug models --bundled`（二进制内建目录，作为 schema 回填来源）。
@@ -80,16 +86,16 @@ enum NativeCatalog {
         stateDirectory: URL, codexHome: String? = nil, codexBinary: String? = nil
     ) throws -> [CatalogModel] {
         let nativeFile = stateDirectory.appendingPathComponent("native-models.json")
-        let account = readModelsCache(codexHome: codexHome)
+        let account = try readModelsCache(codexHome: codexHome)
         let bundled = bundledCatalog(codexBinary: codexBinary ?? CodexBinaryLocator.locateCodexBinary())
 
-        let merged = try merge(account: account, bundled: bundled)
+        let merged = try merge(account: account.isEmpty ? nil : account, bundled: bundled)
         // 持久化捕获（含指纹，供复用判断）。
         var document: [String: Any] = ["models": merged.map(\.object)]
         if let version = codexVersion(codexBinary: codexBinary) {
             document["captured_with"] = version
         }
-        if let account {
+        if !account.isEmpty {
             let modelsData = try JSONSerialization.data(withJSONObject: account.map(\.object))
             document["native_source_fingerprint"] = Insecure.SHA1.hash(data: modelsData)
                 .map { String(format: "%02x", $0) }.joined()

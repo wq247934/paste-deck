@@ -60,10 +60,14 @@ public final class CodexRouterController {
     public let endpointStore: RouterEndpointStore
     public let configManager: CodexConfigManager
 
+    public let launchAgent: LaunchAgentManager
+
     public init(
         stateDirectory: URL? = nil,
         codexHome: String? = nil,
-        keychainService: String = "PasteDeck Codex Router"
+        keychainService: String = "PasteDeck Codex Router",
+        launchAgentsDirectory: URL? = nil,
+        launchctlRunner: (([String]) throws -> Void)? = nil
     ) {
         let directory = stateDirectory ?? CodexRouterConstants.stateDirectory(codexHome: codexHome)
         self.stateDirectory = directory
@@ -73,6 +77,9 @@ public final class CodexRouterController {
         self.configManager = CodexConfigManager(
             configURL: CodexRouterConstants.codexConfigPath(codexHome: codexHome),
             stateDirectory: directory)
+        self.launchAgent = LaunchAgentManager(
+            launchAgentsDirectory: launchAgentsDirectory,
+            runner: launchctlRunner)
     }
 
     // MARK: - 状态
@@ -185,10 +192,28 @@ public final class CodexRouterController {
             Data(String(port).utf8),
             to: stateDirectory.appendingPathComponent("port"))
 
-        // 6. 启动守护进程。
-        if Self.queryHealth(port: port) == nil {
+        // 6. 启动守护进程：优先 LaunchAgent 托管（登录自启 + 崩溃自动拉起，
+        //    Mac 重启后 config.toml 指向的本地路由不会失联）；launchctl
+        //    不可用时回退直接 spawn。
+        var daemonRunning = Self.queryHealth(port: port) != nil
+        if !daemonRunning, let daemonPath = DaemonLauncher.locateDaemonBinary() {
+            do {
+                try launchAgent.install(
+                    daemonPath: daemonPath,
+                    stateDirectory: stateDirectory,
+                    port: port,
+                    logPath: stateDirectory.appendingPathComponent("router.log"))
+                let deadline = Date().addingTimeInterval(8)
+                while Date() < deadline {
+                    if Self.queryHealth(port: port) != nil { daemonRunning = true; break }
+                    Thread.sleep(forTimeInterval: 0.2)
+                }
+            } catch {
+                daemonRunning = false
+            }
+        }
+        if !daemonRunning {
             let process = try DaemonLauncher.launch(stateDirectory: stateDirectory, port: port)
-            // 等 daemon.json + /health 就绪。
             var healthy = false
             let deadline = Date().addingTimeInterval(6)
             while Date() < deadline {
@@ -221,12 +246,14 @@ public final class CodexRouterController {
 
     // MARK: - 关闭
 
-    /// 一键关闭：恢复原生配置、停止守护进程，保留端点配置。
+    /// 一键关闭：恢复原生配置、注销守护进程，保留端点配置。
     public func disable() throws {
         clearLastError()
-        // 1. 恢复 config.toml（所有权校验内置于 disable）。
+        // 1. 注销 LaunchAgent（bootout 同时停止守护进程）。
+        launchAgent.uninstall()
+        // 2. 恢复 config.toml（所有权校验内置于 disable）。
         try configManager.disable()
-        // 2. 停止守护进程。
+        // 3. 停止守护进程（Agent 注销失败时的兜底）。
         stopDaemon()
         // 3. 删除凭据物化文件（Keychain 中的 API Key 保留）。
         try? FileManager.default.removeItem(
@@ -251,13 +278,16 @@ public final class CodexRouterController {
             _ = semaphore.wait(timeout: .now() + 3.5)
         }
         // 2. 兜底：pidfile —— 必须证明 PID 仍属于本模块守护进程才发信号，
-        //    防 PID 复用误杀无关进程。
+        //    防 PID 复用误杀无关进程。健康检查要求 pid 与 bootID 双匹配；
+        //    不匹配时回退可执行路径校验；两者都无法证明则只清理状态。
         if let state = PrivateFile.readJSON(
             stateDirectory.appendingPathComponent("daemon.json"), as: RuntimeStateDocument.self),
            state.pid > 0 {
             let pid = pid_t(state.pid)
-            let healthy = Self.queryHealth(port: state.port) != nil
-            if healthy || Self.processBelongsToDaemon(pid) {
+            let health = Self.queryHealth(port: state.port)
+            let pidMatches = health?.pid == state.pid
+            let bootMatches = health?.bootID == nil || health?.bootID == state.bootID
+            if (pidMatches && bootMatches) || Self.processBelongsToDaemon(pid) {
                 kill(pid, SIGTERM)
             }
         }
@@ -295,7 +325,8 @@ public final class CodexRouterController {
             actions.append("已清理孤立的托管状态文件。")
         }
 
-        // 2. 孤立守护进程。
+        // 2. 孤立守护进程与 LaunchAgent。
+        launchAgent.uninstall()
         stopDaemon()
         if PrivateFile.exists(stateDirectory.appendingPathComponent("daemon.json").path) {
             try? FileManager.default.removeItem(

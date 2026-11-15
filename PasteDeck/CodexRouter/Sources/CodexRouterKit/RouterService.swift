@@ -7,6 +7,7 @@
 //
 
 import Foundation
+import os
 
 /// 守护进程运行状态（健康检查与 UI 状态共用）。
 public struct RouterServiceStatus: Codable, Equatable {
@@ -18,6 +19,8 @@ public struct RouterServiceStatus: Codable, Equatable {
     public var uptimeSeconds: Int
     public var activeConnections: Int
     public var routesLoaded: Int
+    /// 守护进程本次运行的引导 ID：pid 复用场景下与 daemon.json 比对。
+    public var bootID: String?
 }
 
 /// 路由服务。
@@ -28,11 +31,17 @@ public final class RouterService {
     public let startedAt = Date()
 
     private var server: RouterHTTPServer?
-    private(set) var dispatcher: ResponsesDispatcher?
+    /// 分发器运行时快照：锁保护替换；请求线程取快照使用（热更新期间
+    /// 在途轮次继续持有旧快照，新轮次取得新快照）。
+    private let dispatcherSlot = OSAllocatedUnfairLock<ResponsesDispatcher?>(initialState: nil)
     private var routeTable: RouteTable?
     private var callerSecret: String = ""
     private var lastProxyRevision = 0
-    private let stateLock = NSLock()
+    private let revisionLock = NSLock()
+
+    func currentDispatcher() -> ResponsesDispatcher? {
+        dispatcherSlot.withLock { $0 }
+    }
 
     public init(stateDirectory: URL, port: UInt16) {
         self.stateDirectory = stateDirectory
@@ -61,8 +70,10 @@ public final class RouterService {
         let session = CodexAuthSession()
         let dispatcher = ResponsesDispatcher(
             routeTable: table, upstream: upstream, authSession: session, callerSecret: secret)
-        self.dispatcher = dispatcher
+        dispatcherSlot.withLock { $0 = dispatcher }
+        revisionLock.lock()
         lastProxyRevision = table.revision
+        revisionLock.unlock()
 
         // 3. 监听（成功后再写 pidfile，避免残留状态误导停止逻辑）。
         let server = RouterHTTPServer(port: port) { [weak self] request, connection in
@@ -104,20 +115,21 @@ public final class RouterService {
 
     /// 代理/凭据配置变化时重建 dispatcher（新的 UpstreamClient 会话）。
     private func rebuildDispatcherIfProxyChanged() {
-        stateLock.lock()
+        revisionLock.lock()
         let knownRevision = lastProxyRevision
-        stateLock.unlock()
+        revisionLock.unlock()
         guard let table = routeTable else { return }
         table.reloadIfNeeded()
         let current = table.revision
         guard current != knownRevision else { return }
-        stateLock.lock()
-        defer { stateLock.unlock() }
+        revisionLock.lock()
+        defer { revisionLock.unlock() }
         guard lastProxyRevision != current else { return }
         let upstream = UpstreamClient(proxy: table.proxy, proxyPassword: table.proxyPassword)
         let session = CodexAuthSession()
-        dispatcher = ResponsesDispatcher(
+        let newDispatcher = ResponsesDispatcher(
             routeTable: table, upstream: upstream, authSession: session, callerSecret: callerSecret)
+        dispatcherSlot.withLock { $0 = newDispatcher }
         lastProxyRevision = current
         RouterService.log("检测到端点/凭据/代理配置变化，已重建上游会话（revision \(current)）")
     }
@@ -125,6 +137,8 @@ public final class RouterService {
     // MARK: - 请求路由
 
     private func handleRequest(_ request: HTTPRequest, _ connection: HTTPConnection) {
+        // 热更新检查前置：WS 升级与所有端点都使用当前生效的分发器快照。
+        rebuildDispatcherIfProxyChanged()
         // 健康检查免鉴权（本机可见性有限，且不含敏感信息）。
         if request.method == "GET", request.path == "/health" {
             handleHealth(connection)
@@ -137,11 +151,8 @@ public final class RouterService {
             return
         }
 
-        // 代理配置热更新：endpoints/credentials 变更触发重建上游会话。
-        rebuildDispatcherIfProxyChanged()
-
         // 其余端点一律鉴权。
-        let dispatcher = self.dispatcher
+        let dispatcher = currentDispatcher()
         guard let dispatcher else {
             RouterHTTPServer.writeSimpleError(connection, status: 503, message: "service_unavailable")
             return
@@ -186,7 +197,7 @@ public final class RouterService {
         currentTask = Task { [weak connection] in
             defer { semaphore.signal() }
             guard let connection else { return }
-            guard let dispatcher = service.dispatcher else { return }
+            guard let dispatcher = service.currentDispatcher() else { return }
             let dispatchRequest = DispatchRequest(
                 method: "POST", path: path, headers: headers,
                 body: RouterService.decodeChunkedIfNeeded(body: body, headers: headers))
@@ -274,14 +285,15 @@ public final class RouterService {
 
     private func handleHealth(_ connection: HTTPConnection) {
         let status = RouterServiceStatus(
-            ok: dispatcher != nil,
+            ok: currentDispatcher() != nil,
             service: CodexRouterConstants.serviceIdentifier,
             version: RouterService.selfVersion,
             port: Int(port),
             pid: Int(ProcessInfo.processInfo.processIdentifier),
             uptimeSeconds: Int(Date().timeIntervalSince(startedAt)),
             activeConnections: server?.activeConnections ?? 0,
-            routesLoaded: routeTable?.allRoutes().count ?? 0
+            routesLoaded: routeTable?.allRoutes().count ?? 0,
+            bootID: bootID
         )
         let body = (try? JSONEncoder().encode(status)) ?? Data("{}".utf8)
         var response = Data("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: \(body.count)\r\n\r\n".utf8)
@@ -310,7 +322,7 @@ public final class RouterService {
     // MARK: - WS 升级
 
     private func handleUpgrade(_ request: HTTPRequest, _ connection: HTTPConnection) {
-        let dispatcher = self.dispatcher
+        let dispatcher = currentDispatcher()
         guard let dispatcher else {
             RouterHTTPServer.writeSimpleError(connection, status: 503, message: "service_unavailable")
             return
@@ -339,8 +351,11 @@ public final class RouterService {
         let accept = ResponsesWebSocketEdge.acceptHeaderValue(for: key)
         let head = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: \(accept)\r\n\r\n"
         connection.send(Data(head.utf8))
+        let service = self
         let session = ResponsesWebSocketSession(
-            connection: connection, dispatcher: dispatcher, upgradeHeaders: request.headers)
+            connection: connection,
+            dispatcherProvider: { [weak service] in service?.currentDispatcher() },
+            upgradeHeaders: request.headers)
         // 阻塞连接线程：成为该 WS 的常驻读循环。
         session.runBlocking()
     }
