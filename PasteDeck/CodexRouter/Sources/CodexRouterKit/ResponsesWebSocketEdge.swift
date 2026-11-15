@@ -86,16 +86,27 @@ final class ResponsesWebSocketSession {
         var tail: Task<Void, Never>?
         /// 排队深度（含在途），超过上限直接关闭连接。
         var pendingRequests = 0
-        /// 当前在途整轮任务（dispatch + SSE 消费 + 上游取消统一归属；
-        /// interrupt 取消它即取消整个轮次生命周期）。
-        var currentTurn: Task<Void, Never>?
+        /// 当前在途整轮（登记握手后生效；interrupt 经它取消整个轮次生命周期）。
+        var currentTurn: TurnBox?
+        /// 当前轮次的 response.created 中的响应 ID，用于校验 interrupt 目标。
+        var currentTurnResponseID: String?
         var closed = false
     }
 
-    /// 在途轮次登记框：链式任务创建后回填自身引用（Swift 不允许任务闭包
-    /// 直接引用未初始化的自身变量）。
+    /// 在途轮次登记框：登记握手保证"任务开跑"必然晚于"引用回填"——
+    /// 消除极早 interrupt 拿到空引用的竞争窗口。
     private final class TurnBox {
+        let registered = DispatchSemaphore(value: 0)
         var task: Task<Void, Never>?
+
+        func markRegistered(_ task: Task<Void, Never>) {
+            self.task = task
+            registered.signal()
+        }
+
+        func waitRegistered() {
+            registered.wait()
+        }
     }
 
     private let state = OSAllocatedUnfairLock<SessionState>(initialState: SessionState())
@@ -194,17 +205,27 @@ final class ResponsesWebSocketSession {
         let box = TurnBox()
         let chained = Task { [weak self, box] in
             await previousTail?.value
-            guard let self, !self.isClosed else { return }
-            // 登记整轮任务：interrupt 取消它 = 取消 dispatch、SSE 消费与上游。
-            self.state.withLock { $0.currentTurn = box.task }
+            // 登记握手：等待引用回填完成，保证 interrupt 拿到的引用非空。
+            box.waitRegistered()
+            guard let self, !self.isClosed else {
+                self?.state.withLock { $0.pendingRequests -= 1 }
+                return
+            }
             await work()
             self.state.withLock {
                 $0.pendingRequests -= 1
-                $0.currentTurn = nil
+                if $0.currentTurn === box {
+                    $0.currentTurn = nil
+                    $0.currentTurnResponseID = nil
+                }
             }
         }
-        box.task = chained
-        state.withLock { $0.tail = chained }
+        // 先回填引用再放行任务体（握手信号）。
+        state.withLock {
+            $0.currentTurn = box
+            $0.tail = chained
+        }
+        box.markRegistered(chained)
     }
 
     var isClosed: Bool {
@@ -275,6 +296,13 @@ final class ResponsesWebSocketSession {
         }
 
         await relaySseAsFrames(stream: result.stream) { [weak self] event in
+            // 每事件回调：登记当前轮次 response_id（interrupt 校验目标），
+            // 终态事件登记续接基线。
+            if event["type"] as? String == "response.created",
+               let response = event["response"] as? [String: Any],
+               let id = response["id"] as? String {
+                self?.state.withLock { $0.currentTurnResponseID = id }
+            }
             self?.rememberBaseline(event: event)
         }
     }
@@ -307,9 +335,18 @@ final class ResponsesWebSocketSession {
             sendErrorFrame(status: 400, type: "invalid_request_error", message: "response.interrupt requires response_id and mode.")
             return
         }
+        let (turnBox, currentResponseID) = state.withLock {
+            ($0.currentTurn, $0.currentTurnResponseID)
+        }
+        // response_id 校验：当前轮次已产生响应 ID 时，中断必须指向它。
+        if let currentResponseID, responseID != currentResponseID {
+            sendErrorFrame(status: 409, type: "invalid_request_error",
+                           message: "response_id does not match the in-flight turn.")
+            return
+        }
         // 取消在途整轮（串行链保证它就是 interrupt 指向的那个；取消传播到
         // 内层 dispatch 与 SSE 消费，上游生成随之中止，不会出现重复终态）。
-        state.withLock { $0.currentTurn }?.cancel()
+        turnBox?.task?.cancel()
         var accepted: [String: Any] = [
             "type": "response.interrupt.accepted",
             "response_id": responseID,
@@ -330,7 +367,7 @@ final class ResponsesWebSocketSession {
 
     private func relaySseAsFrames(
         stream: AsyncThrowingStream<Data, Error>,
-        onTerminal: @escaping ([String: Any]) -> Void
+        onEvent: @escaping ([String: Any]) -> Void
     ) async {
         var parser = SSEEventParser()
         do {
@@ -338,9 +375,11 @@ final class ResponsesWebSocketSession {
                 for event in parser.feed(chunk) {
                     guard let object = try? JSONSerialization.jsonObject(with: event) as? [String: Any] else { continue }
                     sendJSON(object)
+                    onEvent(object)
                     if let type = object["type"] as? String,
                        type == "response.completed" || type == "response.failed" || type == "response.incomplete" {
-                        onTerminal(object)
+                        // 终态后停止消费（上游可能继续发送，忽略剩余字节）。
+                        break
                     }
                 }
                 if connection.hasBackpressure {
@@ -351,7 +390,7 @@ final class ResponsesWebSocketSession {
                 }
             }
         } catch is CancellationError {
-            // 上游被中断取消：帧已由 interrupt 流程发出。
+            // 上游被中断取消：终态已由 interrupt 流程发出。
         } catch {
             sendErrorFrame(status: 502, type: "local_router_error", message: "Upstream stream failed: \(error.localizedDescription)")
         }
@@ -420,22 +459,22 @@ final class ResponsesWebSocketSession {
     // MARK: - 关闭
 
     private func close(code: WebSocketCloseCode, reason: String = "") {
-        let inFlight = state.withLock { state -> Task<Void, Never>? in
+        let inFlight = state.withLock { state -> TurnBox? in
             state.closed = true
             return state.currentTurn
         }
-        inFlight?.cancel()
+        inFlight?.task?.cancel()
         connection.send(WebSocketFrameEncoder.closeFrame(code: code, reason: reason)) {
             self.connection.close()
         }
     }
 
     private func transportClosed() {
-        let inFlight = state.withLock { state -> Task<Void, Never>? in
+        let inFlight = state.withLock { state -> TurnBox? in
             state.closed = true
             return state.currentTurn
         }
-        inFlight?.cancel()
+        inFlight?.task?.cancel()
         connection.close()
     }
 }

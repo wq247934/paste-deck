@@ -124,10 +124,12 @@ final class HTTPConnection {
         }
     }
 
-    /// 主动关闭。
+    /// 主动关闭：标记断开并 shutdown 唤醒阻塞读。**不关闭 fd**——
+    /// fd 的唯一所有者是 serve()（defer 单次 close），避免与 serve 的
+    /// 清理路径双重关闭同一 fd（复用后误关新连接）。
     func close(afterWriting: Bool = true) {
         markGone()
-        Darwin.close(fileDescriptor)
+        shutdown(fileDescriptor, SHUT_RDWR)
     }
 
     func markGone() {
@@ -136,6 +138,8 @@ final class HTTPConnection {
         notifiedGone = true
         goneLock.unlock()
         if first {
+            // 唤醒可能在阻塞读的线程（shutdown 幂等，已关闭连接返回 ENOTCONN）。
+            shutdown(fileDescriptor, SHUT_RDWR)
             onClientGone?()
         }
     }
@@ -237,6 +241,8 @@ final class RouterHTTPServer {
 
     /// 单连接生命周期：keep-alive 逐请求解析与分发。
     private func serve(clientFD: Int32) {
+        // fd 唯一关闭点：本函数的 defer。HTTPConnection.close/markGone
+        // 只做标记 + shutdown（唤醒阻塞读），绝不 close——防止双重关闭。
         defer {
             Darwin.close(clientFD)
             stateLock.lock()

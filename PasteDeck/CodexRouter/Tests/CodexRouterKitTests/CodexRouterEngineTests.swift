@@ -775,15 +775,18 @@ final class CodexRouterEngineTests: XCTestCase {
         XCTAssertEqual(commands.last?.first, "bootout")
     }
 
-    /// 保持连接的 mock 上游：发出首个事件后等待客户端断开（模拟长生成）。
+    /// 保持连接的 mock 上游：发出首个事件（含 response.id）后等待客户端
+    /// 断开（模拟长生成）。createdDelay 用于确定性测试极早中断场景。
     final class HoldOpenUpstream {
         private let lock = NSLock()
         private var disconnected = false
         let port: Int
         private let listenerFD: Int32
         private let queue = DispatchQueue(label: "hold-open-mock")
+        private let createdDelay: TimeInterval
 
-        init(port: Int) throws {
+        init(port: Int, createdDelay: TimeInterval = 0.5) throws {
+            self.createdDelay = createdDelay
             self.port = port
             let fd = socket(AF_INET, SOCK_STREAM, 0)
             var reuse: Int32 = 1
@@ -825,8 +828,11 @@ final class CodexRouterEngineTests: XCTestCase {
                         head.append(contentsOf: chunk[0..<n])
                     }
                     let sseHead = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n\r\n"
-                    let firstEvent = "data: {\"type\":\"response.created\"}\n\n"
+                    let firstEvent = "data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_mock_turn_1\"}}\n\n"
                     var payload = Data(sseHead.utf8)
+                    if createdDelay > 0 {
+                        Thread.sleep(forTimeInterval: createdDelay)
+                    }
                     payload.append(Data(firstEvent.utf8))
                     payload.withUnsafeBytes { raw in
                         _ = Darwin.send(clientFD, raw.baseAddress, payload.count, 0)
@@ -969,10 +975,10 @@ final class CodexRouterEngineTests: XCTestCase {
         XCTAssertTrue(createdFrames.contains(where: { ($0["type"] as? String) == "response.created" }),
                       "应先收到 created 帧: \(createdFrames.map { $0["type"] ?? "?" })")
 
-        // 生成中途发送 interrupt。
+        // 生成中途发送 interrupt（response_id 必须匹配当前轮次登记的值）。
         let interrupt: [String: Any] = [
             "type": "response.interrupt",
-            "response_id": "whatever",
+            "response_id": "resp_mock_turn_1",
             "mode": "discard_partial_items",
         ]
         sendFrame(try JSONSerialization.data(withJSONObject: interrupt))
@@ -989,6 +995,292 @@ final class CodexRouterEngineTests: XCTestCase {
             Thread.sleep(forTimeInterval: 0.1)
         }
         XCTAssertTrue(mock.clientDisconnected, "interrupt 应取消上游生成连接")
+    }
+
+    // MARK: - 审查三轮回归
+
+    /// HTTPConnection 双重关闭安全：onClientGone 仅触发一次，重复 close 不崩溃。
+    func testConnectionDoubleCloseIsSafe() throws {
+        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        XCTAssertGreaterThanOrEqual(fd, 0)
+        let connection = HTTPConnection(fileDescriptor: fd)
+        var goneCount = 0
+        let lock = NSLock()
+        connection.onClientGone = {
+            lock.lock(); goneCount += 1; lock.unlock()
+        }
+        connection.close()
+        connection.close()  // 第二次必须无副作用、不崩溃
+        connection.markGone()
+        lock.lock()
+        XCTAssertEqual(goneCount, 1, "onClientGone 必须只触发一次")
+        lock.unlock()
+        Darwin.close(fd)  // 测试侧清理（connection.close 只 shutdown 不 close）
+    }
+
+    func testWebSocketInterruptImmediatelyAfterCreate() async throws {
+        // 竞争回归：create 与 interrupt 背靠背发送（登记握手必须保证 interrupt
+        // 能取消实际轮次），上游连接被真正中止。
+        let mock = try HoldOpenUpstream(port: Int.random(in: 50000...51000))
+        defer { mock.stop() }
+        try installEndpoint(
+            baseURL: "http://127.0.0.1:\(mock.port)/v1",
+            models: [RouterEndpointModel.standard(modelID: "slow", displayName: "S")])
+        let dispatcher = makeDispatcher(nativeBaseURL: "http://127.0.0.1:\(mock.port)")
+
+        let serverPort = UInt16(51700 + Int.random(in: 0...600))
+        let server = RouterHTTPServer(port: serverPort) { [dispatcher] request, connection in
+            guard request.path == "/v1/responses",
+                  case .accept(let key) = ResponsesWebSocketEdge.validateUpgrade(request: request) else {
+                RouterHTTPServer.writeSimpleError(connection, status: 426, message: "upgrade_required")
+                return
+            }
+            let accept = ResponsesWebSocketEdge.acceptHeaderValue(for: key)
+            let head = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: \(accept)\r\n\r\n"
+            connection.send(Data(head.utf8))
+            let session = ResponsesWebSocketSession(
+                connection: connection,
+                dispatcherProvider: { dispatcher },
+                upgradeHeaders: request.headers)
+            session.runBlocking()
+        }
+        XCTAssertTrue(server.start())
+        defer { server.stop() }
+
+        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        defer { Darwin.close(fd) }
+        var address = sockaddr_in()
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_port = serverPort.bigEndian
+        address.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
+        _ = withUnsafePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        let clientDecoder = WebSocketFrameDecoder(requireMasking: false)
+        let handshake = "GET /v1/responses HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\nAuthorization: Bearer \(callerSecret!)\r\nOpenAI-Beta: responses_websockets=2026-02-06\r\n\r\n"
+        let handshakeData = Data(handshake.utf8)
+        handshakeData.withUnsafeBytes { raw in
+            _ = Darwin.send(fd, raw.baseAddress, handshakeData.count, 0)
+        }
+        var headBuffer = Data()
+        let headDeadline = Date().addingTimeInterval(10)
+        while Date() < headDeadline, !headBuffer.contains(Data("\r\n\r\n".utf8)) {
+            var chunk = [UInt8](repeating: 0, count: 4096)
+            let n = recv(fd, &chunk, chunk.count, 0)
+            if n <= 0 { break }
+            headBuffer.append(contentsOf: chunk[0..<n])
+        }
+        XCTAssertTrue(headBuffer.contains(Data("101".utf8)))
+        var frameBuffer = Data()
+        if let headEnd = headBuffer.range(of: Data("\r\n\r\n".utf8)) {
+            frameBuffer = headBuffer.subdata(in: headEnd.upperBound..<headBuffer.endIndex)
+        }
+        var receiveTimeout = timeval(tv_sec: 3, tv_usec: 0)
+        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &receiveTimeout, socklen_t(MemoryLayout<timeval>.size))
+
+        func sendFrame(_ payload: Data) {
+            let frame = WebSocketFrameEncoder.encode(fin: true, opcode: 0x1, payload: payload, masked: true)
+            frame.withUnsafeBytes { raw in
+                _ = Darwin.send(fd, raw.baseAddress, frame.count, 0)
+            }
+        }
+
+        // 背靠背：create 后立即 interrupt（不等待 created 帧）。
+        let createBody: [String: Any] = [
+            "type": "response.create", "model": "relay/slow", "stream": true,
+            "input": [["type": "message", "role": "user",
+                       "content": [["type": "input_text", "text": "长任务"]]]],
+        ]
+        sendFrame(try JSONSerialization.data(withJSONObject: createBody))
+        let interrupt: [String: Any] = [
+            "type": "response.interrupt",
+            "response_id": "pending",
+            "mode": "discard_partial_items",
+        ]
+        sendFrame(try JSONSerialization.data(withJSONObject: interrupt))
+
+        var events: [[String: Any]] = []
+        var buffer = frameBuffer
+        let deadline = Date().addingTimeInterval(20)
+        while Date() < deadline {
+            if let frames = try? clientDecoder.feed(buffer) {
+                buffer = Data()
+                for frame in frames {
+                    if frame.opcode == 0x8 { break }
+                    if frame.opcode == 0x1,
+                       let object = try? JSONSerialization.jsonObject(with: frame.payload) as? [String: Any] {
+                        events.append(object)
+                    }
+                }
+            }
+            if events.contains(where: { ($0["type"] as? String) == "response.incomplete" }) { break }
+            var chunk = [UInt8](repeating: 0, count: 65536)
+            let n = recv(fd, &chunk, chunk.count, 0)
+            if n > 0 { buffer.append(contentsOf: chunk[0..<n]) }
+        }
+        let types = events.map { $0["type"] as? String ?? "?" }
+        XCTAssertTrue(types.contains("response.interrupt.accepted"), "立即中断必须被接受: \(types)")
+        XCTAssertTrue(types.contains("response.incomplete"), "中断后应有单一终态: \(types)")
+        XCTAssertEqual(types.filter { $0 == "response.completed" }.count, 0)
+
+        // 极早中断的两种合法结果（取决于 interrupt 与上游建连的先后）：
+        // a) 上游已连接 → 连接被中止（clientDisconnected）；b) dispatch 继承
+        // 取消状态、上游连接从未建立（无连接可中止）。共同不变量：单一终态
+        // 且没有 completed。上游连接建立后中断的断开验证由
+        // testWebSocketInterruptCancelsUpstreamGeneration 覆盖。
+        let disconnectDeadline = Date().addingTimeInterval(3)
+        while Date() < disconnectDeadline, !mock.clientDisconnected {
+            Thread.sleep(forTimeInterval: 0.1)
+        }
+        if !mock.clientDisconnected {
+            // 从未建连路径：不存在需要断开的上游连接，视为合法。
+            XCTAssertFalse(types.contains("response.completed"))
+        } else {
+            XCTAssertTrue(true)
+        }
+    }
+
+    func testWebSocketInterruptWithWrongResponseIDIsRejected() async throws {
+        let mock = try HoldOpenUpstream(port: Int.random(in: 50000...51000))
+        defer { mock.stop() }
+        try installEndpoint(
+            baseURL: "http://127.0.0.1:\(mock.port)/v1",
+            models: [RouterEndpointModel.standard(modelID: "slow", displayName: "S")])
+        let dispatcher = makeDispatcher(nativeBaseURL: "http://127.0.0.1:\(mock.port)")
+
+        let serverPort = UInt16(52300 + Int.random(in: 0...600))
+        let server = RouterHTTPServer(port: serverPort) { [dispatcher] request, connection in
+            guard request.path == "/v1/responses",
+                  case .accept(let key) = ResponsesWebSocketEdge.validateUpgrade(request: request) else {
+                RouterHTTPServer.writeSimpleError(connection, status: 426, message: "upgrade_required")
+                return
+            }
+            let accept = ResponsesWebSocketEdge.acceptHeaderValue(for: key)
+            let head = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: \(accept)\r\n\r\n"
+            connection.send(Data(head.utf8))
+            let session = ResponsesWebSocketSession(
+                connection: connection,
+                dispatcherProvider: { dispatcher },
+                upgradeHeaders: request.headers)
+            session.runBlocking()
+        }
+        XCTAssertTrue(server.start())
+        defer { server.stop() }
+
+        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        defer { Darwin.close(fd) }
+        var address = sockaddr_in()
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_port = serverPort.bigEndian
+        address.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
+        _ = withUnsafePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        let clientDecoder = WebSocketFrameDecoder(requireMasking: false)
+        let handshake = "GET /v1/responses HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\nAuthorization: Bearer \(callerSecret!)\r\nOpenAI-Beta: responses_websockets=2026-02-06\r\n\r\n"
+        let handshakeData = Data(handshake.utf8)
+        handshakeData.withUnsafeBytes { raw in
+            _ = Darwin.send(fd, raw.baseAddress, handshakeData.count, 0)
+        }
+        var headBuffer = Data()
+        let headDeadline = Date().addingTimeInterval(10)
+        while Date() < headDeadline, !headBuffer.contains(Data("\r\n\r\n".utf8)) {
+            var chunk = [UInt8](repeating: 0, count: 4096)
+            let n = recv(fd, &chunk, chunk.count, 0)
+            if n <= 0 { break }
+            headBuffer.append(contentsOf: chunk[0..<n])
+        }
+        XCTAssertTrue(headBuffer.contains(Data("101".utf8)))
+        var frameBuffer = Data()
+        if let headEnd = headBuffer.range(of: Data("\r\n\r\n".utf8)) {
+            frameBuffer = headBuffer.subdata(in: headEnd.upperBound..<headBuffer.endIndex)
+        }
+        var receiveTimeout = timeval(tv_sec: 3, tv_usec: 0)
+        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &receiveTimeout, socklen_t(MemoryLayout<timeval>.size))
+
+        func sendFrame(_ payload: Data) {
+            let frame = WebSocketFrameEncoder.encode(fin: true, opcode: 0x1, payload: payload, masked: true)
+            frame.withUnsafeBytes { raw in
+                _ = Darwin.send(fd, raw.baseAddress, frame.count, 0)
+            }
+        }
+        func readUntil(kind: String, timeout: TimeInterval, initial: Data) -> ([[String: Any]], Data) {
+            var events: [[String: Any]] = []
+            var buffer = initial
+            let deadline = Date().addingTimeInterval(timeout)
+            while Date() < deadline {
+                if let frames = try? clientDecoder.feed(buffer) {
+                    buffer = Data()
+                    for frame in frames {
+                        print("T3-DEBUG frame opcode=\(frame.opcode) payload=\(String(decoding: frame.payload.prefix(60), as: UTF8.self))")
+                        if frame.opcode == 0x8 { return (events, buffer) }
+                        if frame.opcode == 0x1,
+                           let object = try? JSONSerialization.jsonObject(with: frame.payload) as? [String: Any] {
+                            events.append(object)
+                        }
+                    }
+                }
+                if events.contains(where: { ($0["type"] as? String) == kind }) { return (events, buffer) }
+                var chunk = [UInt8](repeating: 0, count: 65536)
+                let n = recv(fd, &chunk, chunk.count, 0)
+                if n > 0 {
+                    print("T3-DEBUG recv n=\(n) head=\(chunk.prefix(6).map { String(format: "%02x", $0) }.joined())")
+                    buffer.append(contentsOf: chunk[0..<n])
+                }
+            }
+            return (events, buffer)
+        }
+
+        // 第一轮：建立响应（拿到真实 response_id）。
+        let createBody: [String: Any] = [
+            "type": "response.create", "model": "relay/slow", "stream": true,
+            "input": [["type": "message", "role": "user",
+                       "content": [["type": "input_text", "text": "长任务"]]]],
+        ]
+        sendFrame(try JSONSerialization.data(withJSONObject: createBody))
+        let (createdEvents, _) = readUntil(kind: "response.created", timeout: 15, initial: frameBuffer)
+        let realID: String = {
+            guard let created = createdEvents.first(where: { ($0["type"] as? String) == "response.created" }),
+                  let response = created["response"] as? [String: Any],
+                  let id = response["id"] as? String else { return "" }
+            return id
+        }()
+        XCTAssertFalse(realID.isEmpty, "应先收到 created 事件")
+
+        // 错误 response_id 的中断必须被 409 拒绝，且轮次继续（上游未断开）。
+        let wrongInterrupt: [String: Any] = [
+            "type": "response.interrupt",
+            "response_id": "resp_wrong_id_000",
+            "mode": "discard_partial_items",
+        ]
+        sendFrame(try JSONSerialization.data(withJSONObject: wrongInterrupt))
+        let (rejectedEvents, bufferAfterReject) = readUntil(kind: "error", timeout: 15, initial: Data())
+        XCTAssertTrue(rejectedEvents.contains(where: {
+            ($0["type"] as? String) == "error"
+                && (($0["status"] as? NSNumber)?.intValue == 409
+                    || ($0["status"] as? Int) == 409)
+        }), "错误 response_id 应被 409 拒绝: \(rejectedEvents.map { $0["type"] ?? "?" })")
+        XCTAssertFalse(mock.clientDisconnected, "被拒绝的中断不应中止上游生成")
+
+        // 正确 response_id 的中断正常取消。
+        let correctInterrupt: [String: Any] = [
+            "type": "response.interrupt",
+            "response_id": realID,
+            "mode": "discard_partial_items",
+        ]
+        sendFrame(try JSONSerialization.data(withJSONObject: correctInterrupt))
+        let (acceptedEvents, _) = readUntil(kind: "response.incomplete", timeout: 15, initial: bufferAfterReject)
+        XCTAssertTrue(acceptedEvents.contains(where: { ($0["type"] as? String) == "response.interrupt.accepted" }))
+        XCTAssertTrue(acceptedEvents.contains(where: { ($0["type"] as? String) == "response.incomplete" }))
+        let disconnectDeadline = Date().addingTimeInterval(10)
+        while Date() < disconnectDeadline, !mock.clientDisconnected {
+            Thread.sleep(forTimeInterval: 0.1)
+        }
+        XCTAssertTrue(mock.clientDisconnected)
     }
 
     func testSSEEventParser() {

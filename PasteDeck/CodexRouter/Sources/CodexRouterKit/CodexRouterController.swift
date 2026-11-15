@@ -192,67 +192,94 @@ public final class CodexRouterController {
             Data(String(port).utf8),
             to: stateDirectory.appendingPathComponent("port"))
 
-        // 6. 启动守护进程：优先 LaunchAgent 托管（登录自启 + 崩溃自动拉起，
-        //    Mac 重启后 config.toml 指向的本地路由不会失联）；launchctl
-        //    不可用时回退直接 spawn。
-        var daemonRunning = Self.queryHealth(port: port) != nil
-        if !daemonRunning, let daemonPath = DaemonLauncher.locateDaemonBinary() {
-            do {
-                try launchAgent.install(
-                    daemonPath: daemonPath,
-                    stateDirectory: stateDirectory,
-                    port: port,
-                    logPath: stateDirectory.appendingPathComponent("router.log"))
-                let deadline = Date().addingTimeInterval(8)
-                while Date() < deadline {
-                    if Self.queryHealth(port: port) != nil { daemonRunning = true; break }
-                    Thread.sleep(forTimeInterval: 0.2)
-                }
-            } catch {
-                daemonRunning = false
-            }
-        }
+        // 6. 启动守护进程（事务式）：优先 LaunchAgent 托管（登录自启 +
+        //    崩溃自动拉起，Mac 重启后 config.toml 指向的本地路由不会失联）。
+        //    健康超时时必须先注销 Agent 再降级 spawn——KeepAlive 下直接
+        //    spawn 会造成两个实例抢端口。
+        let daemonWasRunning = Self.queryHealth(port: port) != nil
+        var startedThisRun = false
+        var agentArmed = false
+        var daemonRunning = daemonWasRunning
         if !daemonRunning {
-            let process = try DaemonLauncher.launch(stateDirectory: stateDirectory, port: port)
-            var healthy = false
-            let deadline = Date().addingTimeInterval(6)
-            while Date() < deadline {
-                if Self.queryHealth(port: port) != nil { healthy = true; break }
-                if !process.isRunning { break }
-                Thread.sleep(forTimeInterval: 0.15)
+            if let daemonPath = DaemonLauncher.locateDaemonBinary() {
+                do {
+                    try launchAgent.install(
+                        daemonPath: daemonPath,
+                        stateDirectory: stateDirectory,
+                        port: port,
+                        logPath: stateDirectory.appendingPathComponent("router.log"))
+                    agentArmed = true
+                    let deadline = Date().addingTimeInterval(8)
+                    while Date() < deadline {
+                        if Self.queryHealth(port: port) != nil { daemonRunning = true; break }
+                        Thread.sleep(forTimeInterval: 0.2)
+                    }
+                    if !daemonRunning {
+                        // 启动超时（bootstrap 可能已成功但进程未就绪）：先注销
+                        // Agent，确认降级安全后再 spawn，避免 KeepAlive 竞争。
+                        launchAgent.uninstall()
+                        agentArmed = false
+                    }
+                } catch {
+                    agentArmed = false
+                }
             }
-            guard healthy, Self.queryHealth(port: port) != nil else {
-                process.terminate()
-                throw RouterControllerError.daemonStartFailed(port: port)
+            if !daemonRunning {
+                let process = try DaemonLauncher.launch(stateDirectory: stateDirectory, port: port)
+                startedThisRun = true
+                var healthy = false
+                let deadline = Date().addingTimeInterval(6)
+                while Date() < deadline {
+                    if Self.queryHealth(port: port) != nil { healthy = true; break }
+                    if !process.isRunning { break }
+                    Thread.sleep(forTimeInterval: 0.15)
+                }
+                guard healthy, Self.queryHealth(port: port) != nil else {
+                    process.terminate()
+                    throw RouterControllerError.daemonStartFailed(port: port)
+                }
+                daemonRunning = true
             }
         }
 
         // 7. 发布模型目录（config 指向该文件，必须先于配置切换完成）。
+        // 8. 托管切换 config.toml。任一步失败：撤销本次新增的服务状态
+        //    （本次启动的守护进程与 Agent），已运行的原状态保持不动。
         do {
             _ = try CatalogBuilder.publish(
                 stateDirectory: stateDirectory,
                 endpoints: document.endpoints,
                 codexHome: codexHome)
+            try configManager.enable(port: port)
+            try? PrivateFile.protect(configURL.path)
         } catch {
-            throw RouterControllerError.catalogPublishFailed(error.localizedDescription)
+            if startedThisRun {
+                launchAgent.uninstall()
+                stopDaemon()
+                daemonRunning = false
+            } else if agentArmed, !daemonWasRunning {
+                launchAgent.uninstall()
+            }
+            if let catalogError = error as? RouterControllerError {
+                throw catalogError
+            }
+            throw error
         }
-
-        // 8. 托管切换 config.toml。
-        try configManager.enable(port: port)
-        try? PrivateFile.protect(configURL.path)
 
         return "路由已启用（端口 \(port)）。请完全退出并重新打开 ChatGPT 桌面版 Codex，模型选择器将同时显示官方 GPT 与第三方模型。"
     }
 
     // MARK: - 关闭
 
-    /// 一键关闭：恢复原生配置、注销守护进程，保留端点配置。
+    /// 一键关闭：**先恢复 Codex 配置（失败时服务仍在运行，Codex 不受影响），
+    /// 确认恢复成功后再停路由服务**；保留端点配置。
     public func disable() throws {
         clearLastError()
-        // 1. 注销 LaunchAgent（bootout 同时停止守护进程）。
-        launchAgent.uninstall()
-        // 2. 恢复 config.toml（所有权校验内置于 disable）。
+        // 1. 恢复 config.toml（所有权校验内置于 disable）。此步失败直接抛出，
+        //    守护进程与 Agent 保持原状——绝不留下指向已停服务的配置。
         try configManager.disable()
+        // 2. 注销 LaunchAgent（bootout 同时停止守护进程）。
+        launchAgent.uninstall()
         // 3. 停止守护进程（Agent 注销失败时的兜底）。
         stopDaemon()
         // 3. 删除凭据物化文件（Keychain 中的 API Key 保留）。
